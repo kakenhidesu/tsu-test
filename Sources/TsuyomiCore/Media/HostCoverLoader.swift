@@ -8,9 +8,9 @@ import UIKit
 /// Decodes one cover at a time per source partition, never above the size actually displayed, and
 /// caches the encoded bytes under a digest of the source, package, and credential revision.
 public actor HostCoverLoader {
-    static let maximumSourcePixels = 50_000_000
-    static let defaultMaximumResponseBytes = 8 * 1024 * 1024
-    static let supportedContentTypes: Set<String> = ["image/jpeg", "image/png"]
+    public static let maximumSourcePixels = 50_000_000
+    public static let defaultMaximumResponseBytes = 8 * 1024 * 1024
+    public static let supportedContentTypes: Set<String> = ["image/jpeg", "image/png"]
 
     private let policy: MediaOriginPolicy
     private let files: QuotaFileStore

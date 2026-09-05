@@ -22,7 +22,7 @@ public struct ReadingProgressStore: Sendable {
                 return connection.changes != 0 ? .applied : .keptExisting
             }
             if try ReadingProgressStore.progress(incoming.identity, connection) == nil {
-                try ReadingProgressStore.replace(incoming, connection)
+                try ReadingProgressStore.upsert(incoming, connection)
                 return .applied
             }
             try ReadingProgressStore.updateIfNewer(incoming, connection)
@@ -102,7 +102,7 @@ public struct ReadingProgressStore: Sendable {
         try connection.execute("INSERT OR IGNORE INTO reading_progress \(insertColumns)", columns(progress))
     }
 
-    private static func replace(_ progress: ReadingProgress, _ connection: SQLiteConnection) throws {
+    static func upsert(_ progress: ReadingProgress, _ connection: SQLiteConnection) throws {
         try connection.execute("INSERT OR REPLACE INTO reading_progress \(insertColumns)", columns(progress))
     }
 
