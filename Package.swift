@@ -25,6 +25,7 @@ let package = Package(
     ],
     targets: [
         .target(name: "TsuyomiProtocol"),
+        .target(name: "ReverseImportCheck"),
         .testTarget(name: "TsuyomiProtocolTests", dependencies: ["TsuyomiProtocol"]),
 
         .target(name: "TsuyomiCore", dependencies: ["TsuyomiProtocol"]),

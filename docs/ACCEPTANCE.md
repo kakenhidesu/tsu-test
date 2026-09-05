@@ -80,7 +80,7 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 | Reduce Motion | 插入位让位与快捷栏收折在 Reduce Motion 下降级为无动画切换 |
 | `NSUserActivity` | 阅读页发布活动（只含书与章，不含进度，不参与 Handoff），根视图接管续读并切到浏览 tab |
 | VoiceOver | 装饰性图标全部隐藏；选中态用 `.isSelected` trait 表达而非朗读勾图标；封面、筛选、分页、阅读进度均有标签与值 |
-| 纪律回归 | `RepositoryHygieneTests` 6 条：SPDX 头、400 行上限、无 TODO/``/`try!`/`swiftlint:disable`/`#if false`、无 iOS 17 API、无 E-ink 残留符号、无 Kotlin 提交 |
+| 纪律回归 | `RepositoryHygieneTests` 6 条：SPDX 头、400 行上限、无 TODO / `@unchecked` / `try!` / `swiftlint:disable` / `#if false`、无 iOS 17 API、无 E-ink 残留符号、无 Kotlin 提交 |
 | 尚未完成 | Dynamic Type `.accessibility3` 与深浅色的模拟器人工截图核对（需真机/模拟器目视，CI 不覆盖）|
 
 ## 未完成项
