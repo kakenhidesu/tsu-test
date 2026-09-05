@@ -28,12 +28,19 @@ public actor SourceRegistry {
     private let installer: ExtensionInstaller
     private let store: InstalledExtensionStore
     private let gateway: HostNetworkGateway
+    private let sessions: VerifiedBrowserSessionStore
     private var clients: [String: SourceExtensionClient] = [:]
 
-    public init(installer: ExtensionInstaller, store: InstalledExtensionStore, gateway: HostNetworkGateway) {
+    public init(
+        installer: ExtensionInstaller,
+        store: InstalledExtensionStore,
+        gateway: HostNetworkGateway,
+        sessions: VerifiedBrowserSessionStore
+    ) {
         self.installer = installer
         self.store = store
         self.gateway = gateway
+        self.sessions = sessions
     }
 
     public func installedSources() async throws -> [InstalledSource] {
@@ -51,8 +58,29 @@ public actor SourceRegistry {
             throw ExtensionInstallError.installedPackageInvalid
         }
         let client = try await SourceExtensionClient.open(packageInfo: verified, gateway: gateway)
+        await adoptStoredSession(client)
         clients[sourceId.value] = client
         return client
+    }
+
+    /// A channel opens with the session the reader completed in the login window already in the
+    /// gateway's cookie jar. That jar is in memory and scoped to `(sourceId, extensionVersion)`, so
+    /// nothing else puts a stored session into it: without this every host request leaves anonymous
+    /// however many times the reader has logged in, and the source answers `SESSION_REQUIRED`.
+    /// Closing the channel is therefore what makes a fresh login take effect.
+    private func adoptStoredSession(_ client: SourceExtensionClient) async {
+        let manifest = client.packageInfo.manifest
+        for origin in manifest.capabilities.cookies.origins {
+            guard let partition = try? SourceCredentialPartition(
+                sourceId: manifest.sourceId.value,
+                origin: origin
+            ), let snapshot = try? await sessions.snapshot(partition) else { continue }
+            try? await gateway.importSourceCookies(
+                grant: client.grant,
+                origin: origin,
+                rawCookie: snapshot.session.requestCookies
+            )
+        }
     }
 
     /// Closing is how a source becomes dormant: the lane is torn down, and the next request must

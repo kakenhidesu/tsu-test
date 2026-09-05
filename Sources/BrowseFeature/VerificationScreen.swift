@@ -3,6 +3,7 @@
 import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
+import TsuyomiSource
 import TsuyomiUI
 import WebKit
 
@@ -19,6 +20,7 @@ public final class VerificationModel: ObservableObject {
     private let initialUrl: String
     private let userAgent: String
     private let sessions: VerifiedBrowserSessionStore
+    private let registry: SourceRegistry
     private var session: ControlledWebLoginSession?
 
     public init(
@@ -26,13 +28,15 @@ public final class VerificationModel: ObservableObject {
         origins: Set<HttpsOrigin>,
         initialUrl: String,
         userAgent: String,
-        sessions: VerifiedBrowserSessionStore
+        sessions: VerifiedBrowserSessionStore,
+        registry: SourceRegistry
     ) {
         self.sourceId = sourceId
         self.origins = origins
         self.initialUrl = initialUrl
         self.userAgent = userAgent
         self.sessions = sessions
+        self.registry = registry
     }
 
     public func start() async {
@@ -51,10 +55,15 @@ public final class VerificationModel: ObservableObject {
     }
 
     /// The only path that stores anything. It runs on an explicit user action, never on dismissal.
+    /// The source's channel is dropped afterwards, because the gateway's cookie jar is filled when a
+    /// channel opens: a session stored while one is already open would otherwise sit unused until
+    /// the next launch, and the source would keep answering `SESSION_REQUIRED` after a login the
+    /// reader just completed.
     public func finish() async {
         guard let session else { return }
         do {
             try await session.finish()
+            if let sourceId = try? SourceId(sourceId) { await registry.close(sourceId) }
             isFinished = true
         } catch {
             failure = SafeWebCode.of(error)

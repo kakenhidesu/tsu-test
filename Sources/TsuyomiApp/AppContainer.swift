@@ -15,6 +15,7 @@ public final class AppContainer: ObservableObject {
     public let progress: ReadingProgressStore
     public let remoteLibrary: RemoteLibraryStore
     public let credentials: SourceCredentialStore
+    public let sessions: VerifiedBrowserSessionStore
     public let collections: CollectionStore
     public let transfers: TransferRepository
     public let gateway: HostNetworkGateway
@@ -42,6 +43,7 @@ public final class AppContainer: ObservableObject {
         progress = ReadingProgressStore(database: database)
         remoteLibrary = RemoteLibraryStore(database: database)
         credentials = try SourceCredentialStore(roots: roots)
+        sessions = VerifiedBrowserSessionStore(credentials: credentials)
         collections = CollectionStore(database: database)
         transfers = TransferRepository(database: database)
         gateway = HostNetworkGateway(
@@ -63,7 +65,8 @@ public final class AppContainer: ObservableObject {
                 store: installedExtensions
             ),
             store: installedExtensions,
-            gateway: gateway
+            gateway: gateway,
+            sessions: sessions
         )
         preferences = AppPreferences(defaults: defaults)
         snapshots = SourceFlowSnapshotStore(defaults: defaults)

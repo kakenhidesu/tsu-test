@@ -169,7 +169,8 @@ struct VerificationHost: View {
                 origins: origins,
                 initialUrl: origins.map({ $0.canonical }).sorted(by: CanonicalOrder.precedes).first ?? "",
                 userAgent: AppContainer.userAgent,
-                sessions: VerifiedBrowserSessionStore(credentials: container.credentials)
+                sessions: container.sessions,
+                registry: container.registry
             )
         )
     }

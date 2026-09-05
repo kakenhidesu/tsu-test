@@ -11,7 +11,9 @@ public final class SourceExtensionClient: Sendable {
     public let packageInfo: VerifiedHxpPackage
     private let gateway: HostNetworkGateway
     private let runtime: QuickJsRuntimeLane
-    private let grant: SourceNetworkGrant
+    /// Visible to `SourceRegistry` alone, which loads the reader's stored session into the gateway
+    /// under exactly this grant when the channel opens.
+    let grant: SourceNetworkGrant
 
     private init(
         packageInfo: VerifiedHxpPackage,

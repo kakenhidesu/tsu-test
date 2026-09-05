@@ -224,7 +224,8 @@ private struct MarketWorld {
                 store: installed
             ),
             store: installed,
-            gateway: gateway
+            gateway: gateway,
+            sessions: VerifiedBrowserSessionStore(credentials: try SourceCredentialStore(roots: roots))
         )
         let client = ExtensionRepositoryClient(gateway: gateway)
         let lifecycle = ExtensionLifecycle(

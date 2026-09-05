@@ -129,6 +129,46 @@ final class SourceJourneyTests: XCTestCase {
         XCTAssertFalse(code.contains("<"))
         XCTAssertFalse(code.contains("wenku8"))
     }
+
+    /// The session the reader completed in the login window is in the gateway's jar before the
+    /// source's first request leaves. Nothing else puts it there, so without this every request goes
+    /// out anonymous however many times they have logged in, and the source answers
+    /// `SESSION_REQUIRED` on a site that is only readable while signed in.
+    @MainActor
+    func testAStoredSessionReachesTheSourcesFirstRequest() async throws {
+        let world = try await FixtureWorld(directory: directory, storedSession: "session=verified")
+        let search = SearchModel(
+            sourceId: world.sourceId,
+            registry: world.registry,
+            library: world.library
+        )
+        search.query = "雾港"
+        await search.submit()
+
+        guard case .content = search.state else {
+            return XCTFail("search did not produce results: \(search.state)")
+        }
+        XCTAssertEqual(world.transport.cookieHeaders.first, "session=verified")
+    }
+
+    /// A source nobody has logged into sends no cookie at all: the jar is filled from stored
+    /// sessions only, never from anything the extension can reach.
+    @MainActor
+    func testASourceWithNoStoredSessionSendsNoCookie() async throws {
+        let world = try await FixtureWorld(directory: directory)
+        let search = SearchModel(
+            sourceId: world.sourceId,
+            registry: world.registry,
+            library: world.library
+        )
+        search.query = "雾港"
+        await search.submit()
+
+        guard case .content = search.state else {
+            return XCTFail("search did not produce results: \(search.state)")
+        }
+        XCTAssertEqual(world.transport.cookieHeaders.first, "")
+    }
 }
 
 /// One installed fixture source backed by a fake transport that answers from the fixture files.
@@ -140,7 +180,7 @@ private struct FixtureWorld {
     let progress: ReadingProgressStore
     let transport: FixtureTransport
 
-    init(directory: URL, page: String? = nil) async throws {
+    init(directory: URL, page: String? = nil, storedSession: String? = nil) async throws {
         sourceId = try SourceId("org.tsuyomi.wenku8")
         transport = FixtureTransport(forcedPage: page)
         let roots = try StorageRoots(base: directory)
@@ -171,11 +211,40 @@ private struct FixtureWorld {
             archiveBytes: try JourneyFixtures.data("wenku8-fixture.hxp")
         )
         try await installer.activate(prepared, approval: ExtensionInstallApproval.approve(prepared))
+        let sessions = VerifiedBrowserSessionStore(
+            credentials: try SourceCredentialStore(roots: roots, aead: PassthroughAead())
+        )
+        if let storedSession {
+            try await sessions.put(
+                try SourceCredentialPartition(
+                    sourceId: sourceId.value,
+                    origin: try HttpsOrigin("https://www.wenku8.net")
+                ),
+                session: try VerifiedBrowserSession(
+                    requestCookies: storedSession,
+                    userAgent: AppContainer.userAgent
+                )
+            )
+        }
         registry = SourceRegistry(
             installer: installer,
             store: store,
-            gateway: HostNetworkGateway(transport: transport)
+            gateway: HostNetworkGateway(transport: transport),
+            sessions: sessions
         )
+    }
+}
+
+/// Round-trips plaintext so the credential store can be exercised without a Keychain-backed key,
+/// which unit tests have no entitlement for. It authenticates nothing on purpose: what this world
+/// needs is a session that survives storage, and the real AEAD is covered in `TsuyomiCoreTests`.
+private struct PassthroughAead: AeadPort {
+    func encrypt(plaintext: Data, additionalAuthenticatedData: Data) throws -> AeadCiphertext {
+        AeadCiphertext(iv: Data(count: 12), ciphertext: plaintext)
+    }
+
+    func decrypt(_ value: AeadCiphertext, additionalAuthenticatedData: Data) throws -> Data {
+        value.ciphertext
     }
 }
 
@@ -184,15 +253,18 @@ private struct FixtureWorld {
 final class FixtureTransport: HostHttpTransport {
     private let forcedPage: String?
     private let writes = OSAllocatedUnfairLock(initialState: 0)
+    private let cookies = OSAllocatedUnfairLock(initialState: [String]())
 
     init(forcedPage: String?) {
         self.forcedPage = forcedPage
     }
 
     var remoteWriteCount: Int { writes.withLock { $0 } }
+    var cookieHeaders: [String] { cookies.withLock { $0 } }
 
     func execute(_ request: HostHttpRequest) async throws -> HostHttpResponse {
         if request.method != .get { writes.withLock { $0 += 1 } }
+        cookies.withLock { $0.append(request.headers["cookie"] ?? "") }
         let name = forcedPage ?? FixtureTransport.page(for: request.url.absoluteString)
         return HostHttpResponse(
             status: 200,
