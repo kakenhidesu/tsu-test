@@ -26,6 +26,7 @@ public struct PreparedExtensionInstall: Sendable {
     public let capabilityGrantFingerprint: String
     public let remoteCapabilitySetFingerprint: String
     public let isDowngrade: Bool
+    public let policyOutcome: ExtensionPolicyOutcome
 }
 
 /// The user approves an exact package, publisher, and capability delta. Anything else that arrives
@@ -70,16 +71,22 @@ public struct ExtensionInstaller: Sendable {
         self.store = store
     }
 
-    public func prepare(archiveBytes: Data) async throws -> PreparedExtensionInstall {
+    public func prepare(
+        archiveBytes: Data,
+        rotationApproved: Bool = false
+    ) async throws -> PreparedExtensionInstall {
         let candidate = try verifier.verify(archiveBytes: archiveBytes)
         let active = try await readVerifiedActive(candidate.manifest.sourceId)
-        if let active {
-            guard candidate.manifest.version != active.manifest.version else {
-                throw ExtensionInstallError.replayRejected
-            }
-            guard candidate.manifest.publisherKeyId == active.manifest.publisherKeyId else {
-                throw ExtensionInstallError.keyRotationNotAuthorized
-            }
+        let outcome = ExtensionInstaller.evaluatePolicy(
+            candidate: candidate.manifest,
+            active: active?.manifest,
+            publisherRevoked: false,
+            rotationApproved: rotationApproved
+        )
+        switch outcome {
+        case .rejectedReplay: throw ExtensionInstallError.replayRejected
+        case .rejectedKeyRotation: throw ExtensionInstallError.keyRotationNotAuthorized
+        default: break
         }
         let added = ExtensionInstaller.addedCapabilities(candidate.manifest, active?.manifest)
         let increases = ExtensionInstaller.resourceLimitIncreases(candidate.manifest, active?.manifest)
@@ -94,7 +101,8 @@ public struct ExtensionInstaller: Sendable {
             remoteCapabilitySetFingerprint: ExtensionInstaller.remoteCapabilitySetFingerprint(
                 candidate.manifest, candidate.publisherFingerprint
             ),
-            isDowngrade: active.map { candidate.manifest.version < $0.manifest.version } ?? false
+            isDowngrade: active.map { candidate.manifest.version < $0.manifest.version } ?? false,
+            policyOutcome: outcome
         )
     }
 

@@ -32,3 +32,5 @@
 - vendored QuickJS-ng 的实际文件集为 `dtoa.c libregexp.c libunicode.c quickjs.c`（0.16.1 无 `cutils.c`，`cutils.h` 为头文件实现），与 Android `CMakeLists.txt` 一致。
 - `tsuyomi_qjs_prepare_operation` 每次调用 `JS_UpdateStackTop`，使 actor 串行执行器在不同线程上连续执行时栈上限判定仍然正确；因此不再固定专用线程。
 - 桥接新增 `IMPORT_DISALLOWED` 状态并安装拒绝一切说明符的模块加载器（Android JNI 未安装加载器）。
+- `ReaderDocument` 的 `contentDigest` 由宿主按 RFC 8785 规范化块负载计算；扩展未给出 `revision` 时取该摘要，扩展不能声称改动过的正文是同一修订。
+- `ExtensionInstaller.evaluatePolicy` 是更新规则的唯一归属；`rotationApproved` 表示用户已重新确认新发布者指纹（v0 索引不承载交叉签名）。

@@ -249,8 +249,8 @@ final class ReaderEngineTests: XCTestCase {
     }
 
     func testPresentationSwitchRejectsIncompatibleDocumentsAndMissingCaptures() throws {
-        let document = try document()
-        let source = try epochs(document)
+        let chapter = try document()
+        let source = try epochs(chapter)
         let other = try epochs(try document(revision: "r2"))
         let empty = SettledPositionCache()
 
