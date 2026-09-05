@@ -138,6 +138,18 @@ struct ReaderHost: View {
 
     var body: some View {
         ReaderScreen(model: model) { Task { await flow.pop() } }
+            .userActivity(ReadingActivity.type, isActive: model.chapter != nil) { activity in
+                guard let chapter = model.chapter else { return }
+                activity.title = model.bookTitle
+                activity.isEligibleForHandoff = false
+                activity.addUserInfoEntries(
+                    from: ReadingActivity.payload(
+                        identity: model.identity,
+                        chapterId: chapter.chapterId,
+                        bookTitle: model.bookTitle
+                    )
+                )
+            }
     }
 }
 

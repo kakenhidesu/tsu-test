@@ -9,6 +9,7 @@ import TsuyomiUI
 struct LibraryShortcutBar: View {
     @ObservedObject var model: LibraryModel
     @State private var isEditing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -20,8 +21,8 @@ struct LibraryShortcutBar: View {
                 strip
             }
         }
-        .animation(.default, value: model.isShortcutBarCollapsed)
-        .animation(.default, value: isEditing)
+        .animation(reduceMotion ? nil : .default, value: model.isShortcutBarCollapsed)
+        .animation(reduceMotion ? nil : .default, value: isEditing)
     }
 
     private var handle: some View {

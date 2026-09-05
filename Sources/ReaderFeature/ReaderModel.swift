@@ -33,7 +33,7 @@ public final class ReaderModel: ObservableObject {
     public let bookTitle: String
     public let preview = ReaderPreviewController()
 
-    private let identity: BookIdentity
+    public let identity: BookIdentity
     private let registry: SourceRegistry
     private let progressStore: ReadingProgressStore
     private let documents = ReaderDocumentCache()

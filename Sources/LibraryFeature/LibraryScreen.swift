@@ -13,6 +13,7 @@ public struct LibraryScreen: View {
     @State private var pendingPair: [BookIdentity] = []
     @State private var insertionIndex: Int?
     @State private var isCreatingCollection = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
         model: LibraryModel,
@@ -110,7 +111,7 @@ public struct LibraryScreen: View {
                     }
                 }
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-                .animation(.easeInOut(duration: 0.2), value: insertionIndex)
+                .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: insertionIndex)
             case .list, .compact:
                 LazyVStack(spacing: 0) {
                     ForEach(entries, id: \.book.identity) { entry in

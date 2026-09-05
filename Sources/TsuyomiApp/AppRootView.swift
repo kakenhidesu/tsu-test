@@ -86,6 +86,11 @@ public struct AppRootView: View {
             guard selected != .browse else { return }
             Task { await flow.popToRoot() }
         }
+        .onContinueUserActivity(ReadingActivity.type) { activity in
+            guard let route = ReadingActivity.route(from: activity.userInfo ?? [:]) else { return }
+            tab = .browse
+            Task { await flow.push(route) }
+        }
     }
 
     private var libraryTab: some View {
