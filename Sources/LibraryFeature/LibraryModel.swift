@@ -30,6 +30,7 @@ public final class LibraryModel: ObservableObject {
     @Published public private(set) var hiddenSystemNodes: Set<SystemLibraryFilter> = []
     @Published public private(set) var activeCollection: LibraryCollection?
     @Published public var isShortcutBarCollapsed = false
+    @Published public private(set) var isArranging = false
 
     private let library: LibraryRepository
     private let collections: CollectionStore
@@ -119,6 +120,30 @@ public final class LibraryModel: ObservableObject {
 
     public func cycleLayout() {
         layout = layout.next
+    }
+
+    /// Arranging is only meaningful over the whole shelf in its own order, so entering it puts the
+    /// shelf back into that state rather than persisting an order the reader cannot see.
+    public func setArranging(_ arranging: Bool) async {
+        isArranging = arranging
+        guard arranging else { return }
+        endSelection()
+        sort = .custom
+        sortDescending = false
+        filter = .all
+        if activeCollection != nil { await open(collection: nil) }
+    }
+
+    /// Persists the shelf's own order. Only reachable while arranging, so a drag can never contradict
+    /// a computed order.
+    public func move(_ identity: BookIdentity, to index: Int) async {
+        guard isArranging else { return }
+        var order = project(entries).map(.book.identity)
+        guard let from = order.firstIndex(of: identity) else { return }
+        order.remove(at: from)
+        order.insert(identity, at: min(max(index, 0), order.count))
+        try? await library.reorderLibrary(order)
+        await load()
     }
 
     /// A collection is a view over the same shelf, not a second shelf: it reuses the same entry list,

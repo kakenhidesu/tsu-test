@@ -11,6 +11,7 @@ public struct LibraryScreen: View {
     private let openBook: (BookIdentity) -> Void
     @State private var newCollectionTitle = ""
     @State private var pendingPair: [BookIdentity] = []
+    @State private var insertionIndex: Int?
 
     public init(
         model: LibraryModel,
@@ -62,6 +63,11 @@ public struct LibraryScreen: View {
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
+            Button(model.isArranging ? "完成排序" : "排序整理") {
+                Task { await model.setArranging(!model.isArranging) }
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
             Button(model.layout.title) { model.cycleLayout() }
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -87,13 +93,17 @@ public struct LibraryScreen: View {
         } else {
             switch model.layout {
             case .grid:
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: TsuyomiTheme.Metrics.gutter), count: 3),
-                          spacing: TsuyomiTheme.Metrics.gutter) {
-                    ForEach(entries, id: \.book.identity) { entry in
-                        gridCard(entry)
+                InsertionGridLayout(
+                    columns: 3,
+                    spacing: TsuyomiTheme.Metrics.gutter,
+                    insertionIndex: insertionIndex
+                ) {
+                    ForEach(Array(entries.enumerated()), id: .element.book.identity) { index, entry in
+                        gridCard(entry, at: index)
                     }
                 }
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+                .animation(.easeInOut(duration: 0.2), value: insertionIndex)
             case .list, .compact:
                 LazyVStack(spacing: 0) {
                     ForEach(entries, id: \.book.identity) { entry in
@@ -104,7 +114,9 @@ public struct LibraryScreen: View {
         }
     }
 
-    private func gridCard(_ entry: LibraryEntry) -> some View {
+    /// While arranging, a drop lands the book in this slot; otherwise it puts the two books in a new
+    /// collection. The mode decides, so one gesture never has to mean two things at once.
+    private func gridCard(_ entry: LibraryEntry, at index: Int) -> some View {
         TsuyomiCoverGridCard(
             title: entry.book.title,
             cover: coverState(entry.book),
@@ -115,10 +127,20 @@ public struct LibraryScreen: View {
         .onLongPressGesture { model.beginSelection(book: entry.book.identity) }
         .draggable(BookIdentityTransfer(identity: entry.book.identity))
         .dropDestination(for: BookIdentityTransfer.self) { items, _ in
-            let dropped = items.compactMap { try? $0.identity }.filter { $0 != entry.book.identity }
+            insertionIndex = nil
+            let dropped = items.compactMap { try? $0.identity }
             guard !dropped.isEmpty else { return false }
-            pendingPair = dropped + [entry.book.identity]
+            if model.isArranging {
+                guard let moved = dropped.first else { return false }
+                Task { await model.move(moved, to: index) }
+                return true
+            }
+            let others = dropped.filter { $0 != entry.book.identity }
+            guard !others.isEmpty else { return false }
+            pendingPair = others + [entry.book.identity]
             return true
+        } isTargeted: { targeted in
+            insertionIndex = targeted && model.isArranging ? index : nil
         }
     }
 
