@@ -215,20 +215,15 @@ public final class ControlledWebLoginSession: NSObject {
 extension ControlledWebLoginSession: WKNavigationDelegate {
     public func webView(
         _ webView: WKWebView,
-        decidePolicyFor navigationAction: WKNavigationAction,
-        decisionHandler: @escaping (WKNavigationActionPolicy) -> Void
-    ) {
-        guard let url = navigationAction.request.url else {
-            decisionHandler(.cancel)
-            return
-        }
+        decidePolicyFor navigationAction: WKNavigationAction
+    ) async -> WKNavigationActionPolicy {
+        guard let url = navigationAction.request.url else { return .cancel }
         guard isAllowed(url) else {
             if navigationAction.targetFrame?.isMainFrame ?? true {
                 navigation.clear()
                 onBlockedNavigation(url)
             }
-            decisionHandler(.cancel)
-            return
+            return .cancel
         }
         if navigationAction.targetFrame?.isMainFrame ?? false,
            let normalized = try? normalizedAllowedUrl(url.absoluteString) {
@@ -237,7 +232,7 @@ extension ControlledWebLoginSession: WKNavigationDelegate {
                 userInitiated: navigationAction.navigationType != .other
             )
         }
-        decisionHandler(.allow)
+        return .allow
     }
 
     public func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
