@@ -5,6 +5,7 @@ import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiSource
 import TsuyomiUI
+import UniformTypeIdentifiers
 
 enum ExtensionsSegment: String, CaseIterable, Hashable {
     case installed
@@ -24,6 +25,7 @@ public struct ExtensionsScreen: View {
     private let openPublisherKeys: () -> Void
     @State private var segment: ExtensionsSegment = .installed
     @State private var isAdding = false
+    @State private var isImporting = false
     @State private var base = ""
 
     public init(
@@ -67,8 +69,34 @@ public struct ExtensionsScreen: View {
                 Button("发布者") { openPublisherKeys() }
             }
             ToolbarItem(placement: .topBarTrailing) {
-                Button("添加仓库") { isAdding = true }
-                    .disabled(model.isBusy)
+                Menu("添加") {
+                    Button("添加仓库") { isAdding = true }
+                    Button("导入 .hxp 文件") { isImporting = true }
+                }
+                .disabled(model.isBusy)
+            }
+        }
+        .fileImporter(
+            isPresented: $isImporting,
+            allowedContentTypes: [UTType(filenameExtension: "hxp") ?? .data],
+            allowsMultipleSelection: false
+        ) { result in
+            guard case .success(let urls) = result, let url = urls.first else { return }
+            Task { await load(url) }
+        }
+        .sheet(
+            isPresented: Binding(
+                get: { model.pendingInstall != nil },
+                set: { if !$0 { model.discardPendingInstall() } }
+            )
+        ) {
+            if let prepared = model.pendingInstall {
+                InstallReviewScreen(
+                    prepared: prepared,
+                    isBusy: model.isBusy,
+                    onApprove: { Task { await model.approvePendingInstall() } },
+                    onCancel: { model.discardPendingInstall() }
+                )
             }
         }
         .alert("添加仓库", isPresented: $isAdding) {
@@ -211,5 +239,16 @@ struct RepositoryApprovalSheet: View {
                 }
             }
         }
+    }
+}
+
+extension ExtensionsScreen {
+    /// The picked file is read through a security-scoped resource and handed straight to verification;
+    /// nothing is copied anywhere before the archive proves it is what it claims to be.
+    private func load(_ url: URL) async {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let bytes = try? Data(contentsOf: url) else { return }
+        await model.importPackage(bytes)
     }
 }

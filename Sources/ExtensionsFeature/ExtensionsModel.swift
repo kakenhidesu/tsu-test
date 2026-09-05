@@ -23,6 +23,7 @@ public struct ExtensionsContent: Sendable {
 public final class ExtensionsModel: ObservableObject {
     @Published public private(set) var state: TsuyomiScreenState<ExtensionsContent> = .loading
     @Published public private(set) var pendingApproval: PendingRepositoryApproval?
+    @Published public private(set) var pendingInstall: PreparedExtensionInstall?
     @Published public private(set) var failureCode: String?
     @Published public private(set) var isBusy = false
 
@@ -124,6 +125,37 @@ public final class ExtensionsModel: ObservableObject {
         defer { isBusy = false }
         try? await repositories.remove(repositoryId)
         await load()
+    }
+
+    /// Installing a `.hxp` the reader picked themselves. It takes the same verification and approval
+    /// path a repository download takes; only the way the bytes arrived differs.
+    public func importPackage(_ archiveBytes: Data) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        failureCode = nil
+        do {
+            pendingInstall = try await lifecycle.prepare(archiveBytes: archiveBytes, declaring: nil)
+        } catch {
+            failureCode = SafeErrorCode.of(error)
+        }
+    }
+
+    public func approvePendingInstall() async {
+        guard let prepared = pendingInstall, !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            try await lifecycle.activate(prepared)
+            pendingInstall = nil
+            await load()
+        } catch {
+            failureCode = SafeErrorCode.of(error)
+        }
+    }
+
+    public func discardPendingInstall() {
+        pendingInstall = nil
     }
 
     public func uninstall(_ sourceId: SourceId) async {

@@ -83,3 +83,5 @@
 - `NSUserActivity` 只携带「哪本书的哪一章」，不携带任何进度：位置存在本地库里，恢复时按 locator 重新解析，因此活动对象本身永远不含阅读位置，也不参与 Handoff（`isEligibleForHandoff = false`）。
 - Reduce Motion 打开时，插入位让位与快捷栏收折的动画降级为无动画的直接状态切换，而不是缩短时长：这两处的反馈本来就有持久的文字/几何表达，不依赖动画。
 - v0 索引里 `revocations[].target.packageDigest` 指的是 manifest 的 `integrity.contentDigest`，不是归档文件的 sha256：`HxpArchiveVerifier` 按内容摘要判定撤销，因此把同一份内容重新打包不能绕过撤销。索引里的 `sha256` 仍是归档摘要，只用于下载完整性比对。
+- CI 额外产出一个未签名的 Debug 设备构建（`Tsuyomi-unsigned.ipa`）供 TrollStore 之类的工具旁加载：Debug 是唯一信任验收 fixture 发布者的配置，因此在没有可用仓库时也能导入测试扩展。Release 构建按设计拒绝该密钥。
+- 本地 `.hxp` 导入与仓库下载走同一条 `HxpArchiveVerifier → ExtensionInstaller` 路径与同一个审批屏，只是字节来源不同；不存在第二条更宽松的安装路径。
