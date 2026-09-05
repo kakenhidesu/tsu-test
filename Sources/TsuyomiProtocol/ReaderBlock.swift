@@ -131,7 +131,10 @@ public enum ReaderBlock: Hashable, Sendable, Codable {
             if let floor, floor < 1 { throw ProtocolError.invalidPostFloor }
             if let replyToPostId { try BookIdentity.requireRemoteId(replyToPostId, field: "replyToPostId") }
             guard (1...5_000).contains(blocks.count) else { throw ProtocolError.invalidPostBlocks }
-            guard blocks.allSatisfy({ if case .post = $0 { return false } else { return true } }) else {
+            guard blocks.allSatisfy({ block -> Bool in
+                if case .post = block { return false }
+                return true
+            }) else {
                 throw ProtocolError.invalidPostBlocks
             }
             guard blocks.map(\.blockId).hasDistinctElements else { throw ProtocolError.duplicatePostBlockIdentity }

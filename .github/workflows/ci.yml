@@ -37,14 +37,23 @@ jobs:
           if [ -z "$udid" ]; then echo "no iOS simulator available" >&2; exit 1; fi
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
 
-      - name: List schemes
-        run: xcodebuild -list -json
+      - name: Resolve package scheme
+        id: scheme
+        run: |
+          set -euo pipefail
+          xcodebuild -list -json
+          name=$(xcodebuild -list -json | python3 -c "
+          import json, sys
+          schemes = json.load(sys.stdin)['workspace']['schemes']
+          print('Tsuyomi-Package' if 'Tsuyomi-Package' in schemes else schemes[0])
+          ")
+          echo "name=$name" >> "$GITHUB_OUTPUT"
 
       - name: Build (iOS Simulator)
         run: |
           set -o pipefail
           xcodebuild build \
-            -scheme Tsuyomi-Package \
+            -scheme "${{ steps.scheme.outputs.name }}" \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -skipMacroValidation \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
@@ -53,7 +62,7 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild test \
-            -scheme Tsuyomi-Package \
+            -scheme "${{ steps.scheme.outputs.name }}" \
             -destination "id=${{ steps.sim.outputs.udid }}" \
             -skipMacroValidation \
             -resultBundlePath TestResults.xcresult

@@ -24,12 +24,4 @@ enum ProtocolFixtures {
         }
         return try Data(contentsOf: url)
     }
-
-    static func jsonFiles(in directory: String) throws -> [String] {
-        let url = root.appendingPathComponent(directory)
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: url.path) else {
-            throw XCTSkip("Missing fixture directory \(directory)")
-        }
-        return names.filter { $0.hasSuffix(".json") }.sorted().map { "\(directory)/\($0)" }
-    }
 }
