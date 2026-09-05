@@ -263,4 +263,98 @@ final class HostNetworkGatewayPolicyTests: XCTestCase {
         XCTAssertEqual(recorded[0].referrer?.absoluteString, "https://www.wenku8.net/book/1234.htm")
         XCTAssertNil(recorded[0].headers["cookie"])
     }
+
+    /// A site that redirects its own pages onto plain http is followed there: otherwise a session
+    /// the reader completed in the login window — which follows the same chain — can never be used.
+    /// The session still travels and the settled URL is reported as it landed.
+    func testSiteIssuedPlaintextRedirectOnADeclaredHostIsFollowed() async throws {
+        let transport = RecordingTransport { request in
+            request.url.scheme == "https"
+                ? HostHttpResponse(
+                    status: 302,
+                    finalUrl: request.url,
+                    headers: ["location": "http://www.wenku8.net/book/1234.htm"],
+                    bytes: Data()
+                )
+                : HostHttpResponse(
+                    status: 200,
+                    finalUrl: request.url,
+                    headers: ["content-type": "text/html; charset=utf-8"],
+                    bytes: Data("fixture".utf8)
+                )
+        }
+        let gateway = HostNetworkGateway(transport: transport)
+        let grant = try NetworkFixture.grant()
+        try await gateway.importSourceCookies(
+            grant: grant,
+            origin: try NetworkFixture.origin("https://www.wenku8.net"),
+            rawCookie: "session=opaque"
+        )
+
+        let response = try await gateway.request(grant: grant, request: try NetworkFixture.request())
+        XCTAssertEqual(response.status, 200)
+        XCTAssertEqual(response.finalUrl, "http://www.wenku8.net/book/1234.htm")
+        let recorded = await transport.requests()
+        XCTAssertEqual(recorded.compactMap(\.url.scheme), ["https", "http"])
+        XCTAssertEqual(recorded.last?.headers["cookie"], "session=opaque")
+    }
+
+    /// Only the scheme relaxes: a plaintext hop onto a host nobody declared is refused exactly as
+    /// its HTTPS form is.
+    func testPlaintextRedirectToAnUndeclaredHostIsStillRejected() async throws {
+        let transport = RecordingTransport { request in
+            HostHttpResponse(
+                status: 302,
+                finalUrl: request.url,
+                headers: ["location": "http://outside.example/redirected"],
+                bytes: Data()
+            )
+        }
+        await assertHostFailure(.redirectDisallowed) {
+            _ = try await HostNetworkGateway(transport: transport).request(
+                grant: try NetworkFixture.grant(),
+                request: try NetworkFixture.request()
+            )
+        }
+    }
+
+    /// The host never initiates plaintext. Only a destination the site itself chose may be one, so a
+    /// plaintext URL an extension asks for is refused before any request leaves.
+    func testAnExtensionCannotAskForAPlaintextUrl() async throws {
+        let transport = RecordingTransport()
+        await assertHostFailure(.invalidRequest) {
+            _ = try await HostNetworkGateway(transport: transport).request(
+                grant: try NetworkFixture.grant(),
+                request: try NetworkFixture.request(url: "http://www.wenku8.net/book/1234.htm")
+            )
+        }
+        let recorded = await transport.requests()
+        XCTAssertTrue(recorded.isEmpty)
+    }
+
+    /// The protected remote-write surface is the same surface in plaintext: a site-issued hop onto
+    /// its http form is not a way around the minted add context.
+    func testProtectedAddSurfaceIsRecognisedOnItsPlaintextForm() async throws {
+        let transport = RecordingTransport { request in
+            HostHttpResponse(
+                status: 302,
+                finalUrl: request.url,
+                headers: ["location": "http://www.wenku8.net/remote/shelf?mode=add&bid=42"],
+                bytes: Data()
+            )
+        }
+        let policy = try RemoteOperationRequestPolicy(
+            origin: try NetworkFixture.origin("https://www.wenku8.net"),
+            method: .get,
+            path: "/remote/shelf",
+            fixedParameters: ["mode": "add"],
+            remoteBookIdParameter: "bid"
+        )
+        await assertHostFailure(.invalidRequest) {
+            _ = try await HostNetworkGateway(transport: transport).request(
+                grant: try NetworkFixture.grant(remoteAddPolicy: policy),
+                request: try NetworkFixture.request()
+            )
+        }
+    }
 }

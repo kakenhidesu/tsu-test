@@ -90,7 +90,7 @@ public actor HostNetworkGateway {
                       let resolved = URL(string: location, relativeTo: current)?.absoluteURL else {
                     throw HostNetworkException(.redirectDisallowed)
                 }
-                current = try allowedUrl(resolved.absoluteString, grant: grant)
+                current = try reachableUrl(resolved.absoluteString, grant: grant)
                 continue
             }
             guard (200...299).contains(response.status) else { throw HostNetworkException(.transport) }
@@ -145,7 +145,7 @@ public actor HostNetworkGateway {
         )
         guard (100...599).contains(response.status) else { throw HostNetworkException(.transport) }
         guard response.bytes.count <= grant.maximumResponseBytes else { throw HostNetworkException(.responseLimit) }
-        let finalUrl = try allowedUrl(response.finalUrl.absoluteString, grant: grant)
+        let finalUrl = try reachableUrl(response.finalUrl.absoluteString, grant: grant)
         let decoded = try HostResponseDecoding.decode(
             response.bytes,
             requested: request.decode,
@@ -237,7 +237,7 @@ public actor HostNetworkGateway {
                 throw HostNetworkException(.redirectLimit)
             }
             guard let resolved = URL(string: location, relativeTo: url)?.absoluteURL,
-                  let next = try? allowedUrl(resolved.absoluteString, grant: grant) else {
+                  let next = try? reachableUrl(resolved.absoluteString, grant: grant) else {
                 throw HostNetworkException(.redirectDisallowed)
             }
             url = next
@@ -317,12 +317,24 @@ public actor HostNetworkGateway {
         }
     }
 
+    /// A URL an extension asked for. These are always HTTPS: the host never initiates plaintext.
     private func allowedUrl(_ value: String, grant: SourceNetworkGrant) throws -> URL {
         guard let url = URL(string: value), url.scheme?.lowercased() == "https" else {
             throw HostNetworkException(.invalidRequest)
         }
         let origin = try originOf(value)
         guard grant.origins.contains(origin) else { throw HostNetworkException(.disallowedOrigin) }
+        return url
+    }
+
+    /// A destination the site itself chose — a `Location` it sent, or the URL a response settled on.
+    /// It may fall back to plain http, because a site that redirects its own pages off HTTPS is
+    /// otherwise unreachable and the login window already follows the same chain. Host and port
+    /// still have to belong to a granted origin, so the scheme is the only thing relaxed.
+    private func reachableUrl(_ value: String, grant: SourceNetworkGrant) throws -> URL {
+        guard let url = URL(string: value), declaredOrigin(of: value, within: grant.origins) != nil else {
+            throw HostNetworkException(.disallowedOrigin)
+        }
         return url
     }
 

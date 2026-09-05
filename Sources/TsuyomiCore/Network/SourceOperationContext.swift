@@ -79,12 +79,17 @@ public struct RemoteOperationRequestPolicy: Hashable, Sendable {
     }
 
     /// True when a request would land on the protected remote-write surface, whatever it claims to
-    /// be doing. Only an explicitly minted add context may reach that surface.
+    /// be doing and whatever scheme it arrives on: the plaintext form of that URL is the same
+    /// surface. Only an explicitly minted add context may reach it.
     func matchesSurface(_ request: SourceNetworkRequest) -> Bool {
-        guard let requestOrigin = try? originOf(request.url), let path = pathOf(request.url) else { return false }
-        if request.method == method, path == self.path, requestOrigin == origin { return true }
+        guard let path = pathOf(request.url) else { return false }
+        if request.method == method, path == self.path,
+           declaredOrigin(of: request.url, within: [origin]) != nil {
+            return true
+        }
         return redirects.contains { redirect in
-            request.method == redirect.method && path == redirect.path && requestOrigin == redirect.origin
+            request.method == redirect.method && path == redirect.path
+                && declaredOrigin(of: request.url, within: [redirect.origin]) != nil
         }
     }
 }
@@ -220,6 +225,27 @@ func originOf(_ url: String) throws -> HttpsOrigin {
         throw HostNetworkException(.invalidRequest)
     }
     return origin
+}
+
+/// The declared origin a URL belongs to when the scheme is not what decides it. A site that
+/// redirects its own pages onto plain http still serves the same origin as far as a grant is
+/// concerned, and the controlled login window already follows such a chain, so a session captured
+/// there would otherwise be unusable. Host and port must still match a declared origin exactly:
+/// the scheme is the only thing relaxed, and nothing the host or an extension *asks* for goes
+/// through here — only a destination the site itself chose.
+func declaredOrigin(of url: String, within origins: Set<HttpsOrigin>) -> HttpsOrigin? {
+    guard let components = URLComponents(string: url),
+          let scheme = components.scheme?.lowercased(), scheme == "https" || scheme == "http",
+          let host = components.host?.lowercased(), !host.isEmpty,
+          components.user == nil, components.password == nil else {
+        return nil
+    }
+    return origins.first { declared in
+        guard let declaredComponents = URLComponents(string: declared.canonical),
+              declaredComponents.host?.lowercased() == host else { return false }
+        guard let port = components.port else { return true }
+        return port == declaredComponents.port ?? (scheme == "https" ? 443 : 80)
+    }
 }
 
 func pathOf(_ url: String) -> String? {

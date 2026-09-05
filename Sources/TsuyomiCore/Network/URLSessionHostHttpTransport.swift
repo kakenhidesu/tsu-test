@@ -52,16 +52,19 @@ public final class URLSessionHostHttpTransport: HostHttpTransport {
         } catch {
             throw HostNetworkException(.transport)
         }
-        guard let http = response as? HTTPURLResponse, let finalUrl = http.url else {
-            throw HostNetworkException(.transport)
-        }
+        guard let http = response as? HTTPURLResponse else { throw HostNetworkException(.transport) }
         guard data.count <= request.maximumResponseBytes else { throw HostNetworkException(.responseLimit) }
         var headers: [String: String] = [:]
         for (name, value) in http.allHeaderFields {
             guard let name = name as? String, let value = value as? String else { continue }
             headers[name.lowercased()] = value
         }
-        return HostHttpResponse(status: http.statusCode, finalUrl: finalUrl, headers: headers, bytes: data)
+        // The response belongs to the URL that was asked for: `HostTransportDelegate` refuses every
+        // redirection, so no hop can have happened. `HTTPURLResponse.url` reports CFNetwork's
+        // canonical form of that request instead — an empty path gains a "/", escapes are rewritten —
+        // which the gateway compares against the URL it issued and would read as a redirect the
+        // transport never followed.
+        return HostHttpResponse(status: http.statusCode, finalUrl: request.url, headers: headers, bytes: data)
     }
 
     static func map(_ failure: URLError) -> HostNetworkError {

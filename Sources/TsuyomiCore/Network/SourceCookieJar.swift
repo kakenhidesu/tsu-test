@@ -35,7 +35,8 @@ actor SourceCookieJar {
     }
 
     func requestHeader(_ grant: SourceNetworkGrant, url: URL) -> [String: String] {
-        guard let origin = try? originOf(url.absoluteString), grant.allowsCookies(origin) else { return [:] }
+        guard let origin = declaredOrigin(of: url.absoluteString, within: grant.origins),
+              grant.allowsCookies(origin) else { return [:] }
         let scope = Scope(sourceId: grant.sourceId, extensionVersion: grant.extensionVersion)
         let host = (url.host ?? "").lowercased()
         let path = url.path.isEmpty ? "/" : url.path
@@ -73,7 +74,8 @@ actor SourceCookieJar {
     }
 
     func store(_ grant: SourceNetworkGrant, url: URL, headers: [String: String]) {
-        guard let origin = try? originOf(url.absoluteString), grant.allowsCookies(origin) else { return }
+        guard let origin = declaredOrigin(of: url.absoluteString, within: grant.origins),
+              grant.allowsCookies(origin) else { return }
         let scope = Scope(sourceId: grant.sourceId, extensionVersion: grant.extensionVersion)
         let requestHost = (url.host ?? "").lowercased()
         var entries = cookies[scope] ?? []
