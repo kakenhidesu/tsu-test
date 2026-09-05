@@ -46,3 +46,9 @@
 - `ReaderDocumentSession.locator(atBlock:)` 为不移动阅读位置的只读取点：滑块拖动期间必须能构造预览目标而不改变真实位置。
 - 章节前后翻页越界时只进入相邻章；目录内任意跳转是显式选择，二者共用同一次 `flush`，因此进度写入点只有"换章/退出/离开前台"三处。
 - 每本书只保留一个语义位置，因此目录中的"已读"标记由该位置之前的章节推导，而不是另设逐章已读表（第二份会与进度不一致）。
+- 验证页族（`VerifiedPage`/`VerifiedDetailPage`/`VerifiedDirectoryPage`/`VerifiedChapterPage`）在 iOS 合并为单一 `verification(sourceId)`：Android 需要按页区分是因为它从 WebView 里取 HTML，而 iOS 禁用 `evaluateJavaScript`，落定后由宿主经 `HostNetworkGateway` 重新 GET，因此不存在"逐页验证变体"。
+- `directory(BookIdentity)` 路由在 iOS 不存在：目录已整合进详情页（第 6.4 节），再留一个独立路由就是无消费者的重复入口。
+- `RootTabs{library, browse, more}` 随 M4（书架）与 M6（更多）落地；M3 的组合根只有 browse 一个 `NavigationStack`，避免为尚不存在的屏留占位 tab。
+- `@main` 放在 Xcode App target，库里只有 `TsuyomiRootScene`：SPM target 内的 `@main` 会与测试宿主冲突，且组合根需要保持可被单元测试构造。
+- `SourceExtensionClient` 直接实现 `CoverMediaFetcher`：封面与正文共用同一份 `SourceNetworkGrant`（cookie 作用域、origin、响应上限），另建一个封面通道会复制一份可放宽的授权。
+- `LibraryWriteArbiter`（Android `DisplayWriteArbiter`）随 M4 书架显示写入一起落地：M3 没有任何显示字段写入需要它仲裁。
