@@ -143,8 +143,6 @@ public struct AboutScreen: View {
             Section {
                 Text("Tsuyomi 是一个本地优先的阅读器。它不使用账号，不上报使用数据，不做远程配置，也不会把你的书架同步到任何服务器。")
                     .font(TsuyomiTheme.Typography.supporting)
-                // The build number identifies exactly which build is installed, which is the only way
-                // to tell one sideloaded copy from another.
                 LabeledContent("版本", value: AboutScreen.version)
             }
             Section("许可证") {
