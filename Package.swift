@@ -12,7 +12,8 @@ let package = Package(
         .library(name: "TsuyomiCore", targets: ["TsuyomiCore"]),
         .library(name: "TsuyomiSource", targets: ["TsuyomiSource"]),
         .library(name: "TsuyomiReader", targets: ["TsuyomiReader"]),
-        .library(name: "TsuyomiUI", targets: ["TsuyomiUI"])
+        .library(name: "TsuyomiUI", targets: ["TsuyomiUI"]),
+        .library(name: "BrowseFeature", targets: ["BrowseFeature"])
     ],
     targets: [
         .target(name: "TsuyomiProtocol"),
@@ -49,6 +50,11 @@ let package = Package(
         .target(name: "TsuyomiReader", dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiUI"]),
         .testTarget(name: "TsuyomiReaderTests", dependencies: ["TsuyomiReader"]),
 
-        .target(name: "TsuyomiUI", dependencies: ["TsuyomiCore", "TsuyomiProtocol"])
+        .target(name: "TsuyomiUI", dependencies: ["TsuyomiCore", "TsuyomiProtocol"]),
+
+        .target(
+            name: "BrowseFeature",
+            dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiSource", "TsuyomiUI"]
+        )
     ]
 )
