@@ -46,7 +46,7 @@ let package = Package(
         .target(name: "TsuyomiSource", dependencies: ["CQuickJS", "TsuyomiCore", "TsuyomiProtocol"]),
         .testTarget(name: "TsuyomiSourceTests", dependencies: ["TsuyomiSource", "TsuyomiCore"]),
 
-        .target(name: "TsuyomiReader", dependencies: ["TsuyomiCore", "TsuyomiProtocol"]),
+        .target(name: "TsuyomiReader", dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiUI"]),
         .testTarget(name: "TsuyomiReaderTests", dependencies: ["TsuyomiReader"]),
 
         .target(name: "TsuyomiUI", dependencies: ["TsuyomiCore", "TsuyomiProtocol"])

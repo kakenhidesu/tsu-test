@@ -4,7 +4,7 @@ import SwiftUI
 
 /// The one place a screen's non-content state is drawn. Every screen uses it so "loading", "empty",
 /// "offline", and "failed" look and behave identically, and so a failure always offers a retry.
-public enum TsuyomiScreenState<Content>: Sendable where Content: Sendable {
+public enum TsuyomiScreenState<Content> {
     case loading
     case empty(title: LocalizedStringKey, detail: LocalizedStringKey?)
     case offline(detail: LocalizedStringKey?)
@@ -12,7 +12,7 @@ public enum TsuyomiScreenState<Content>: Sendable where Content: Sendable {
     case content(Content)
 }
 
-public struct StateView<Content: Sendable, Body: View>: View {
+public struct StateView<Content, Body: View>: View {
     private let state: TsuyomiScreenState<Content>
     private let retry: (() -> Void)?
     private let content: (Content) -> Body
