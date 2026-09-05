@@ -110,7 +110,9 @@ let package = Package(
         ),
         .testTarget(
             name: "TsuyomiAppTests",
-            dependencies: ["BookFeature", "ReaderFeature", "SearchFeature", "TsuyomiApp"]
+            dependencies: [
+                "BookFeature", "ExtensionsFeature", "ReaderFeature", "SearchFeature", "TsuyomiApp"
+            ]
         )
     ]
 )
