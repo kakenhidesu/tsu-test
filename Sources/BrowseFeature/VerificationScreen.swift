@@ -6,13 +6,28 @@ import TsuyomiProtocol
 import TsuyomiUI
 import WebKit
 
+public struct BlockedNavigation: Sendable {
+    public let url: URL
+    public let reason: WebNavigationBlock
+
+    var explanation: String {
+        switch reason {
+        case .notHttps:
+            return "已拦截前往 \(url.host ?? "该地址") 的跳转：它不是 HTTPS。宿主只允许加密连接，"
+                + "如果站点把登录页重定向到 http，就无法在这里完成登录。"
+        case .originNotDeclared:
+            return "已拦截前往 \(url.host ?? "该地址") 的跳转：它不在该来源声明的站点范围内。"
+        }
+    }
+}
+
 /// The user completes a login or a site challenge here by hand. The host never scripts the page,
 /// never solves a challenge, and writes nothing remotely; closing the sheet stores nothing.
 @MainActor
 public final class VerificationModel: ObservableObject {
     @Published public private(set) var webView: WKWebView?
     @Published public private(set) var failure: String?
-    @Published public private(set) var blockedHost: String?
+    @Published public private(set) var blocked: BlockedNavigation?
     @Published public private(set) var isFinished = false
 
     private let sourceId: String
@@ -43,8 +58,8 @@ public final class VerificationModel: ObservableObject {
                 sourceId: sourceId,
                 allowedOrigins: origins,
                 sessions: sessions,
-                onBlockedNavigation: { [weak self] url in
-                    Task { @MainActor in self?.blockedHost = url.host }
+                onBlockedNavigation: { [weak self] url, reason in
+                    Task { @MainActor in self?.blocked = BlockedNavigation(url: url, reason: reason) }
                 }
             )
             session = opened
@@ -122,8 +137,8 @@ public struct VerificationScreen: View {
     private var notice: some View {
         VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
             Text("请在下面自行完成登录或人工验证。应用不会替你点击、填写或绕过任何验证。")
-            if let host = model.blockedHost {
-                Text("已拦截前往 \(host) 的跳转：它不在该来源声明的站点范围内。")
+            if let blocked = model.blocked {
+                Text(blocked.explanation)
                     .foregroundStyle(TsuyomiTheme.Palette.warning)
             }
         }

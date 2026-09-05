@@ -27,6 +27,14 @@ public enum WebLoginSessionError: Error, Equatable, Sendable {
     case noSettledPage
 }
 
+/// Why a navigation was refused. A site that redirects to plain HTTP is refused for a different
+/// reason than one that leaves the declared origins, and telling the reader they are the same sends
+/// them looking for a fault in the extension's declaration that is not there.
+public enum WebNavigationBlock: String, Sendable, Equatable, CaseIterable {
+    case notHttps = "NOT_HTTPS"
+    case originNotDeclared = "ORIGIN_NOT_DECLARED"
+}
+
 /// A user-visible, one-at-a-time login or verification session. Web content is never handed to an
 /// extension: the session only proves which declared-origin page settled and stores the resulting
 /// declared-origin cookies and the exact user agent into one encrypted source/origin partition,
@@ -36,7 +44,7 @@ public final class ControlledWebLoginSession: NSObject {
     private let sourceId: String
     private let allowedOrigins: Set<HttpsOrigin>
     private let sessions: VerifiedBrowserSessionStore
-    private let onBlockedNavigation: (URL) -> Void
+    private let onBlockedNavigation: (URL, WebNavigationBlock) -> Void
 
     private var webView: WKWebView?
     private var isActive = false
@@ -46,7 +54,7 @@ public final class ControlledWebLoginSession: NSObject {
         sourceId: String,
         allowedOrigins: Set<HttpsOrigin>,
         sessions: VerifiedBrowserSessionStore,
-        onBlockedNavigation: @escaping (URL) -> Void = { _ in }
+        onBlockedNavigation: @escaping (URL, WebNavigationBlock) -> Void = { _, _ in }
     ) throws {
         guard isNonBlank(sourceId), !allowedOrigins.isEmpty else {
             throw WebLoginSessionError.originNotDeclared
@@ -185,8 +193,11 @@ public final class ControlledWebLoginSession: NSObject {
         return normalized
     }
 
-    private func isAllowed(_ url: URL) -> Bool {
-        (try? normalizedAllowedUrl(url.absoluteString)) != nil
+    private func blockReason(_ url: URL) -> WebNavigationBlock? {
+        guard url.scheme?.lowercased() == "https" else { return .notHttps }
+        guard let origin = try? ControlledWebLoginSession.origin(of: url.absoluteString),
+              allowedOrigins.contains(origin) else { return .originNotDeclared }
+        return nil
     }
 
     nonisolated static func origin(of url: String) throws -> HttpsOrigin {
@@ -218,10 +229,10 @@ extension ControlledWebLoginSession: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction
     ) async -> WKNavigationActionPolicy {
         guard let url = navigationAction.request.url else { return .cancel }
-        guard isAllowed(url) else {
+        if let reason = blockReason(url) {
             if navigationAction.targetFrame?.isMainFrame ?? true {
                 navigation.clear()
-                onBlockedNavigation(url)
+                onBlockedNavigation(url, reason)
             }
             return .cancel
         }

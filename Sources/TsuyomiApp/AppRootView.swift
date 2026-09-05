@@ -142,7 +142,12 @@ public struct AppRootView: View {
                 openSearch: { push(.search($0)) },
                 openRemoteLibrary: { push(.remoteLibrary($0)) },
                 openSignIn: { push(.verification($0)) },
-                openExtensions: { push(.extensions) }
+                openExtensions: {
+                    Task {
+                        await container.loadTrust()
+                        await flow.push(.extensions)
+                    }
+                }
             )
         )
     }
