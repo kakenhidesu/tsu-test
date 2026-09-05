@@ -31,7 +31,8 @@ enum HxpTestArchive {
         }
         manifest["version"] = .string(version)
         let canonicalManifest = try Rfc8785.canonicalize(.object(manifest))
-        guard let contentDigest = manifest.string("contentDigest") else {
+        // The digest covers the file list, not the version, so bumping the version leaves it intact.
+        guard let contentDigest = manifest.object("integrity")?.string("contentDigest") else {
             throw HxpVerificationError.invalidManifest
         }
         var message = HxpArchiveVerifier.signaturePrefix
