@@ -87,6 +87,17 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 
 | 项 | 原因 |
 |---|---|
-| 反向 import 编译失败验证 | 依赖图已由 `Package.swift` 强制（`TsuyomiProtocol` 无依赖、`TsuyomiCore → TsuyomiProtocol`、`TsuyomiSource → CQuickJS/TsuyomiCore`、`TsuyomiReader → TsuyomiCore`）；一次性反向 target 验证待 App target 建立后补记 |
 | `KeychainAesGcm` 单元测试 | 模拟器 SPM 测试无 keychain 授权；分区语义由内存 `AeadPort` 覆盖，生产实现走集成路径 |
-| M5 端到端、M6 无障碍核对 | 见上表 |
+| Dynamic Type `.accessibility3` 与深浅色目视核对 | 需要在模拟器上人工看，CI 不覆盖 |
+
+## 反向 import 验证（M0 门，已完成）
+
+一次性建立 `ReverseImportCheck` target（不声明任何依赖，内含 `import TsuyomiCore`）并作为 product 暴露，
+使其进入 `Tsuyomi-Package` 的构建图。CI run `33966419562` 报出预期错误：
+
+```
+Sources/ReverseImportCheck/ReverseImport.swift:5:8: error: no such module 'TsuyomiCore'
+```
+
+确认 SwiftPM 强制依赖边界后该 target 已删除。第一次尝试只加 target 未加 product，目标未被构建、
+CI 误报为通过——只加 target 不足以验证，必须让它进入构建图。
