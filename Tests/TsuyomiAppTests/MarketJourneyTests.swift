@@ -114,6 +114,44 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
         XCTAssertEqual(world.trust.trusted.map(\.keyId), [Phase2TestPublisher.keyId])
     }
+
+    /// A picked archive is consumed once, and a verified import stays reported until the review is
+    /// decided either way; deciding clears the report together with the pending install.
+    @MainActor
+    func testLocalImportStaysReportedUntilTheReviewIsDecided() async throws {
+        let world = try await MarketWorld(directory: directory)
+        let key = try Phase2TestPublisher.key()
+        try await world.trust.approve(
+            TrustedPublisher(
+                keyId: key.keyId,
+                publicKey: key.publicKey,
+                trust: .builtInTest,
+                repositoryId: nil,
+                approvedAt: Date()
+            )
+        )
+        let picked = directory.appendingPathComponent("picked.hxp")
+        try JourneyFixtures.data("wenku8-fixture.hxp").write(to: picked)
+
+        await world.model.importPackage(at: picked)
+        XCTAssertNil(world.model.failureCode)
+        XCTAssertNotNil(world.model.pendingInstall)
+        XCTAssertNotNil(world.model.importStatus)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: picked.path))
+
+        world.model.discardPendingInstall()
+        XCTAssertNil(world.model.pendingInstall)
+        XCTAssertNil(world.model.importStatus)
+
+        try JourneyFixtures.data("wenku8-fixture.hxp").write(to: picked)
+        await world.model.importPackage(at: picked)
+        await world.model.approvePendingInstall()
+        XCTAssertNil(world.model.failureCode)
+        XCTAssertNil(world.model.pendingInstall)
+        XCTAssertNil(world.model.importStatus)
+        let installed = try await world.registry.installedSources()
+        XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
+    }
 }
 
 /// Serves exactly the three paths a repository exposes. Anything else is a 404, so a stray request

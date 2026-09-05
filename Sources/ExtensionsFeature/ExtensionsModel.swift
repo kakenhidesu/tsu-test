@@ -138,22 +138,23 @@ public final class ExtensionsModel: ObservableObject {
             return
         }
         isBusy = true
+        defer { isBusy = false }
         failureCode = nil
         importStatus = "已选择 \(url.lastPathComponent)"
-        defer {
-            importStatus = nil
-            isBusy = false
-        }
         let bytes = try? Data(contentsOf: url)
         try? FileManager.default.removeItem(at: url)
         guard let bytes else {
+            importStatus = nil
             failureCode = "UNREADABLE_FILE"
             return
         }
         importStatus = "已读取 \(bytes.count) 字节，正在校验"
         do {
-            pendingInstall = try await lifecycle.prepare(archiveBytes: bytes, declaring: nil)
+            let prepared = try await lifecycle.prepare(archiveBytes: bytes, declaring: nil)
+            importStatus = "校验通过，等待安装审批"
+            pendingInstall = prepared
         } catch {
+            importStatus = nil
             failureCode = SafeErrorCode.of(error)
         }
     }
@@ -165,6 +166,7 @@ public final class ExtensionsModel: ObservableObject {
         isBusy = true
         defer {
             pendingInstall = nil
+            importStatus = nil
             isBusy = false
         }
         do {
@@ -177,6 +179,7 @@ public final class ExtensionsModel: ObservableObject {
 
     public func discardPendingInstall() {
         pendingInstall = nil
+        importStatus = nil
     }
 
     public func uninstall(_ sourceId: SourceId) async {

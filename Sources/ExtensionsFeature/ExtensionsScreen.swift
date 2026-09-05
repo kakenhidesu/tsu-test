@@ -27,7 +27,6 @@ public struct ExtensionsScreen: View {
     @State private var segment: ExtensionsSegment = .installed
     @State private var isAdding = false
     @State private var isImporting = false
-    @State private var pickedArchive: URL?
     @State private var base = ""
 
     public init(
@@ -49,16 +48,6 @@ public struct ExtensionsScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(TsuyomiTheme.Metrics.gutter)
-            .sheet(isPresented: $isImporting, onDismiss: {
-                guard let url = pickedArchive else { return }
-                pickedArchive = nil
-                Task { await model.importPackage(at: url) }
-            }) {
-                ArchivePicker { url in
-                    pickedArchive = url
-                    isImporting = false
-                }
-            }
             if let status = model.importStatus {
                 Text(status)
                     .font(TsuyomiTheme.Typography.caption)
@@ -85,6 +74,11 @@ public struct ExtensionsScreen: View {
                     }
                 }
                 .listStyle(.insetGrouped)
+            }
+        }
+        .background {
+            ArchivePicker(isPresented: $isImporting) { url in
+                Task { await model.importPackage(at: url) }
             }
         }
         .navigationTitle("扩展")
@@ -181,7 +175,7 @@ public struct ExtensionsScreen: View {
                             .font(TsuyomiTheme.Typography.caption)
                             .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                     }
-                    .frame(maxWidth: .infinity, minHeight: TsuyomiTheme.Metrics.minimumTouchTarget, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .buttonStyle(.plain)
                 .swipeActions {
@@ -194,39 +188,74 @@ public struct ExtensionsScreen: View {
     }
 }
 
+struct ArchivePicker: UIViewControllerRepresentable {
+    @Binding var isPresented: Bool
+    let onPick: (URL) -> Void
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        let anchor = UIViewController()
+        anchor.view.isUserInteractionEnabled = false
+        return anchor
+    }
+
+    func updateUIViewController(_ anchor: UIViewController, context: Context) {
+        guard isPresented, anchor.presentedViewController == nil else { return }
+        let picker = ArchivePickerController { url in
+            isPresented = false
+            if let url { onPick(url) }
+        }
+        anchor.present(picker, animated: true)
+    }
+}
+
 /// The system's document picker, asked for a copy: the archive arrives in this app's own temporary
 /// directory, so reading it never depends on a security-scoped grant. Every type is selectable
 /// because an extension is admitted by verifying its bytes, not by its name.
-struct ArchivePicker: UIViewControllerRepresentable {
-    let onFinish: (URL?) -> Void
+final class ArchivePickerController: UIViewController, UIDocumentPickerDelegate {
+    private let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+    private let onFinish: (URL?) -> Void
+    private var picked: URL?
 
-    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
-
-    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
-        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-        picker.delegate = context.coordinator
-        return picker
+    init(onFinish: @escaping (URL?) -> Void) {
+        self.onFinish = onFinish
+        super.init(nibName: nil, bundle: nil)
     }
 
-    func updateUIViewController(_ picker: UIDocumentPickerViewController, context: Context) {
-        context.coordinator.onFinish = onFinish
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        return nil
     }
 
-    @MainActor
-    final class Coordinator: NSObject, UIDocumentPickerDelegate {
-        var onFinish: (URL?) -> Void
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        picker.delegate = self
+        addChild(picker)
+        picker.view.frame = view.bounds
+        picker.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(picker.view)
+        picker.didMove(toParent: self)
+    }
 
-        init(onFinish: @escaping (URL?) -> Void) {
-            self.onFinish = onFinish
-        }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard isBeingDismissed else { return }
+        let url = picked
+        picked = nil
+        onFinish(url)
+    }
 
-        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-            onFinish(urls.first)
-        }
+    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        picked = urls.first
+        closeUnlessAlreadyClosing()
+    }
 
-        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-            onFinish(nil)
-        }
+    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        closeUnlessAlreadyClosing()
+    }
+
+    private func closeUnlessAlreadyClosing() {
+        guard presentingViewController != nil, !isBeingDismissed else { return }
+        dismiss(animated: true)
     }
 }
 
