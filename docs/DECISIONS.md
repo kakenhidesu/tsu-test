@@ -82,3 +82,4 @@
 - 帮助内容回答的是这套设计本身造成的问题（为什么要装扩展、为什么在浏览器里登录、为什么不同步），不复述界面上已经写着的东西。
 - `NSUserActivity` 只携带「哪本书的哪一章」，不携带任何进度：位置存在本地库里，恢复时按 locator 重新解析，因此活动对象本身永远不含阅读位置，也不参与 Handoff（`isEligibleForHandoff = false`）。
 - Reduce Motion 打开时，插入位让位与快捷栏收折的动画降级为无动画的直接状态切换，而不是缩短时长：这两处的反馈本来就有持久的文字/几何表达，不依赖动画。
+- v0 索引里 `revocations[].target.packageDigest` 指的是 manifest 的 `integrity.contentDigest`，不是归档文件的 sha256：`HxpArchiveVerifier` 按内容摘要判定撤销，因此把同一份内容重新打包不能绕过撤销。索引里的 `sha256` 仍是归档摘要，只用于下载完整性比对。

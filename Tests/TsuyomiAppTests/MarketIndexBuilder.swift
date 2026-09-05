@@ -71,7 +71,7 @@ enum MarketIndexBuilder {
         return (canonical, try key.signature(for: RepositoryIndexCodec.signaturePrefix + canonical))
     }
 
-    private static func manifestObject(_ archive: Data) throws -> [String: JSONValue] {
+    static func manifestObject(_ archive: Data) throws -> [String: JSONValue] {
         let limits = HxpArchiveLimits()
         let reader = try ZipReader(
             archive,
@@ -81,5 +81,13 @@ enum MarketIndexBuilder {
         let entry = try XCTUnwrap(reader.entries.first { $0.name == "manifest.json" })
         let bytes = try reader.read(entry, maximumCompressionRatio: limits.maximumCompressionRatio)
         return try XCTUnwrap(try JSONDecoder().decode(JSONValue.self, from: bytes).objectValue)
+    }
+}
+
+extension MarketIndexBuilder {
+    /// The digest a revocation names. It identifies the package's content, not one particular zip, so
+    /// repackaging the same payload does not escape a revocation.
+    static func contentDigest(of archive: Data) throws -> String {
+        try XCTUnwrap(try manifestObject(archive).object("integrity")?.string("contentDigest"))
     }
 }

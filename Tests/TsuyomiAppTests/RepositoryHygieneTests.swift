@@ -43,8 +43,12 @@ final class RepositoryHygieneTests: XCTestCase {
 
     func testNoFileExceedsTheLineBudget() throws {
         for file in try swiftFiles() {
-            let lines = try String(contentsOf: file, encoding: .utf8).split(separator: "\n", omittingEmptySubsequences: false)
-            XCTAssertLessThanOrEqual(lines.count, 400, "\(file.lastPathComponent) is \(lines.count) lines")
+            let text = try String(contentsOf: file, encoding: .utf8)
+            // A file ending in a newline has no empty last line; counting the terminator would make
+            // every well-formed file read one line longer than it is.
+            let lines = text.hasSuffix("\n") ? text.dropLast() : Substring(text)
+            let count = lines.split(separator: "\n", omittingEmptySubsequences: false).count
+            XCTAssertLessThanOrEqual(count, 400, "\(file.lastPathComponent) is \(count) lines")
         }
     }
 

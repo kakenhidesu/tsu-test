@@ -76,7 +76,8 @@ final class MarketJourneyTests: XCTestCase {
         let afterUpdate = try await world.registry.installedSources()
         XCTAssertEqual(afterUpdate.map(\.version.original), ["99.0.0"])
 
-        let digest = Sha256.hex(bumped)
+        // A revocation names the manifest content digest, so re-zipping the same payload cannot dodge it.
+        let digest = try MarketIndexBuilder.contentDigest(of: bumped)
         world.host.publish(
             index: try world.index(packages: [bumped], revokingPackageDigest: digest),
             packages: ["v1": bumped]
