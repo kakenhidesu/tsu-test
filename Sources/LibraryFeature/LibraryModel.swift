@@ -8,7 +8,6 @@ import TsuyomiUI
 
 public struct LibraryContent: Sendable {
     public let entries: [LibraryEntry]
-    public let collections: [LibraryCollection]
 }
 
 public enum LibrarySelectionKind: Sendable, Equatable {
@@ -30,6 +29,7 @@ public final class LibraryModel: ObservableObject {
     @Published public private(set) var selectedCollections: Set<String> = []
     @Published public private(set) var hiddenSystemNodes: Set<SystemLibraryFilter> = []
     @Published public private(set) var activeCollection: LibraryCollection?
+    @Published public var isShortcutBarCollapsed = false
 
     private let library: LibraryRepository
     private let collections: CollectionStore
@@ -46,8 +46,8 @@ public final class LibraryModel: ObservableObject {
         )
     }
 
-    public var visibleEntries: [LibraryEntry] {
-        LibraryProjection.apply(entries, filter: filter, sort: sort, descending: sortDescending)
+    public func project(_ values: [LibraryEntry]) -> [LibraryEntry] {
+        LibraryProjection.apply(values, filter: filter, sort: sort, descending: sortDescending)
     }
 
     public var visibleSystemNodes: [SystemLibraryFilter] {
@@ -55,6 +55,49 @@ public final class LibraryModel: ObservableObject {
     }
 
     public var isSelecting: Bool { selectionKind != nil }
+
+    public var isShortcutBarLocked: Bool { preferences.library.shortcutLocked }
+
+    public var shortcuts: [LibraryShortcut] {
+        LibraryShortcutOrder.resolve(
+            storedOrder: preferences.library.shortcutOrder,
+            systemNodes: visibleSystemNodes,
+            collections: allCollections
+        )
+    }
+
+    public func title(of shortcut: LibraryShortcut) -> String {
+        switch shortcut {
+        case .system(let filter): return filter.title
+        case .collection(let id):
+            return allCollections.first { $0.collectionId == id }?.title ?? id
+        }
+    }
+
+    public func setShortcutBarLocked(_ locked: Bool) {
+        preferences.setShortcutLocked(locked)
+        objectWillChange.send()
+    }
+
+    /// Reordering writes the whole resolved order, so a later collection rename or a hidden system
+    /// node cannot leave a gap the stored list still claims.
+    public func moveShortcut(from source: IndexSet, to destination: Int) {
+        var current = shortcuts
+        current.move(fromOffsets: source, toOffset: destination)
+        preferences.setShortcutOrder(current.map(.id))
+        objectWillChange.send()
+    }
+
+    public func activate(_ shortcut: LibraryShortcut) async {
+        switch shortcut {
+        case .system(let node):
+            await open(collection: nil)
+            filter = node
+        case .collection(let id):
+            guard let collection = allCollections.first(where: { $0.collectionId == id }) else { return }
+            await open(collection: collection)
+        }
+    }
 
     public func load() async {
         do {
@@ -68,7 +111,7 @@ public final class LibraryModel: ObservableObject {
                 state = .empty(title: "书架还是空的", detail: "在来源里找到一本书，然后加入书架。")
                 return
             }
-            state = .content(LibraryContent(entries: entries, collections: allCollections))
+            state = .content(LibraryContent(entries: entries))
         } catch {
             state = .failed(code: SafeErrorCode.of(error), detail: "无法读取本地书架。")
         }
@@ -132,7 +175,7 @@ public final class LibraryModel: ObservableObject {
 
     public func selectAll() {
         switch selectionKind {
-        case .books: selectedBooks = Set(visibleEntries.map(\.book.identity))
+        case .books: selectedBooks = Set(project(entries).map(.book.identity))
         case .collections: selectedCollections = Set(allCollections.map(\.collectionId))
         case nil: break
         }

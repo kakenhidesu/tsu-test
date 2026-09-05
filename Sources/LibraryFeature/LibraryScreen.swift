@@ -26,11 +26,8 @@ public struct LibraryScreen: View {
         StateView(model.state, retry: { Task { await model.load() } }) { content in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
-                    systemNodes
-                    if !content.collections.isEmpty {
-                        collectionRow(content.collections)
-                    }
-                    books
+                    LibraryShortcutBar(model: model)
+                    books(model.project(content.entries))
                 }
                 .padding(.vertical, TsuyomiTheme.Metrics.gutter)
             }
@@ -79,74 +76,9 @@ public struct LibraryScreen: View {
         }
     }
 
-    private var systemNodes: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-                ForEach(model.visibleSystemNodes, id: \.self) { node in
-                    Button(node.title) { model.filter = node }
-                        .buttonStyle(.bordered)
-                        .tint(model.filter == node ? TsuyomiTheme.Palette.accent : nil)
-                        .contextMenu {
-                            if node != .all {
-                                Button("隐藏此入口") { model.setSystemNode(node, hidden: true) }
-                            }
-                            ForEach(SystemLibraryFilter.allCases.filter(model.hiddenSystemNodes.contains), id: \.self) { hidden in
-                                Button("恢复\(hidden.title)") { model.setSystemNode(hidden, hidden: false) }
-                            }
-                        }
-                }
-            }
-            .font(TsuyomiTheme.Typography.supporting)
-            .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-        }
-        .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
-    }
-
-    private func collectionRow(_ collections: [LibraryCollection]) -> some View {
-        VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
-            Text("收藏夹")
-                .font(TsuyomiTheme.Typography.sectionTitle)
-                .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-                    ForEach(collections, id: \.collectionId) { collection in
-                        collectionChip(collection)
-                    }
-                }
-                .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-            }
-        }
-    }
-
-    private func collectionChip(_ collection: LibraryCollection) -> some View {
-        Button {
-            if model.selectionKind == .collections {
-                model.toggle(collection: collection.collectionId)
-            } else if model.selectionKind == .books {
-                let selected = Array(model.selectedBooks)
-                Task { await model.addBooks(selected, to: collection.collectionId) }
-            } else {
-                Task { await model.open(collection: collection) }
-            }
-        } label: {
-            Label(collection.title, systemImage: collection.kind == .smart ? "wand.and.stars" : "folder")
-                .font(TsuyomiTheme.Typography.supporting)
-                .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
-        }
-        .buttonStyle(.bordered)
-        .tint(model.selectedCollections.contains(collection.collectionId) ? TsuyomiTheme.Palette.accent : nil)
-        .onLongPressGesture { model.beginSelection(collection: collection.collectionId) }
-        .dropDestination(for: BookIdentityTransfer.self) { items, _ in
-            let identities = items.compactMap { try? $0.identity }
-            guard !identities.isEmpty else { return false }
-            Task { await model.addBooks(identities, to: collection.collectionId) }
-            return true
-        }
-    }
 
     @ViewBuilder
-    private var books: some View {
-        let entries = model.visibleEntries
+    private func books(_ entries: [LibraryEntry]) -> some View {
         if entries.isEmpty {
             Text("这个筛选下还没有书。")
                 .font(TsuyomiTheme.Typography.supporting)
