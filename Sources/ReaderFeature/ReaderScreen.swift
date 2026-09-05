@@ -103,7 +103,6 @@ public struct ReaderScreen: View {
                             TsuyomiStatusBadge("当前", tone: .positive)
                         }
                     }
-                    .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
                 }
                 .buttonStyle(.plain)
             }

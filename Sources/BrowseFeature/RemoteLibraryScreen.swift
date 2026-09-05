@@ -110,7 +110,6 @@ public struct RemoteLibraryScreen: View {
                     .disabled(model.isBusy)
             }
             .font(TsuyomiTheme.Typography.supporting)
-            .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
             .background(.bar)
         }

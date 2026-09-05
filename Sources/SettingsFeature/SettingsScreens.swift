@@ -100,7 +100,6 @@ public struct DataSettingsScreen: View {
             }
             Section {
                 Button("打开数据迁移") { openTransfer() }
-                    .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
             }
         }
         .navigationTitle("数据")
@@ -121,7 +120,6 @@ public struct HelpScreen: View {
                         .font(TsuyomiTheme.Typography.supporting)
                         .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 }
-                .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
             }
         }
         .listStyle(.insetGrouped)

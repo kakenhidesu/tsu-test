@@ -95,7 +95,6 @@ public struct RepositoryDetailScreen: View {
             Spacer()
             badge(row.status)
         }
-        .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
     }
 
     @ViewBuilder

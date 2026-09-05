@@ -40,7 +40,6 @@ public struct PublisherKeysScreen: View {
                             }
                         }
                     }
-                    .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
                     .swipeActions {
                         Button("移除信任", role: .destructive) { pendingRemoval = publisher }
                     }

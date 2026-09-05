@@ -56,7 +56,6 @@ struct MoreScreen: View {
     private func row(_ title: LocalizedStringKey, _ symbol: String, _ route: MoreRoute) -> some View {
         NavigationLink(value: route) {
             Label(title, systemImage: symbol)
-                .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
         }
     }
 

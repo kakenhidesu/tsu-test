@@ -144,7 +144,6 @@ public struct BookScreen: View {
                     TsuyomiStatusBadge("继续", tone: .positive)
                 }
             }
-            .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
         }
         .buttonStyle(.plain)
     }

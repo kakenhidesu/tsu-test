@@ -153,7 +153,6 @@ public struct ExtensionsScreen: View {
                         .font(TsuyomiTheme.Typography.caption)
                         .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 }
-                .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
                 .swipeActions {
                     Button("卸载", role: .destructive) {
                         Task { await model.uninstall(source.sourceId) }
