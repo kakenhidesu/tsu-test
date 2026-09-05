@@ -43,7 +43,8 @@ final class SourceJourneyTests: XCTestCase {
         XCTAssertFalse(results.isStaleOffline)
         XCTAssertEqual(results.items.first?.identity.remoteBookId, "1234")
         let identity = try XCTUnwrap(results.items.first?.identity)
-        XCTAssertEqual(try await world.library.searchHistory(sourceId: world.sourceId.value), ["雾港"])
+        let history = try await world.library.searchHistory(sourceId: world.sourceId.value)
+        XCTAssertEqual(history, ["雾港"])
 
         let book = BookModel(
             identity: identity,
@@ -83,7 +84,8 @@ final class SourceJourneyTests: XCTestCase {
         XCTAssertFalse(opened.hasPrevious)
 
         await reader.flush()
-        let stored = try XCTUnwrap(try await world.progress.progress(identity))
+        let saved = try await world.progress.progress(identity)
+        let stored = try XCTUnwrap(saved)
         XCTAssertEqual(stored.locator.document.contentId, "10001")
         XCTAssertNotNil(stored.locator.blockId)
         XCTAssertNotNil(stored.locator.textAnchorDigest)
@@ -179,7 +181,7 @@ final class FixtureTransport: HostHttpTransport {
 
     func execute(_ request: HostHttpRequest) async throws -> HostHttpResponse {
         if request.method != .get { writes.withLock { $0 += 1 } }
-        let name = forcedPage ?? FixtureTransport.page(for: request.url)
+        let name = forcedPage ?? FixtureTransport.page(for: request.url.absoluteString)
         return HostHttpResponse(
             status: 200,
             finalUrl: request.url,
