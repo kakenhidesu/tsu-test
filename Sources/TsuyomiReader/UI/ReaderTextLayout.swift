@@ -33,7 +33,7 @@ public final class ReaderTextLayout {
     public private(set) var pages: [ReaderPage] = []
     public private(set) var layoutKey: LayoutKey
 
-    private let container = NSTextContainer(size: CGSize(width: 0, height: .greatestFiniteMagnitude))
+    private let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
     private var settings: ReaderSettings
     private var width: CGFloat = 0
     private var height: CGFloat = 0
@@ -63,7 +63,7 @@ public final class ReaderTextLayout {
         if metricsChanged {
             container.size = CGSize(
                 width: max(width - settings.horizontalMargin * 2, 1),
-                height: .greatestFiniteMagnitude
+                height: CGFloat.greatestFiniteMagnitude
             )
             reapplyTypography()
         }
