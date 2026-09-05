@@ -266,7 +266,8 @@ final class HostNetworkGatewayPolicyTests: XCTestCase {
 
     /// A site that redirects its own pages onto plain http is followed there: otherwise a session
     /// the reader completed in the login window — which follows the same chain — can never be used.
-    /// The session still travels and the settled URL is reported as it landed.
+    /// The session still travels, and the settled URL is reported in the declared origin, which is
+    /// the only form an extension can represent.
     func testSiteIssuedPlaintextRedirectOnADeclaredHostIsFollowed() async throws {
         let transport = RecordingTransport { request in
             request.url.scheme == "https"
@@ -293,7 +294,7 @@ final class HostNetworkGatewayPolicyTests: XCTestCase {
 
         let response = try await gateway.request(grant: grant, request: try NetworkFixture.request())
         XCTAssertEqual(response.status, 200)
-        XCTAssertEqual(response.finalUrl, "http://www.wenku8.net/book/1234.htm")
+        XCTAssertEqual(response.finalUrl, "https://www.wenku8.net/book/1234.htm")
         let recorded = await transport.requests()
         XCTAssertEqual(recorded.compactMap(\.url.scheme), ["https", "http"])
         XCTAssertEqual(recorded.last?.headers["cookie"], "session=opaque")

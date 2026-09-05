@@ -8,9 +8,15 @@ import TsuyomiProtocol
 /// already stable codes; every other layer collapses to one code, so no message, URL, cookie or
 /// stack fragment can reach the screen through an error path.
 public enum SafeErrorCode {
+    /// A source failure also carries the stage it stopped at and the runtime's own safe code, which
+    /// is what the Android failure screen shows beside the code. Both are produced by host code from
+    /// literals and enum raw values and are length-bounded by `SourceDiagnostic`, so neither can
+    /// carry page text, a cookie or a stack fragment. Without them every extension crash reads as
+    /// the same `EXTENSION_RUNTIME_FAILURE` and the step it stopped on has to be guessed.
     public static func of(_ error: any Error) -> String {
         switch error {
-        case let failure as SourceException: return failure.code.rawValue
+        case let failure as SourceException:
+            return "\(failure.code.rawValue) · \(failure.diagnostic.stage) · \(failure.diagnostic.safeCode)"
         case let failure as HxpVerificationError: return failure.rawValue
         case let failure as ExtensionInstallError: return failure.rawValue
         case let failure as QuickJsRuntimeError: return failure.rawValue
