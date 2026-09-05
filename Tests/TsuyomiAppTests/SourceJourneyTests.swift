@@ -107,7 +107,8 @@ final class SourceJourneyTests: XCTestCase {
         guard case .content(let resumed) = reopened.state else {
             return XCTFail("detail did not reload: \(reopened.state)")
         }
-        XCTAssertEqual(resumed.resumeChapterId, "10001")
+        XCTAssertEqual(resumed.resumeChapterId, "10002")
+        XCTAssertEqual(resumed.readChapterIds, ["10001"])
         XCTAssertTrue(resumed.inLibrary)
     }
 
