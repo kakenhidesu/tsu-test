@@ -1,0 +1,5 @@
+Tsuyomi-main/
+*.xcuserstate
+xcuserdata/
+.build/
+DerivedData/

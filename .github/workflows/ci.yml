@@ -1,0 +1,67 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          ls /Applications | grep -i '^Xcode' || true
+          xcodebuild -version
+          swift --version
+
+      - name: Resolve simulator destination
+        id: sim
+        run: |
+          set -euo pipefail
+          udid=$(xcrun simctl list devices available --json | python3 -c "
+          import json, sys
+          devices = json.load(sys.stdin)['devices']
+          rows = [(rt, dev) for rt, devs in devices.items() if 'iOS' in rt for dev in devs]
+          rows.sort(key=lambda r: r[0])
+          print(rows[-1][1]['udid'] if rows else '')
+          ")
+          if [ -z "$udid" ]; then echo "no iOS simulator available" >&2; exit 1; fi
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+
+      - name: List schemes
+        run: xcodebuild -list -json
+
+      - name: Build (iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -scheme Tsuyomi-Package \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skipMacroValidation \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+
+      - name: Test (iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild test \
+            -scheme Tsuyomi-Package \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skipMacroValidation \
+            -resultBundlePath TestResults.xcresult
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestResults
+          path: TestResults.xcresult
+          if-no-files-found: ignore
