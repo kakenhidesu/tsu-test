@@ -143,6 +143,9 @@ public struct AboutScreen: View {
             Section {
                 Text("Tsuyomi 是一个本地优先的阅读器。它不使用账号，不上报使用数据，不做远程配置，也不会把你的书架同步到任何服务器。")
                     .font(TsuyomiTheme.Typography.supporting)
+                // The build number identifies exactly which build is installed, which is the only way
+                // to tell one sideloaded copy from another.
+                LabeledContent("版本", value: AboutScreen.version)
             }
             Section("许可证") {
                 Text("本程序以 AGPL-3.0-only 授权。")
@@ -156,6 +159,13 @@ public struct AboutScreen: View {
         }
         .navigationTitle("关于")
         .navigationBarTitleDisplayMode(.inline)
+    }
+
+    static var version: String {
+        let info = Bundle.main.infoDictionary
+        let short = info?["CFBundleShortVersionString"] as? String ?? "?"
+        let build = info?["CFBundleVersion"] as? String ?? "?"
+        return "\(short) (\(build))"
     }
 }
 

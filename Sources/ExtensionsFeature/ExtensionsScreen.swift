@@ -47,8 +47,26 @@ public struct ExtensionsScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(TsuyomiTheme.Metrics.gutter)
+            // Attached here, not on the container: `fileImporter` presents a sheet of its own, and a
+            // view that already owns a `.sheet` will silently swallow it on iOS 16. Any file may be
+            // chosen — an extension is admitted by verifying its bytes, never by trusting its name.
+            .fileImporter(
+                isPresented: $isImporting,
+                allowedContentTypes: [.data],
+                allowsMultipleSelection: false
+            ) { result in
+                guard case .success(let urls) = result, let url = urls.first else { return }
+                Task { await model.importPackage(at: url) }
+            }
             // The banner sits outside the content branch: a fresh install has no extensions and no
             // repositories, and a failure there would otherwise have nowhere to appear.
+            if let status = model.importStatus {
+                Text(status)
+                    .font(TsuyomiTheme.Typography.caption)
+                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            }
             if let code = model.failureCode {
                 Text("上一步没有完成（\(code)）。")
                     .font(TsuyomiTheme.Typography.caption)
@@ -83,16 +101,6 @@ public struct ExtensionsScreen: View {
                 }
                 .disabled(model.isBusy)
             }
-        }
-        // Any file may be chosen: an extension is admitted by verifying its bytes, never by trusting
-        // the name, so filtering the picker by extension would only hide files from the reader.
-        .fileImporter(
-            isPresented: $isImporting,
-            allowedContentTypes: [.data],
-            allowsMultipleSelection: false
-        ) { result in
-            guard case .success(let urls) = result, let url = urls.first else { return }
-            Task { await model.importPackage(at: url) }
         }
         .alert("添加仓库", isPresented: $isAdding) {
             TextField("https://example.org/tsuyomi", text: $base)

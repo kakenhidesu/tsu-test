@@ -25,6 +25,7 @@ public final class ExtensionsModel: ObservableObject {
     @Published public private(set) var pendingApproval: PendingRepositoryApproval?
     @Published public private(set) var pendingInstall: PreparedExtensionInstall?
     @Published public private(set) var failureCode: String?
+    @Published public private(set) var importStatus: String?
     @Published public private(set) var isBusy = false
 
     private let registry: SourceRegistry
@@ -128,15 +129,20 @@ public final class ExtensionsModel: ObservableObject {
     }
 
     /// Reads a file the system handed over — from the in-app picker or from Files opening a `.hxp`
-    /// with this app. The security-scoped read lives here so both entry points share one path.
+    /// with this app. The security-scoped read lives here so both entry points share one path, and
+    /// each stage reports itself: an import that stops has to say where.
     public func importPackage(at url: URL) async {
+        importStatus = "已选择 \(url.lastPathComponent)"
         let scoped = url.startAccessingSecurityScopedResource()
         defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let bytes = try? Data(contentsOf: url) else {
+        do {
+            let bytes = try Data(contentsOf: url)
+            importStatus = "已读取 \(bytes.count) 字节，正在校验"
+            await importPackage(bytes)
+        } catch {
+            importStatus = nil
             failureCode = "UNREADABLE_FILE"
-            return
         }
-        await importPackage(bytes)
     }
 
     /// Installing a `.hxp` the reader picked themselves. It takes the same verification and approval
@@ -148,7 +154,9 @@ public final class ExtensionsModel: ObservableObject {
         failureCode = nil
         do {
             pendingInstall = try await lifecycle.prepare(archiveBytes: archiveBytes, declaring: nil)
+            importStatus = nil
         } catch {
+            importStatus = nil
             failureCode = SafeErrorCode.of(error)
         }
     }
