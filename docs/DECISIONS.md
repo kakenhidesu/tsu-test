@@ -68,3 +68,4 @@
 - 智能规则编译结果用 `SmartRuleCompilation { ready, rejected }` 而不是 `Result`：`[SmartRuleViolation]` 不是 `Error`，把它包成 error 只是为了迁就 `Result`。
 - `更多` tab 随数据迁移一起落地，只有真实入口，M6 再往里加行；这样每个 tab 从第一天起就是可用的，而不是先摆一个空壳。
 - 导入文件类型按内容自辨（`TransferCodec.parse`），文件选择器只用来拿字节；不依据扩展名或选择器返回的名字判断格式。
+- 进度落盘取的是"当前实际绘制的那一页"的位置（`ReaderTextLayout.position(atPageIndex:)` + `ReaderDocumentSession.locator(atBlock:)`），而不是解析器的起始猜测：读者没翻页也应当得到精确定位符；未完成排版时不写入，因为此时并不知道读者看到了什么。

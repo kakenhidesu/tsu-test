@@ -193,11 +193,17 @@ public final class ReaderModel: ObservableObject {
         try? preview.pageDrawn(index, epochs: epochs)
     }
 
-    /// Persists the semantic position. Called on chapter change, on leaving the reader, and when the
-    /// scene leaves the foreground; nothing else writes progress.
+    /// Persists the semantic position, measured from the page that is actually on screen rather than
+    /// from the resolver's starting guess, so a restored position is exact even if nothing was paged.
+    /// Called on chapter change, on leaving the reader, and when the scene leaves the foreground;
+    /// nothing else writes progress, and nothing is written before a layout has committed.
     public func flush() async {
-        guard let session,
-              let locator = try? session.capture(at: clock()),
+        guard let session, let textLayout,
+              let position = textLayout.position(atPageIndex: pageIndex),
+              let locator = try? session.locator(
+                  atBlock: position.blockIndex,
+                  characterOffset: position.characterOffset
+              ),
               locator != lastFlushed,
               let progress = try? ReadingProgress(identity: identity, locator: locator) else { return }
         if (try? await progressStore.saveProgress(progress)) != nil {

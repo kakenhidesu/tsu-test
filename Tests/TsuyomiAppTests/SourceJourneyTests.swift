@@ -90,6 +90,13 @@ final class SourceJourneyTests: XCTestCase {
         XCTAssertNotNil(stored.locator.blockId)
         XCTAssertNotNil(stored.locator.textAnchorDigest)
 
+        await reader.openAdjacent(1)
+        XCTAssertEqual(reader.chapter?.chapterId, "10002")
+        await reader.flush()
+        let latest = try await world.progress.progress(identity)
+        let advanced = try XCTUnwrap(latest)
+        XCTAssertEqual(advanced.locator.document.contentId, "10002")
+
         let reopened = BookModel(
             identity: identity,
             registry: world.registry,
