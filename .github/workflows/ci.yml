@@ -94,7 +94,8 @@ jobs:
             -derivedDataPath DeviceBuild \
             -skipMacroValidation \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            ENABLE_DEBUG_DYLIB=NO ENABLE_PREVIEWS=NO
+            ENABLE_DEBUG_DYLIB=NO ENABLE_PREVIEWS=NO \
+            "CURRENT_PROJECT_VERSION=${{ github.run_number }}"
           mkdir -p Payload
           cp -R DeviceBuild/Build/Products/Debug-iphoneos/Tsuyomi.app Payload/
           # A sideloaded app must be one ordinary binary: Xcode's debug-dylib split leaves the code in
