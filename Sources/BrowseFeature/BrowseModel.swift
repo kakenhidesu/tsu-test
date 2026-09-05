@@ -58,7 +58,7 @@ public final class BrowseModel: ObservableObject {
             }
             state = .content(rows)
         } catch {
-            state = .failed(code: BrowseModel.safeCode(error), detail: "无法读取已安装的来源。")
+            state = .failed(code: SafeErrorCode.of(error), detail: "无法读取已安装的来源。")
         }
     }
 
@@ -72,13 +72,5 @@ public final class BrowseModel: ObservableObject {
             if let stored = try? await credentials.get(partition), stored != nil { return true }
         }
         return false
-    }
-
-    static func safeCode(_ error: any Error) -> String {
-        if let failure = error as? SourceException { return failure.code.rawValue }
-        if let failure = error as? ExtensionInstallError { return failure.rawValue }
-        if let failure = error as? HxpVerificationError { return failure.rawValue }
-        if let failure = error as? HostNetworkException { return failure.error.rawValue }
-        return "UNEXPECTED_FAILURE"
     }
 }

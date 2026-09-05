@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import Foundation
+import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiSource
@@ -50,7 +51,7 @@ public final class SourceHomeModel: ObservableObject {
         } catch let failure as SourceException {
             state = .failed(code: failure.code.rawValue, detail: detail(for: failure.code))
         } catch {
-            state = .failed(code: BrowseModel.safeCode(error), detail: "无法载入来源首页。")
+            state = .failed(code: SafeErrorCode.of(error), detail: "无法载入来源首页。")
         }
     }
 

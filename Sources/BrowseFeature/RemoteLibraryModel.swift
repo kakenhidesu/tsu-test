@@ -60,7 +60,7 @@ public final class RemoteLibraryModel: ObservableObject {
         } catch let failure as SourceException {
             state = .failed(code: failure.code.rawValue, detail: "无法读取网站收藏。")
         } catch {
-            state = .failed(code: BrowseModel.safeCode(error), detail: "无法读取网站收藏。")
+            state = .failed(code: SafeErrorCode.of(error), detail: "无法读取网站收藏。")
         }
     }
 
@@ -113,7 +113,7 @@ public final class RemoteLibraryModel: ObservableObject {
             copiedCount = added
             selected = []
         } catch {
-            state = .failed(code: BrowseModel.safeCode(error), detail: "无法写入本地书架。")
+            state = .failed(code: SafeErrorCode.of(error), detail: "无法写入本地书架。")
         }
     }
 }
