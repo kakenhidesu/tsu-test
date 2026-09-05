@@ -65,11 +65,7 @@ public struct ReaderSettingsSheet: View {
                 Section("翻页") {
                     SegmentedSelector(
                         label: "阅读方式",
-                        options: [
-                            (ReaderPresentation.scroll, "滚动"),
-                            (ReaderPresentation.paged, "单页"),
-                            (ReaderPresentation.dualPage, "双页")
-                        ],
+                        options: readingFlowOptions,
                         selection: binding(\.flow)
                     )
                     Toggle("锁定竖屏", isOn: binding(\.lockPortrait))
@@ -86,6 +82,10 @@ public struct ReaderSettingsSheet: View {
         }
         .presentationDetents([.medium, .large])
         .presentationContentInteraction(.scrolls)
+    }
+
+    private var readingFlowOptions: [(value: ReaderPresentation, title: LocalizedStringKey)] {
+        [(.scroll, "滚动"), (.paged, "单页"), (.dualPage, "双页")]
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {

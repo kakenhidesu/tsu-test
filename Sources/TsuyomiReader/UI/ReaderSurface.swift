@@ -132,6 +132,8 @@ public struct ReaderSurface: UIViewRepresentable {
         return "正文，第 \(pageIndex + 1) 页，共 \(layout.pages.count) 页"
     }
 
+    
+    @MainActor
     public final class Coordinator {
         var onTap: (ReaderTapZone) -> Void
 
