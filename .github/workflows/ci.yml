@@ -11,6 +11,14 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Distinguishes "the macOS runner could not be allocated" from "the build failed": this job needs
+  # no macOS minutes, so if it runs and the one below never starts, the problem is runner capacity.
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - run: echo "runner allocation reached ubuntu"
+
   build-and-test:
     runs-on: macos-15
     timeout-minutes: 60
