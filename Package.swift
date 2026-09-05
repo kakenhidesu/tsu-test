@@ -10,7 +10,8 @@ let package = Package(
     products: [
         .library(name: "TsuyomiProtocol", targets: ["TsuyomiProtocol"]),
         .library(name: "TsuyomiCore", targets: ["TsuyomiCore"]),
-        .library(name: "TsuyomiSource", targets: ["TsuyomiSource"])
+        .library(name: "TsuyomiSource", targets: ["TsuyomiSource"]),
+        .library(name: "TsuyomiReader", targets: ["TsuyomiReader"])
     ],
     targets: [
         .target(name: "TsuyomiProtocol"),
@@ -42,6 +43,9 @@ let package = Package(
             ]
         ),
         .target(name: "TsuyomiSource", dependencies: ["CQuickJS", "TsuyomiCore", "TsuyomiProtocol"]),
-        .testTarget(name: "TsuyomiSourceTests", dependencies: ["TsuyomiSource", "TsuyomiCore"])
+        .testTarget(name: "TsuyomiSourceTests", dependencies: ["TsuyomiSource", "TsuyomiCore"]),
+
+        .target(name: "TsuyomiReader", dependencies: ["TsuyomiCore", "TsuyomiProtocol"]),
+        .testTarget(name: "TsuyomiReaderTests", dependencies: ["TsuyomiReader"])
     ]
 )
