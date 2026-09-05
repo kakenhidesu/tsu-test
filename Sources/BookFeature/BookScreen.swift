@@ -7,16 +7,16 @@ import TsuyomiUI
 
 public struct BookScreen: View {
     @ObservedObject private var model: BookModel
-    private let cover: CoverUiState
+    private let coverState: (SourceBookSummary) -> CoverUiState
     private let openChapter: (SourceChapter) -> Void
 
     public init(
         model: BookModel,
-        cover: CoverUiState,
+        coverState: @escaping (SourceBookSummary) -> CoverUiState,
         openChapter: @escaping (SourceChapter) -> Void
     ) {
         self.model = model
-        self.cover = cover
+        self.coverState = coverState
         self.openChapter = openChapter
     }
 
@@ -56,7 +56,7 @@ public struct BookScreen: View {
     private func header(_ content: BookDetailState) -> some View {
         VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
             HStack(alignment: .top, spacing: TsuyomiTheme.Metrics.gutter) {
-                CoverImage(cover)
+                CoverImage(coverState(content.detail.summary))
                     .frame(width: 96)
                 VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
                     Text(content.detail.summary.title)

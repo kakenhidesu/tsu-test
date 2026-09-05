@@ -377,3 +377,12 @@ public final class SourceExtensionClient: Sendable {
         return parsed
     }
 }
+
+/// Covers travel the same granted origins, cookie scope and response caps as documents. The grant
+/// stays private to the client, so no display path can widen it.
+extension SourceExtensionClient: CoverMediaFetcher {
+    public func fetch(url: String, referrerUrl: String?) async throws -> CoverMediaPayload {
+        let response = try await gateway.fetchMedia(grant: grant, url: url, referrerUrl: referrerUrl)
+        return CoverMediaPayload(bytes: response.bytes, contentType: response.contentType)
+    }
+}

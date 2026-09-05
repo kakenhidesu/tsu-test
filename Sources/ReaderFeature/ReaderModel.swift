@@ -28,8 +28,9 @@ public final class ReaderModel: ObservableObject {
     @Published public var isDirectoryPresented = false
     @Published public var settings: ReaderSettings
 
+    @Published public private(set) var chapters: [SourceChapter] = []
+
     public let bookTitle: String
-    public let chapters: [SourceChapter]
     public let preview = ReaderPreviewController()
 
     private let identity: BookIdentity
@@ -37,7 +38,8 @@ public final class ReaderModel: ObservableObject {
     private let progressStore: ReadingProgressStore
     private let documents = ReaderDocumentCache()
     private let clock: () -> Date
-    private var chapterIndex: Int
+    private let startChapterId: String
+    private var chapterIndex = 0
     private var session: ReaderDocumentSession?
     private var textLayout: ReaderTextLayout?
     private var viewport: CGSize = .zero
@@ -49,7 +51,6 @@ public final class ReaderModel: ObservableObject {
     public init(
         identity: BookIdentity,
         bookTitle: String,
-        chapters: [SourceChapter],
         startChapterId: String,
         settings: ReaderSettings,
         registry: SourceRegistry,
@@ -58,8 +59,7 @@ public final class ReaderModel: ObservableObject {
     ) {
         self.identity = identity
         self.bookTitle = bookTitle
-        self.chapters = chapters
-        self.chapterIndex = chapters.firstIndex { $0.chapterId == startChapterId } ?? 0
+        self.startChapterId = startChapterId
         self.settings = settings
         self.registry = registry
         self.progressStore = progressStore
@@ -72,14 +72,20 @@ public final class ReaderModel: ObservableObject {
 
     public var visiblePageIndex: Int { preview.previewPageIndex ?? pageIndex }
 
+    /// The reader loads its own directory so a cold launch straight into a chapter still knows what
+    /// the adjacent chapters are; the second read is served by the host cache.
     public func open() async {
-        guard let chapter else {
-            state = .failed(code: "CHAPTER_MISSING", detail: "这一章不在目录里。")
-            return
-        }
         state = .loading
         do {
             let client = try await registry.client(for: try SourceId(identity.sourceId))
+            if chapters.isEmpty {
+                chapters = try await client.directory(remoteBookId: identity.remoteBookId).chapters
+                chapterIndex = chapters.firstIndex { $0.chapterId == startChapterId } ?? 0
+            }
+            guard let chapter else {
+                state = .failed(code: "CHAPTER_MISSING", detail: "这一章不在目录里。")
+                return
+            }
             let document = try await client.chapter(chapter, remoteBookId: identity.remoteBookId)
             documents.put(document)
             sessionEpoch += 1

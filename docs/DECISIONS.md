@@ -41,3 +41,8 @@
 - WKWebView 显式报告服务端重定向，因此导航追踪器比 Android 版更严格：只有宿主发起的加载与它观察到的重定向能落定，任何用户手势导航直接作废绑定。
 - `TsuyomiUI` 依赖 `TsuyomiCore` 而非仅 `TsuyomiProtocol`：第 6.5 节要求 `CoverImage` 直接消费 `CoverUiState`（其载荷是 `UIImage`，不能下沉到禁止 UIKit 的 `TsuyomiProtocol`），复制一份等价 DTO 会违反反冗余规则。依赖方向仍是单向的，`TsuyomiUI` 不做任何能力判定。
 - `TsuyomiReader` 依赖 `TsuyomiUI`：`ReaderChrome` 与 Android 的 `reader/ui`→`core:ui` 同构（后者 import `TsuyomiTopBar`/`TsuyomiSpacing`）；第 5 节箭头表未列出这条边，但方向仍是单向且不引入 feature 间依赖。
+- `SafeErrorCode` 归属 `TsuyomiSource`：它同时映射 `TsuyomiCore` 与 `TsuyomiSource` 两层的错误，放在最低的共同拥有者处；每个 feature 各留一份等价映射会违反反冗余规则。
+- `ReaderPageView` 上报实际绘制的页码（`onPageDrawn`）：预览提交需要"读者确实看见了这一页"的视觉见证，而见证只能来自绘制，不能来自状态赋值。
+- `ReaderDocumentSession.locator(atBlock:)` 为不移动阅读位置的只读取点：滑块拖动期间必须能构造预览目标而不改变真实位置。
+- 章节前后翻页越界时只进入相邻章；目录内任意跳转是显式选择，二者共用同一次 `flush`，因此进度写入点只有"换章/退出/离开前台"三处。
+- 每本书只保留一个语义位置，因此目录中的"已读"标记由该位置之前的章节推导，而不是另设逐章已读表（第二份会与进度不一致）。

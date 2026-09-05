@@ -24,7 +24,7 @@ public final class BookModel: ObservableObject {
     @Published public private(set) var isBusy = false
     @Published public var isDescending = false
 
-    private let identity: BookIdentity
+    public let identity: BookIdentity
     private let registry: SourceRegistry
     private let library: LibraryRepository
     private let progressStore: ReadingProgressStore
