@@ -34,3 +34,8 @@
 - 桥接新增 `IMPORT_DISALLOWED` 状态并安装拒绝一切说明符的模块加载器（Android JNI 未安装加载器）。
 - `ReaderDocument` 的 `contentDigest` 由宿主按 RFC 8785 规范化块负载计算；扩展未给出 `revision` 时取该摘要，扩展不能声称改动过的正文是同一修订。
 - `ExtensionInstaller.evaluatePolicy` 是更新规则的唯一归属；`rotationApproved` 表示用户已重新确认新发布者指纹（v0 索引不承载交叉签名）。
+
+## M3
+
+- iOS 禁止 `evaluateJavaScript`/user script，因此 `ControlledWebLoginSession` 不从 WebView 读取 HTML：它只产出 `VerifiedPageNavigationBinding`（请求 URL 与落定页面 URL）与声明 origin 的 Cookie/UA，页面正文由宿主用这些凭据经 `HostNetworkGateway` 重新 GET 取得，`CapturedVerifiedPage` 由该结果构造。
+- WKWebView 显式报告服务端重定向，因此导航追踪器比 Android 版更严格：只有宿主发起的加载与它观察到的重定向能落定，任何用户手势导航直接作废绑定。
