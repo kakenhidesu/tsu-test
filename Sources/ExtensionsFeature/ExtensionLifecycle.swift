@@ -38,24 +38,21 @@ public struct ExtensionLifecycle: Sendable {
     /// preview is compared against the manifest here: a mismatch is refused rather than reconciled.
     public func prepare(
         archiveBytes: Data,
-        declaring preview: HxpCapabilities?,
+        declaring listed: RepositoryPackage?,
         rotationApproved: Bool = false
     ) async throws -> PreparedExtensionInstall {
         let prepared = try await installer.prepare(
             archiveBytes: archiveBytes,
             rotationApproved: rotationApproved
         )
-        if let preview, preview != prepared.candidate.manifest.capabilities {
-            throw RepositoryError.indexManifestMismatch
-        }
-        let manifest = prepared.candidate.manifest
-        guard hostApiVersion >= manifest.hostApiMinInclusive,
-              hostApiVersion < manifest.hostApiMaxExclusive else {
-            throw RepositoryError.hostApiIncompatible
-        }
-        if let active = prepared.active, prepared.candidate.manifest.version <= active.manifest.version {
-            throw RepositoryError.downgradeRejected
-        }
+        guard let listed else { return prepared }
+        try RepositoryInstallPolicy.requireInstallable(
+            listed: listed,
+            manifest: prepared.candidate.manifest,
+            archiveBytes: archiveBytes,
+            hostApi: hostApiVersion,
+            activeVersion: prepared.active?.manifest.version
+        )
         return prepared
     }
 

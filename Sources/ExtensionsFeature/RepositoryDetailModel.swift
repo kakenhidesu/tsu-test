@@ -108,7 +108,7 @@ public final class RepositoryDetailModel: ObservableObject {
             let archive = try await client.download(package, from: descriptor)
             pendingInstall = try await lifecycle.prepare(
                 archiveBytes: archive,
-                declaring: package.capabilities
+                declaring: package
             )
         } catch {
             failureCode = SafeErrorCode.of(error)
