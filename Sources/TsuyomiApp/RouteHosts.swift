@@ -2,6 +2,7 @@
 
 import BookFeature
 import BrowseFeature
+import ExtensionsFeature
 import ReaderFeature
 import SearchFeature
 import SwiftUI
@@ -162,5 +163,67 @@ struct VerificationHost: View {
 
     var body: some View {
         VerificationScreen(model: model, onClose: onClose)
+    }
+}
+
+/// The market shares one model across its screens so a repository added on one is visible on the
+/// next without a second read.
+@MainActor
+final class MarketHolder: ObservableObject {
+    let model: ExtensionsModel
+    let client: ExtensionRepositoryClient
+    let lifecycle: ExtensionLifecycle
+    private let container: AppContainer
+
+    init(container: AppContainer) {
+        self.container = container
+        client = ExtensionRepositoryClient(gateway: container.gateway)
+        lifecycle = ExtensionLifecycle(
+            installed: container.installedExtensions,
+            registry: container.registry,
+            remoteLibrary: container.remoteLibrary,
+            trust: container.trust,
+            hostApiVersion: container.hostApi
+        )
+        model = ExtensionsModel(
+            registry: container.registry,
+            repositories: container.repositories,
+            trust: container.trust,
+            client: client,
+            lifecycle: lifecycle
+        )
+    }
+
+    func detail(_ descriptor: RepositoryDescriptor) -> RepositoryDetailModel {
+        RepositoryDetailModel(
+            descriptor: descriptor,
+            registry: container.registry,
+            repositories: container.repositories,
+            trust: container.trust,
+            client: client,
+            lifecycle: lifecycle,
+            hostApi: container.hostApi
+        )
+    }
+}
+
+struct RepositoryDetailHost: View {
+    @ObservedObject var market: MarketHolder
+    @StateObject private var model: RepositoryDetailModel
+    private let onRemoved: () -> Void
+
+    init(market: MarketHolder, descriptor: RepositoryDescriptor, onRemoved: @escaping () -> Void) {
+        self.market = market
+        self.onRemoved = onRemoved
+        _model = StateObject(wrappedValue: market.detail(descriptor))
+    }
+
+    var body: some View {
+        RepositoryDetailScreen(model: model) {
+            Task {
+                await market.model.removeRepository(model.descriptor.repositoryId)
+                onRemoved()
+            }
+        }
     }
 }

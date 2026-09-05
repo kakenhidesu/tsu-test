@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import BrowseFeature
+import ExtensionsFeature
 import LibraryFeature
 import SwiftUI
 import TsuyomiCore
@@ -37,6 +38,7 @@ public struct AppRootView: View {
     @StateObject private var browse: BrowseModel
     @StateObject private var library: LibraryModel
     @StateObject private var libraryCovers: LibraryCoverProvider
+    @StateObject private var market: MarketHolder
     @State private var tab: RootTab = .library
     @State private var libraryPath: [BookIdentity] = []
 
@@ -64,6 +66,7 @@ public struct AppRootView: View {
                 credentials: container.credentials
             )
         )
+        _market = StateObject(wrappedValue: MarketHolder(container: container))
     }
 
     public var body: some View {
@@ -122,7 +125,8 @@ public struct AppRootView: View {
                 openHome: { push(.sourceHome($0)) },
                 openSearch: { push(.search($0)) },
                 openRemoteLibrary: { push(.remoteLibrary($0)) },
-                openSignIn: { push(.verification($0)) }
+                openSignIn: { push(.verification($0)) },
+                openExtensions: { push(.extensions) }
             )
         )
     }
@@ -149,6 +153,18 @@ public struct AppRootView: View {
                     await browse.load()
                 }
             }
+        case .extensions:
+            ExtensionsScreen(
+                model: market.model,
+                openRepository: { push(.extensionRepository($0)) },
+                openPublisherKeys: { push(.publisherKeys) }
+            )
+        case .extensionRepository(let descriptor):
+            RepositoryDetailHost(market: market, descriptor: descriptor) {
+                Task { await flow.pop() }
+            }
+        case .publisherKeys:
+            PublisherKeysScreen(model: market.model)
         }
     }
 

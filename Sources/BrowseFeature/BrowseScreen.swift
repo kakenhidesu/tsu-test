@@ -12,17 +12,20 @@ public struct BrowseActions {
     public let openSearch: (SourceId) -> Void
     public let openRemoteLibrary: (SourceId) -> Void
     public let openSignIn: (SourceId) -> Void
+    public let openExtensions: () -> Void
 
     public init(
         openHome: @escaping (SourceId) -> Void,
         openSearch: @escaping (SourceId) -> Void,
         openRemoteLibrary: @escaping (SourceId) -> Void,
-        openSignIn: @escaping (SourceId) -> Void
+        openSignIn: @escaping (SourceId) -> Void,
+        openExtensions: @escaping () -> Void
     ) {
         self.openHome = openHome
         self.openSearch = openSearch
         self.openRemoteLibrary = openRemoteLibrary
         self.openSignIn = openSignIn
+        self.openExtensions = openExtensions
     }
 }
 
@@ -45,6 +48,11 @@ public struct BrowseScreen: View {
             .listStyle(.insetGrouped)
         }
         .navigationTitle("来源")
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("扩展市场") { actions.openExtensions() }
+            }
+        }
         .task { await model.load() }
         .refreshable { await model.load() }
     }
