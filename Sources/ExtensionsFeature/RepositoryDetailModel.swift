@@ -115,17 +115,21 @@ public final class RepositoryDetailModel: ObservableObject {
         }
     }
 
+    /// The approval is consumed either way: a failed activation returns to the package list with a
+    /// stable code rather than leaving a sheet open over a result nobody can read.
     public func approvePendingInstall() async {
         guard let prepared = pendingInstall, !isBusy else { return }
         isBusy = true
-        defer { isBusy = false }
+        defer {
+            pendingInstall = nil
+            isBusy = false
+        }
         do {
             try await lifecycle.activate(prepared)
-            pendingInstall = nil
-            await loadCached()
         } catch {
             failureCode = SafeErrorCode.of(error)
         }
+        await loadCached()
     }
 
     /// Refusing an install leaves the previously active version running, which is the whole point of

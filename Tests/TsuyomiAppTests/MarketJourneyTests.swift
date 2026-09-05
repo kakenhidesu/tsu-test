@@ -58,6 +58,7 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertNil(prepared.active)
         await detail.approvePendingInstall()
         XCTAssertNil(detail.failureCode)
+        XCTAssertNil(detail.pendingInstall, "an approved install must release the sheet it was presented from")
         let installed = try await world.registry.installedSources()
         XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
 

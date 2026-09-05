@@ -96,3 +96,4 @@
 - 设备构建的 `CFBundleVersion` 取 CI run number，关于页显示版本号：旁加载的两份包在外观上无法区分，装了哪一版必须能在应用里读出来。
 - 宿主 API 版本常量为 `1.1.0`，与 Android 端 `HxpArchiveVerifier` 的默认值一致：扩展声明的 `hostApi` 区间是拿这个值去比对的，填低了会拒绝掉每一个为真实 API 构建的包。端到端测试改为读取 `AppContainer.hostApiVersion` 而不是写死字面量——先前测试写死正确值、应用里是错值，两边各自自洽，缺陷因此一路到了设备上。
 - 选中文件后的导入只在选择器 sheet 的 `onDismiss` 里启动，不用 `.task(id:)`：`onDismiss` 在关闭动画结束后才触发，而 `.task(id:)` 在代理一设置状态时就开始校验，小包在关闭动画结束前就能校验完，审批 sheet 便会在选择器仍在关闭时请求呈现——iOS 16 上这种呈现会静默失败。导入的结果全是 `@Published`，何时改变都会触发重绘，不存在"结束得太早而无从显示"的情况。
+- 安装审批屏的「安装」按钮不调用 `dismiss()`：这个 sheet 是由 `pendingInstall` 驱动呈现的，同步 dismiss 会在 `approvePendingInstall()` 的 Task 真正跑起来之前把它清空，那个方法的 `guard let prepared = pendingInstall` 随即失败并静默返回——表现为点了安装、页面关闭、什么也没装、也没有错误。改由模型在安装落定后清空该状态，sheet 随之关闭。

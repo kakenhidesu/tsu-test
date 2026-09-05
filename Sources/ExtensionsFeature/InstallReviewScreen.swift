@@ -92,11 +92,11 @@ public struct InstallReviewScreen: View {
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button(prepared.active == nil ? "安装" : "更新") {
-                        onApprove()
-                        dismiss()
-                    }
-                    .disabled(isBusy || prepared.policyOutcome == .rejectedRevoked)
+                    // Approving does not dismiss: this sheet is presented off the pending install, so
+                    // dismissing here would clear it before the approval has been acted on. The model
+                    // clears it when the install settles, which closes the sheet.
+                    Button(prepared.active == nil ? "安装" : "更新") { onApprove() }
+                        .disabled(isBusy || prepared.policyOutcome == .rejectedRevoked)
                 }
             }
         }
