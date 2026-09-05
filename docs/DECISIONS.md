@@ -105,3 +105,4 @@
 - 验证页只保留流程说明一句，不再显示任何拦截/明文提示（用户要求）。随之删掉了 `onBlockedNavigation` 回调与 `WebNavigationBlock`：没有消费者的上报通道就是冗余代码。代价是被拒绝的跳转此后没有任何界面痕迹，只表现为页面不动。
 - 文档选择器必须 `present`，不能 `addChild` 嵌入：它是跨进程的远程视图控制器，嵌入后界面画得出来但选择回调依赖自身的呈现生命周期，那条链断了就表现为"选完文件什么都不发生"。它从一个无交互的锚点控制器呈现，不放在 SwiftUI sheet 里——picker 答复后会关闭自己所在的呈现，在 sheet 里那关掉的是 sheet，答案随之丢失。
 - 选中的归档在 picker 完全离开屏幕后才交出（`dismiss` 的完成回调；若它已自行开始关闭则直接交出），审批 sheet 因此不会在一次关闭进行中请求呈现。
+- `NSAllowsArbitraryLoadsInWebContent = true`：放行 WebView 内的明文跳转之后，还必须让 App Transport Security 也放行，否则请求在网络层就被系统拦掉，表现为登录页一片空白且无任何提示。这个键只作用于 WebView 内容，`URLSession`（即 `HostNetworkGateway` 的全部抓取）仍受 ATS 强制 TLS，范围与"仅登录窗口可回落明文"的决定一致。不使用按域名的 `NSExceptionDomains`：宿主里不允许出现任何具体站点。
