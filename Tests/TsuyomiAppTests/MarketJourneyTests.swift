@@ -41,7 +41,8 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertNil(world.model.pendingApproval)
         XCTAssertEqual(world.trust.trusted.map(\.keyId), [Phase2TestPublisher.keyId])
 
-        let descriptor = try XCTUnwrap(await world.repositories.all().first)
+        let added = await world.repositories.all()
+        let descriptor = try XCTUnwrap(added.first)
         let detail = world.detail(descriptor)
         await detail.refresh()
         guard case .content(let listing) = detail.state else {
@@ -95,7 +96,8 @@ final class MarketJourneyTests: XCTestCase {
         world.host.publish(index: try world.index(packages: [original]), packages: ["v1": original])
         await world.model.probeRepository(base: "https://repo.example.org/tsuyomi")
         await world.model.approvePendingRepository()
-        let descriptor = try XCTUnwrap(await world.repositories.all().first)
+        let added = await world.repositories.all()
+        let descriptor = try XCTUnwrap(added.first)
         let detail = world.detail(descriptor)
         await detail.refresh()
         guard case .content(let listing) = detail.state else { return XCTFail("no index") }
@@ -103,7 +105,8 @@ final class MarketJourneyTests: XCTestCase {
         await detail.approvePendingInstall()
 
         await world.model.removeRepository(descriptor.repositoryId)
-        XCTAssertTrue(await world.repositories.all().isEmpty)
+        let remaining = await world.repositories.all()
+        XCTAssertTrue(remaining.isEmpty)
         let installed = try await world.registry.installedSources()
         XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
         XCTAssertEqual(world.trust.trusted.map(\.keyId), [Phase2TestPublisher.keyId])
