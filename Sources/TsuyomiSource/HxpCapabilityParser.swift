@@ -143,7 +143,7 @@ enum HxpCapabilityParser {
         var parameters: [HxpRemoteParameter] = []
         let rawParameters = try HxpManifestParser.object(value, "parameters")
         for name in CanonicalOrder.sorted(rawParameters.keys) {
-            guard isNonBlank(name), Grammar.codePointCount(name) <= 256,
+            guard name.contains(where: { !$0.isWhitespace }), Grammar.codePointCount(name) <= 256,
                   let rule = rawParameters[name]?.objectValue else {
                 throw HxpVerificationError.invalidManifest
             }
@@ -222,7 +222,7 @@ enum HxpCapabilityParser {
         var parameters: [String: String] = [:]
         let rawParameters = try HxpManifestParser.object(value, "parameters")
         for (name, rule) in rawParameters {
-            guard isNonBlank(name), Grammar.codePointCount(name) <= 256,
+            guard name.contains(where: { !$0.isWhitespace }), Grammar.codePointCount(name) <= 256,
                   let ruleObject = rule.objectValue else {
                 throw HxpVerificationError.invalidManifest
             }

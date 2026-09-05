@@ -178,10 +178,10 @@ public final class InMemoryPublisherKeyStore: PublisherKeyResolver {
     }
 
     public func revokeFingerprint(_ fingerprint: String) {
-        state.withLock { $0.revokedFingerprints.insert(fingerprint) }
+        state.withLock { _ = $0.revokedFingerprints.insert(fingerprint) }
     }
 
     public func revokePackage(_ contentDigest: String) {
-        state.withLock { $0.revokedPackages.insert(contentDigest) }
+        state.withLock { _ = $0.revokedPackages.insert(contentDigest) }
     }
 }
