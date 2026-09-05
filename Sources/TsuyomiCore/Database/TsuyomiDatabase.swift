@@ -3,10 +3,20 @@
 import Foundation
 import SQLite3
 
+/// Owns the raw handle so the connection is closed exactly once, when the database is released.
+final class SQLiteHandle {
+    let pointer: OpaquePointer
+
+    init(pointer: OpaquePointer) { self.pointer = pointer }
+
+    deinit { sqlite3_close_v2(pointer) }
+}
+
 /// The single SQLite handle for the library database. Every statement runs on this actor, so
 /// callers never share a connection across tasks.
 public actor TsuyomiDatabase {
-    private let handle: OpaquePointer
+    private let handleBox: SQLiteHandle
+    private var handle: OpaquePointer { handleBox.pointer }
     private var changeSequence: Int64 = 0
     private var observers: [UUID: @Sendable (Int64) -> Void] = [:]
 
@@ -20,7 +30,7 @@ public actor TsuyomiDatabase {
             if let handle { sqlite3_close_v2(handle) }
             throw DatabaseError.openFailed(status)
         }
-        self.handle = handle
+        self.handleBox = SQLiteHandle(pointer: handle)
         let connection = SQLiteConnection(handle: handle)
         try connection.execute("PRAGMA journal_mode=WAL")
         try connection.execute("PRAGMA foreign_keys=ON")
@@ -44,10 +54,6 @@ public actor TsuyomiDatabase {
     /// An in-memory database for tests and for the deterministic query fixtures.
     public static func inMemory() throws -> TsuyomiDatabase {
         try TsuyomiDatabase(path: ":memory:")
-    }
-
-    deinit {
-        sqlite3_close_v2(handle)
     }
 
     public func read<T: Sendable>(_ body: @Sendable (SQLiteConnection) throws -> T) throws -> T {
