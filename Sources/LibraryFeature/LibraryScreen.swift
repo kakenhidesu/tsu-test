@@ -105,8 +105,8 @@ public struct LibraryScreen: View {
                     spacing: TsuyomiTheme.Metrics.gutter,
                     insertionIndex: insertionIndex
                 ) {
-                    ForEach(Array(entries.enumerated()), id: \.element.book.identity) { index, entry in
-                        gridCard(entry, at: index)
+                    ForEach(slots(entries)) { slot in
+                        gridCard(slot.entry, at: slot.index)
                     }
                 }
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
@@ -119,6 +119,19 @@ public struct LibraryScreen: View {
                 }
             }
         }
+    }
+
+    /// A grid cell keeps the book's identity while carrying the slot it currently occupies, so a
+    /// reorder animates the same cell moving rather than replacing one cell with another.
+    private struct GridSlot: Identifiable {
+        let index: Int
+        let entry: LibraryEntry
+
+        var id: BookIdentity { entry.book.identity }
+    }
+
+    private func slots(_ entries: [LibraryEntry]) -> [GridSlot] {
+        entries.enumerated().map { GridSlot(index: $0.offset, entry: $0.element) }
     }
 
     /// While arranging, a drop lands the book in this slot; otherwise it puts the two books in a new
