@@ -82,7 +82,7 @@ public struct ExtensionsScreen: View {
             allowsMultipleSelection: false
         ) { result in
             guard case .success(let urls) = result, let url = urls.first else { return }
-            Task { await load(url) }
+            Task { await model.importPackage(at: url) }
         }
         .sheet(
             isPresented: Binding(
@@ -239,16 +239,5 @@ struct RepositoryApprovalSheet: View {
                 }
             }
         }
-    }
-}
-
-extension ExtensionsScreen {
-    /// The picked file is read through a security-scoped resource and handed straight to verification;
-    /// nothing is copied anywhere before the archive proves it is what it claims to be.
-    private func load(_ url: URL) async {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let bytes = try? Data(contentsOf: url) else { return }
-        await model.importPackage(bytes)
     }
 }

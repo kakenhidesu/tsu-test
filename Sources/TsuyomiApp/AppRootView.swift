@@ -91,6 +91,16 @@ public struct AppRootView: View {
             tab = .browse
             Task { await flow.push(route) }
         }
+        // Opening a `.hxp` from Files lands on the market with the archive already being verified;
+        // it still has to pass the same approval screen as any other install.
+        .onOpenURL { url in
+            guard url.pathExtension.lowercased() == "hxp" else { return }
+            tab = .browse
+            Task {
+                await flow.push(.extensions)
+                await market.model.importPackage(at: url)
+            }
+        }
     }
 
     private var libraryTab: some View {

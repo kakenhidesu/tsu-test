@@ -127,6 +127,18 @@ public final class ExtensionsModel: ObservableObject {
         await load()
     }
 
+    /// Reads a file the system handed over — from the in-app picker or from Files opening a `.hxp`
+    /// with this app. The security-scoped read lives here so both entry points share one path.
+    public func importPackage(at url: URL) async {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        guard let bytes = try? Data(contentsOf: url) else {
+            failureCode = "UNREADABLE_FILE"
+            return
+        }
+        await importPackage(bytes)
+    }
+
     /// Installing a `.hxp` the reader picked themselves. It takes the same verification and approval
     /// path a repository download takes; only the way the bytes arrived differs.
     public func importPackage(_ archiveBytes: Data) async {
