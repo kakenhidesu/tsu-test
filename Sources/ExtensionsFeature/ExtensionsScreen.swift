@@ -188,9 +188,16 @@ public struct ExtensionsScreen: View {
     }
 }
 
+/// The system's document picker, asked for a copy: the archive arrives in this app's own temporary
+/// directory, so reading it never depends on a security-scoped grant. Every type is selectable
+/// because an extension is admitted by verifying its bytes, not by its name. It is presented from an
+/// inert anchor rather than from a SwiftUI sheet: the picker dismisses its own presentation once it
+/// has answered, and inside a sheet that tears down the sheet instead, losing the answer with it.
 struct ArchivePicker: UIViewControllerRepresentable {
     @Binding var isPresented: Bool
     let onPick: (URL) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(owner: self) }
 
     func makeUIViewController(context: Context) -> UIViewController {
         let anchor = UIViewController()
@@ -199,63 +206,46 @@ struct ArchivePicker: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ anchor: UIViewController, context: Context) {
-        guard isPresented, anchor.presentedViewController == nil else { return }
-        let picker = ArchivePickerController { url in
-            isPresented = false
-            if let url { onPick(url) }
+        context.coordinator.owner = self
+        guard isPresented, anchor.presentedViewController == nil, !context.coordinator.isShowing else {
+            return
         }
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        picker.delegate = context.coordinator
+        context.coordinator.isShowing = true
         anchor.present(picker, animated: true)
     }
-}
 
-/// The system's document picker, asked for a copy: the archive arrives in this app's own temporary
-/// directory, so reading it never depends on a security-scoped grant. Every type is selectable
-/// because an extension is admitted by verifying its bytes, not by its name.
-final class ArchivePickerController: UIViewController, UIDocumentPickerDelegate {
-    private let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
-    private let onFinish: (URL?) -> Void
-    private var picked: URL?
+    @MainActor
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var owner: ArchivePicker
+        var isShowing = false
 
-    init(onFinish: @escaping (URL?) -> Void) {
-        self.onFinish = onFinish
-        super.init(nibName: nil, bundle: nil)
-    }
+        init(owner: ArchivePicker) {
+            self.owner = owner
+        }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        return nil
-    }
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            finish(controller, urls.first)
+        }
 
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        picker.delegate = self
-        addChild(picker)
-        picker.view.frame = view.bounds
-        picker.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        view.addSubview(picker.view)
-        picker.didMove(toParent: self)
-    }
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            finish(controller, nil)
+        }
 
-    override func viewDidDisappear(_ animated: Bool) {
-        super.viewDidDisappear(animated)
-        guard isBeingDismissed else { return }
-        let url = picked
-        picked = nil
-        onFinish(url)
-    }
-
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-        picked = urls.first
-        closeUnlessAlreadyClosing()
-    }
-
-    func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-        closeUnlessAlreadyClosing()
-    }
-
-    private func closeUnlessAlreadyClosing() {
-        guard presentingViewController != nil, !isBeingDismissed else { return }
-        dismiss(animated: true)
+        /// The archive is handed over only once the picker has left the screen, so the review sheet
+        /// never asks to be presented while a dismissal is still running.
+        private func finish(_ controller: UIDocumentPickerViewController, _ url: URL?) {
+            isShowing = false
+            owner.isPresented = false
+            let deliver = owner.onPick
+            guard let url else { return }
+            guard let presenting = controller.presentingViewController else {
+                deliver(url)
+                return
+            }
+            presenting.dismiss(animated: true) { deliver(url) }
+        }
     }
 }
 
