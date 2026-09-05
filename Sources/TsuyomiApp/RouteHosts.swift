@@ -8,6 +8,7 @@ import SearchFeature
 import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
+import TsuyomiSource
 
 /// Each host owns the model for exactly one route. The model is created when the route is pushed and
 /// released when it is popped, so no screen keeps a source request alive after the user leaves it.
