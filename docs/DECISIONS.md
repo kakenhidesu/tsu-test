@@ -73,3 +73,4 @@
 - 撤销条目只接受"由该仓库自己的发布者密钥签名"的记录：否则一个镜像就能给别人的密钥注入撤销。
 - `PublisherTrustStore` 是 actor（持久信任），但 `HxpArchiveVerifier` 需要同步解析器，因此由它产出一次性 `InMemoryPublisherKeyStore` 快照：一次校验只对着一份一致的信任视图。
 - 内置官方仓库本轮不实现：基址与根公钥未定，不写占位 URL，不建 `OfficialRepository.swift`。
+- 仓库索引、签名与 `.hxp` 下载走 `HostNetworkGateway.fetchStaticResource`：请求构造留在宿主网络 actor 内，且不携带任何来源 Cookie，仓库因此既读不到也写不了任何来源会话。

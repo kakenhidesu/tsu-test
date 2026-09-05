@@ -33,6 +33,30 @@ public actor HostNetworkGateway {
         try await cookieJar.seed(grant, origin: origin, rawCookie: rawCookie)
     }
 
+    /// Fetches one static host-owned file — an extension repository's index, signature or archive.
+    /// It carries no cookies and belongs to no source grant, so a repository can never read or set a
+    /// source's session, and request construction stays inside this actor.
+    public func fetchStaticResource(url: URL, maximumBytes: Int) async throws -> Data {
+        guard url.scheme?.lowercased() == "https", maximumBytes > 0 else {
+            throw HostNetworkException(.invalidRequest)
+        }
+        let response = try await execute(
+            HostHttpRequest(
+                url: url,
+                method: .get,
+                headers: ["Accept": "application/octet-stream"],
+                decode: .auto,
+                body: nil,
+                referrer: nil,
+                timeoutMs: 20_000,
+                maximumResponseBytes: maximumBytes
+            )
+        )
+        guard response.status == 200 else { throw HostNetworkException(.transport) }
+        guard response.bytes.count <= maximumBytes else { throw HostNetworkException(.responseLimit) }
+        return response.bytes
+    }
+
     /// Fetches one display image through the same source/version cookie and verified-identity
     /// transport as source documents. Callers provide only a granted HTTPS URL and canonical referrer.
     public func fetchMedia(

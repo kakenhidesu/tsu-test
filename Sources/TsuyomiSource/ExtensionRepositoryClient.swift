@@ -33,11 +33,11 @@ public struct RepositoryDescriptor: Hashable, Sendable {
 /// to the same `HxpArchiveVerifier → ExtensionInstaller` path a local `.hxp` takes, so the market
 /// cannot become a second, weaker way in.
 public struct ExtensionRepositoryClient: Sendable {
-    private let transport: any HostHttpTransport
+    private let gateway: HostNetworkGateway
     private let clock: @Sendable () -> Date
 
-    public init(transport: any HostHttpTransport, clock: @escaping @Sendable () -> Date = Date.init) {
-        self.transport = transport
+    public init(gateway: HostNetworkGateway, clock: @escaping @Sendable () -> Date = Date.init) {
+        self.gateway = gateway
         self.clock = clock
     }
 
@@ -74,12 +74,10 @@ public struct ExtensionRepositoryClient: Sendable {
         from descriptor: RepositoryDescriptor
     ) async throws -> Data {
         let url = try ExtensionRepositoryClient.join(descriptor.base, descriptor.path, package.file)
-        let response = try await get(url, maximumBytes: package.sizeBytes)
-        guard response.bytes.count == package.sizeBytes else { throw RepositoryError.packageTooLarge }
-        guard Sha256.hex(response.bytes) == package.sha256 else {
-            throw RepositoryError.packageDigestMismatch
-        }
-        return response.bytes
+        let bytes = try await get(url, maximumBytes: package.sizeBytes)
+        guard bytes.count == package.sizeBytes else { throw RepositoryError.packageTooLarge }
+        guard Sha256.hex(bytes) == package.sha256 else { throw RepositoryError.packageDigestMismatch }
+        return bytes
     }
 
     private func read(
@@ -90,11 +88,11 @@ public struct ExtensionRepositoryClient: Sendable {
         let indexBytes = try await get(
             try ExtensionRepositoryClient.join(origin, path, "index.json"),
             maximumBytes: RepositoryIndexCodec.maximumIndexBytes
-        ).bytes
+        )
         let signature = try await get(
             try ExtensionRepositoryClient.join(origin, path, "index.sig"),
             maximumBytes: 64
-        ).bytes
+        )
         return try RepositoryIndexCodec.decode(
             indexBytes: indexBytes,
             signature: signature,
@@ -103,21 +101,8 @@ public struct ExtensionRepositoryClient: Sendable {
         )
     }
 
-    private func get(_ url: URL, maximumBytes: Int) async throws -> HostHttpResponse {
-        let response = try await transport.execute(
-            HostHttpRequest(
-                url: url,
-                method: .get,
-                headers: ["Accept": "application/octet-stream"],
-                decode: .auto,
-                body: nil,
-                referrer: nil,
-                timeoutMs: 20_000,
-                maximumResponseBytes: maximumBytes
-            )
-        )
-        guard response.status == 200 else { throw RepositoryError.invalidIndex }
-        return response
+    private func get(_ url: URL, maximumBytes: Int) async throws -> Data {
+        try await gateway.fetchStaticResource(url: url, maximumBytes: maximumBytes)
     }
 
     /// A repository base is an HTTPS origin plus a directory path. Query strings, fragments and
