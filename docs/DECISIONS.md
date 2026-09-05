@@ -74,3 +74,6 @@
 - `PublisherTrustStore` 是 actor（持久信任），但 `HxpArchiveVerifier` 需要同步解析器，因此由它产出一次性 `InMemoryPublisherKeyStore` 快照：一次校验只对着一份一致的信任视图。
 - 内置官方仓库本轮不实现：基址与根公钥未定，不写占位 URL，不建 `OfficialRepository.swift`。
 - 仓库索引、签名与 `.hxp` 下载走 `HostNetworkGateway.fetchStaticResource`：请求构造留在宿主网络 actor 内，且不携带任何来源 Cookie，仓库因此既读不到也写不了任何来源会话。
+- 市场里的包状态只有四种（可安装/已安装/可更新/不兼容/已撤销）由索引与已安装版本推导，不额外持久化：任何第二份状态都会与实际安装状态不一致。
+- `InstallReviewScreen` 是所有安装路径（仓库下载、本地 `.hxp` 导入）的唯一确认点；拒绝后旧版本保持激活。
+- 移除发布者信任会让它签名的包立即验签失败 → 关闭运行时通道并置来源为休眠，但保留书架与凭据：撤销的是"运行代码的许可"，不是用户的数据。
