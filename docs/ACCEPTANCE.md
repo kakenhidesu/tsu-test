@@ -40,6 +40,15 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 | HTML 回放 | search/detail/directory/chapter 的字段值与 `tsuyomi-extensions/test/wenku8.test.mjs` 的断言一致；challenge 页转为类型化 `SourceException` 且诊断不含原始 HTML；远端书架读取零 POST、零请求体 |
 | 更新策略 | `package-policy-cases.json` 七条用例全部通过（无能力增长接受、新增 webLogin/home 需授权、已撤销先于版本判定、已确认轮换接受、未确认换钥拒绝、回滚拒绝） |
 
+## M3 阅读闭环 — 进行中
+
+| 项 | 结果 |
+|---|---|
+| reader engine | `Executed 10 tests`：精确/降级/邻近锚点解析、三种呈现共享同一 locator、capture 只推进时钟、降级捕获不顶替精确捕获、快照必须自证溯源、切换事务只接受自己的当前见证、陈旧代取消、文档缓存 LRU |
+| TextKit 2 分页 | 页面计划恰好划分排版文本（无重叠、无空隙、末页对齐存储长度）；除末页外每页不超过视口高度；字号变更产生新 layout key 且语义位置仍可解析；仅换主题不改变 layout key；星际字符的码点/UTF-16 偏移换算正确 |
+| 受控 WebView | 导航溯源测试 7 条：宿主发起的加载落定并绑定、观察到的服务端重定向保留请求溯源、用户手势导航作废绑定、无显式请求时不绑定、Cookie 主机匹配跟随声明 origin |
+| 尚未完成 | `ReaderScreen` 与 Browse/Search/Book 三屏、`AppContainer`/路由/Xcode App target、端到端旅程 |
+
 ## 未完成项
 
 | 项 | 原因 |
