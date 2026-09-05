@@ -35,6 +35,10 @@ public final class ReaderPageView: UIView {
     public var horizontalMargin: CGFloat = 24
     public var textColor: UIColor = .label
 
+    /// Reports the page index that has actually been painted. A preview may only be committed
+    /// against a page the reader has seen, so the witness comes from drawing, not from state.
+    public var onPageDrawn: ((Int) -> Void)?
+
     override public func draw(_ rect: CGRect) {
         guard let layout, let context = UIGraphicsGetCurrentContext() else { return }
         context.saveGState()
@@ -47,6 +51,7 @@ public final class ReaderPageView: UIView {
             let originX = horizontalMargin + CGFloat(column) * (columnWidth + horizontalMargin)
             drawPage(layout: layout, index: index, at: CGPoint(x: originX, y: 0), in: context)
         }
+        onPageDrawn?(pageIndex)
     }
 
     private func drawPage(layout: ReaderTextLayout, index: Int, at origin: CGPoint, in context: CGContext) {
@@ -82,6 +87,7 @@ public struct ReaderSurface: UIViewRepresentable {
     private let theme: ReaderTheme
     private let horizontalMargin: CGFloat
     private let onTap: (ReaderTapZone) -> Void
+    private let onPageDrawn: (Int) -> Void
 
     public init(
         layout: ReaderTextLayout,
@@ -89,8 +95,10 @@ public struct ReaderSurface: UIViewRepresentable {
         flow: ReaderPresentation,
         theme: ReaderTheme,
         horizontalMargin: CGFloat,
-        onTap: @escaping (ReaderTapZone) -> Void
+        onTap: @escaping (ReaderTapZone) -> Void,
+        onPageDrawn: @escaping (Int) -> Void
     ) {
+        self.onPageDrawn = onPageDrawn
         self.layout = layout
         self.pageIndex = pageIndex
         self.flow = flow
@@ -117,6 +125,7 @@ public struct ReaderSurface: UIViewRepresentable {
 
     public func updateUIView(_ view: ReaderPageView, context: Context) {
         context.coordinator.onTap = onTap
+        view.onPageDrawn = onPageDrawn
         view.layout = layout
         view.pageIndex = pageIndex
         view.flow = flow
@@ -132,7 +141,6 @@ public struct ReaderSurface: UIViewRepresentable {
         return "正文，第 \(pageIndex + 1) 页，共 \(layout.pages.count) 页"
     }
 
-    
     @MainActor
     public final class Coordinator {
         var onTap: (ReaderTapZone) -> Void

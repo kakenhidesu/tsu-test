@@ -60,6 +60,19 @@ public final class ReaderDocumentSession {
         try navigateToBlock(position.blockIndex + delta)
     }
 
+    /// A locator for an arbitrary block that does not move the reading position. Preview targets
+    /// need this: pointer movement must never change where the reader actually is.
+    public func locator(atBlock blockIndex: Int, characterOffset: Int = 0) throws -> ReaderLocator {
+        try ReaderDocumentSession.position(
+            at: blockIndex,
+            offset: characterOffset,
+            precision: .exact,
+            includeExactAnchor: true,
+            in: document,
+            at: clock()
+        ).locator
+    }
+
     public func capture(at capturedAt: Date) throws -> ReaderLocator {
         try ReaderLocator(
             document: position.locator.document,

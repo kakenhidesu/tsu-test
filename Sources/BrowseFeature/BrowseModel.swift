@@ -69,7 +69,7 @@ public final class BrowseModel: ObservableObject {
                 sourceId: source.sourceId.value,
                 origin: origin
             ) else { continue }
-            if let stored = try? await credentials.get(partition), stored != nil { return true }
+            if (try? await credentials.get(partition)) != nil { return true }
         }
         return false
     }
