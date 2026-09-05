@@ -251,6 +251,7 @@ public struct TsuyomiNavigationCard<Trailing: View>: View {
                 Image(systemName: "chevron.right")
                     .font(.footnote)
                     .foregroundStyle(TsuyomiTheme.Palette.tertiaryText)
+                    .accessibilityHidden(true)
             }
             .padding(TsuyomiTheme.Metrics.gutter)
             .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)

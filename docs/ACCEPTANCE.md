@@ -69,7 +69,7 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 | 索引格式 | `tsuyomi-repository` v0，Ed25519 detached 验签（`"tsuyomi-repository-v0"` 加 NUL 再接 RFC 8785 规范化）；撤销条目必须由该仓库自己的发布者密钥签名 |
 | 五个屏幕 | `extensions`、`extensionRepository`、`extensionPackage`、`extensionInstallReview`、`publisherKeys` 全部可达（来源列表顶栏进入）|
 | 工具 | `tools/repository/build-index.mjs`，Node 标准库，规范化函数复制自 `tsuyomi-extensions/tools/build-fixture.mjs` 并注明来源 |
-| 尚未完成 | 本地 HTTP fake 走完"添加仓库→安装→升版本→更新→撤销→停用"整条链路的端到端 |
+| 端到端 | `MarketJourneyTests`：假 HTTPS 主机（只服务 index.json/index.sig/*.hxp，其余 404）→ 添加仓库并确认发布者 → 安装 → 索引升到 99.0.0 → 状态变可更新 → 更新 → 索引带撤销条目 → 已装包停止验签、来源置为不可用；另一条断言移除仓库后已装扩展与发布者信任都还在 |
 
 ## M6 设置与打磨 — 进行中
 
@@ -77,7 +77,11 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 |---|---|
 | 设置屏 | 显示（外观，无 profile）、阅读器默认值（排版/翻页/导航分组）、数据（明写迁移含与不含项）、帮助（可搜索折叠）、关于（许可证全文）|
 | 文档 | `docs/OPTION_APPLICABILITY_IOS.md` 逐项记录可见性判定；`THIRD_PARTY_NOTICES.md` 记录 QuickJS-ng 与源码摘要；README 重写 |
-| 尚未完成 | Dynamic Type `.accessibility3` 核对、VoiceOver 端到端、Reduce Motion、深浅色截图核对、`NSUserActivity` 恢复 |
+| Reduce Motion | 插入位让位与快捷栏收折在 Reduce Motion 下降级为无动画切换 |
+| `NSUserActivity` | 阅读页发布活动（只含书与章，不含进度，不参与 Handoff），根视图接管续读并切到浏览 tab |
+| VoiceOver | 装饰性图标全部隐藏；选中态用 `.isSelected` trait 表达而非朗读勾图标；封面、筛选、分页、阅读进度均有标签与值 |
+| 纪律回归 | `RepositoryHygieneTests` 6 条：SPDX 头、400 行上限、无 TODO/``/`try!`/`swiftlint:disable`/`#if false`、无 iOS 17 API、无 E-ink 残留符号、无 Kotlin 提交 |
+| 尚未完成 | Dynamic Type `.accessibility3` 与深浅色的模拟器人工截图核对（需真机/模拟器目视，CI 不覆盖）|
 
 ## 未完成项
 

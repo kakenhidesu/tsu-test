@@ -48,6 +48,7 @@ public struct SearchScreen: View {
         HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
             Image(systemName: "magnifyingglass")
                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                .accessibilityHidden(true)
             TextField("书名或作者", text: $model.query)
                 .submitLabel(.search)
                 .autocorrectionDisabled()

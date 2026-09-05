@@ -31,6 +31,7 @@ struct LibraryShortcutBar: View {
         } label: {
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                 Image(systemName: "chevron.down")
+                    .accessibilityHidden(true)
                 Text("展开快捷栏")
             }
             .font(TsuyomiTheme.Typography.supporting)

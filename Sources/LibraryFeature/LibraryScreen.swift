@@ -191,12 +191,16 @@ public struct LibraryScreen: View {
                 if model.selectedBooks.contains(entry.book.identity) {
                     Image(systemName: "checkmark.circle.fill")
                         .foregroundStyle(TsuyomiTheme.Palette.accent)
+                        .accessibilityHidden(true)
                 }
             }
             .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
         }
         .buttonStyle(.plain)
+        .accessibilityAddTraits(
+            model.selectedBooks.contains(entry.book.identity) ? [.isSelected, .isButton] : .isButton
+        )
         .onLongPressGesture { model.beginSelection(book: entry.book.identity) }
         .draggable(BookIdentityTransfer(identity: entry.book.identity))
     }

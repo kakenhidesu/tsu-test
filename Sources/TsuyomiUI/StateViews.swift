@@ -65,6 +65,7 @@ public struct StateView<Content, Body: View>: View {
                 Image(systemName: symbol)
                     .font(.largeTitle)
                     .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                    .accessibilityHidden(true)
             }
             Text(title)
                 .font(TsuyomiTheme.Typography.sectionTitle)
@@ -88,6 +89,7 @@ public struct StateView<Content, Body: View>: View {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
                 .foregroundStyle(TsuyomiTheme.Palette.warning)
+                .accessibilityHidden(true)
             Text("操作未完成")
                 .font(TsuyomiTheme.Typography.sectionTitle)
             if let detail {
