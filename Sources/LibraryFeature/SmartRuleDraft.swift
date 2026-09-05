@@ -58,6 +58,11 @@ public struct SmartPredicateDraft: Identifiable, Hashable, Sendable {
     public init() {}
 }
 
+public enum SmartRuleCompilation: Sendable {
+    case ready(SmartRule)
+    case rejected([SmartRuleViolation])
+}
+
 public struct SmartRuleDraft: Hashable, Sendable {
     public var title: String = ""
     public var combinator: MatchMode = .all
@@ -67,7 +72,7 @@ public struct SmartRuleDraft: Hashable, Sendable {
 
     /// Builds the rule the store will persist, or the violations that stop it. The editor shows these
     /// inline against the row that produced them, so a rejected rule is never silently dropped.
-    public func compile() -> Result<SmartRule, [SmartRuleViolation]> {
+    public func compile() -> SmartRuleCompilation {
         var nodes: [SmartRuleNode] = []
         var violations: [SmartRuleViolation] = []
         for (index, draft) in predicates.enumerated() {
@@ -78,16 +83,16 @@ public struct SmartRuleDraft: Hashable, Sendable {
             nodes.append(draft.isNegated ? .not(.predicate(predicate)) : .predicate(predicate))
         }
         guard violations.isEmpty, !nodes.isEmpty else {
-            return .failure(violations.isEmpty
+            return .rejected(violations.isEmpty
                 ? [SmartRuleViolation(code: "empty-rule", path: "root")]
                 : violations)
         }
         let root: SmartRuleNode = combinator == .all ? .all(nodes) : .any(nodes)
         guard let rule = try? SmartRule(root: root) else {
-            return .failure([SmartRuleViolation(code: "invalid-rule", path: "root")])
+            return .rejected([SmartRuleViolation(code: "invalid-rule", path: "root")])
         }
         let checked = SmartRuleValidator.validate(rule)
-        return checked.isEmpty ? .success(rule) : .failure(checked)
+        return checked.isEmpty ? .ready(rule) : .rejected(checked)
     }
 
     private static func predicate(_ draft: SmartPredicateDraft) -> SmartPredicate? {

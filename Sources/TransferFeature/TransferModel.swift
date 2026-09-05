@@ -19,7 +19,7 @@ public struct TransferReport: Sendable, Equatable {
 }
 
 /// Export writes one canonical `tsuyomi-transfer` file; import is always preview, then an explicit
-/// apply, then a report. Nothing is written to the database before the reader has seen the preview.
+/// apply, then a report. Nothing reaches the database before the reader has seen the preview.
 @MainActor
 public final class TransferModel: ObservableObject {
     @Published public private(set) var stage: TransferStage = .idle
@@ -27,29 +27,20 @@ public final class TransferModel: ObservableObject {
     @Published public private(set) var report: TransferReport?
     @Published public private(set) var failureCode: String?
     @Published public private(set) var exportedFile: URL?
+    @Published public private(set) var isBusy = false
 
-    private let library: LibraryRepository
-    private let collections: CollectionStore
-    private let progress: ReadingProgressStore
     private let transfers: TransferRepository
     private let preferences: AppPreferences
     private let roots: StorageRoots
     private let clock: () -> Date
-    private var sessionId: String?
     private var planDigest: String?
 
     public init(
-        library: LibraryRepository,
-        collections: CollectionStore,
-        progress: ReadingProgressStore,
         transfers: TransferRepository,
         preferences: AppPreferences,
         roots: StorageRoots,
         clock: @escaping () -> Date = Date.init
     ) {
-        self.library = library
-        self.collections = collections
-        self.progress = progress
         self.transfers = transfers
         self.preferences = preferences
         self.roots = roots
@@ -57,18 +48,17 @@ public final class TransferModel: ObservableObject {
     }
 
     public func export() async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
         failureCode = nil
         do {
-            let snapshot = try await TransferSnapshotBuilder.snapshot(
-                library: library,
-                collections: collections,
-                progress: progress,
-                preferences: preferences.reader,
-                createdAt: clock()
+            let snapshot = try await transfers.exportSnapshot(
+                createdAt: clock(),
+                readerPreferences: preferences.portableReader
             )
             let bytes = try TransferCodec.encode(snapshot)
-            let url = roots.directory(.cache)
-                .appendingPathComponent("tsuyomi-transfer.json")
+            let url = roots.directory(.cache).appendingPathComponent("tsuyomi-transfer.json")
             try bytes.write(to: url, options: .atomic)
             exportedFile = url
         } catch {
@@ -76,24 +66,28 @@ public final class TransferModel: ObservableObject {
         }
     }
 
-    /// Parsing chooses the format by its own content, so a Hikari backup and a Tsuyomi transfer are
-    /// never told apart by the file name the picker happened to return.
+    /// The format is decided by the file's own content, so a Hikari backup and a Tsuyomi transfer are
+    /// never told apart by whatever name the picker returned.
     public func preview(_ bytes: Data) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
         failureCode = nil
         report = nil
         switch TransferCodec.parse(bytes) {
         case .fatal(let safeCode):
             plan = nil
+            planDigest = nil
             stage = .idle
             failureCode = safeCode
         case .ready(let parsed, let digest):
             do {
-                let reconciled = try await transfers.withDatabaseConflicts(parsed)
-                plan = reconciled
+                plan = try await transfers.withDatabaseConflicts(parsed)
                 planDigest = digest
                 stage = .previewing
             } catch {
                 plan = nil
+                planDigest = nil
                 stage = .idle
                 failureCode = SafeErrorCode.of(error)
             }
@@ -101,7 +95,9 @@ public final class TransferModel: ObservableObject {
     }
 
     public func apply() async {
-        guard let plan, let planDigest, stage == .previewing else { return }
+        guard let plan, let planDigest, stage == .previewing, !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
         stage = .applying
         let session = UUID().uuidString
         do {
@@ -110,14 +106,14 @@ public final class TransferModel: ObservableObject {
                 plan: plan,
                 planDigest: planDigest,
                 normalizedPlanPath: "import/\(planDigest).json",
-                preferencePatchJson: TransferPreferencePatch.json(plan.readerPreferences),
+                preferencePatchJson: String(
+                    data: try ImportPlanCodec.encode(plan),
+                    encoding: .utf8
+                ) ?? "{}",
                 startedAt: clock()
             )
-            sessionId = session
             try await transfers.applyPlan(sessionId: session, digest: planDigest, plan: plan)
-            if let incoming = plan.readerPreferences {
-                preferences.setReader(TransferPreferencePatch.merged(preferences.reader, incoming))
-            }
+            preferences.applyImported(plan.readerPreferences, digest: planDigest)
             _ = try await transfers.markPreferencesApplied(sessionId: session, digest: planDigest)
             let summary = ImportSummary(
                 sessionId: session,
@@ -132,6 +128,8 @@ public final class TransferModel: ObservableObject {
                 summary: summary,
                 warnings: try await transfers.warnings(sessionId: session)
             )
+            self.plan = nil
+            self.planDigest = nil
             stage = .reported
         } catch {
             failureCode = SafeErrorCode.of(error)
@@ -143,6 +141,7 @@ public final class TransferModel: ObservableObject {
     public func discardPreview() {
         plan = nil
         planDigest = nil
+        failureCode = nil
         stage = .idle
     }
 }

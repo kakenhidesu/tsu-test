@@ -158,9 +158,9 @@ public struct CollectionEditorScreen: View {
             return
         }
         switch draft.compile() {
-        case .failure(let found):
+        case .rejected(let found):
             violations = found
-        case .success(let rule):
+        case .ready(let rule):
             violations = []
             Task {
                 await model.createSmartCollection(named: title, rule: rule)

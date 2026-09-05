@@ -65,3 +65,6 @@
 - 智能规则编辑器只编辑"一个组合子 + 一组谓词"的扁平结构：这是规则文法里不需要嵌套就能表达的全部形状；更深的嵌套规则可以导入并运行，但不在此处编辑，避免做一个无人使用的树编辑器。
 - 规则校验失败时把违规按 `path` 定位回产生它的那一行内联显示，而不是弹一个笼统的错误：`SmartRuleViolation` 已经带路径，丢掉它等于让用户猜。
 - `.gitattributes` 把 `Sources/CQuickJS/quickjs-ng/**` 标为 `linguist-vendored` 且 `-diff`：这些文件是逐字内嵌的上游源码，永不手改，不应计入本仓库的语言统计，也不应出现在代码评审 diff 里。引擎仍以源码形式内嵌（第 3 节要求），不改为预编译二进制。
+- 智能规则编译结果用 `SmartRuleCompilation { ready, rejected }` 而不是 `Result`：`[SmartRuleViolation]` 不是 `Error`，把它包成 error 只是为了迁就 `Result`。
+- `更多` tab 随数据迁移一起落地，只有真实入口，M6 再往里加行；这样每个 tab 从第一天起就是可用的，而不是先摆一个空壳。
+- 导入文件类型按内容自辨（`TransferCodec.parse`），文件选择器只用来拿字节；不依据扩展名或选择器返回的名字判断格式。

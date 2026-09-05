@@ -16,6 +16,7 @@ public final class AppContainer: ObservableObject {
     public let remoteLibrary: RemoteLibraryStore
     public let credentials: SourceCredentialStore
     public let collections: CollectionStore
+    public let transfers: TransferRepository
     public let gateway: HostNetworkGateway
     public let registry: SourceRegistry
     public let preferences: AppPreferences
@@ -34,6 +35,7 @@ public final class AppContainer: ObservableObject {
         remoteLibrary = RemoteLibraryStore(database: database)
         credentials = try SourceCredentialStore(roots: roots)
         collections = CollectionStore(database: database)
+        transfers = TransferRepository(database: database)
         gateway = HostNetworkGateway(
             transport: URLSessionHostHttpTransport(userAgent: AppContainer.userAgent)
         )

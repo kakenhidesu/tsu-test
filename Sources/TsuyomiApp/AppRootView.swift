@@ -10,11 +10,13 @@ import TsuyomiUI
 public enum RootTab: String, Hashable, CaseIterable {
     case library
     case browse
+    case more
 
     var title: LocalizedStringKey {
         switch self {
         case .library: return "书架"
         case .browse: return "浏览"
+        case .more: return "更多"
         }
     }
 
@@ -22,6 +24,7 @@ public enum RootTab: String, Hashable, CaseIterable {
         switch self {
         case .library: return "books.vertical"
         case .browse: return "safari"
+        case .more: return "ellipsis.circle"
         }
     }
 }
@@ -71,6 +74,9 @@ public struct AppRootView: View {
             browseTab
                 .tabItem { Label(RootTab.browse.title, systemImage: RootTab.browse.symbol) }
                 .tag(RootTab.browse)
+            MoreScreen(container: container)
+                .tabItem { Label(RootTab.more.title, systemImage: RootTab.more.symbol) }
+                .tag(RootTab.more)
         }
         .preferredColorScheme(container.preferences.colorScheme.colorScheme)
         .onChange(of: tab) { selected in
