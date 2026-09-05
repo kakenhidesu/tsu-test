@@ -67,6 +67,16 @@ jobs:
             -skipMacroValidation \
             -resultBundlePath TestResults.xcresult
 
+      - name: Build app target (iOS Simulator)
+        run: |
+          set -o pipefail
+          xcodebuild build \
+            -project App/Tsuyomi.xcodeproj \
+            -scheme Tsuyomi \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            -skipMacroValidation \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
