@@ -69,3 +69,7 @@
 - `更多` tab 随数据迁移一起落地，只有真实入口，M6 再往里加行；这样每个 tab 从第一天起就是可用的，而不是先摆一个空壳。
 - 导入文件类型按内容自辨（`TransferCodec.parse`），文件选择器只用来拿字节；不依据扩展名或选择器返回的名字判断格式。
 - 进度落盘取的是"当前实际绘制的那一页"的位置（`ReaderTextLayout.position(atPageIndex:)` + `ReaderDocumentSession.locator(atBlock:)`），而不是解析器的起始猜测：读者没翻页也应当得到精确定位符；未完成排版时不写入，因为此时并不知道读者看到了什么。
+- `tsuyomi-repository` v0 是 iOS 的临时索引格式，待 protocol 标准落地后只替换 `RepositoryIndexCodec.swift` 与其 fixtures；全部字段限于 `hxp-package-v1.md` §Trust §Updates 已要求宿主校验的信息，索引本身不授予任何东西。
+- 撤销条目只接受"由该仓库自己的发布者密钥签名"的记录：否则一个镜像就能给别人的密钥注入撤销。
+- `PublisherTrustStore` 是 actor（持久信任），但 `HxpArchiveVerifier` 需要同步解析器，因此由它产出一次性 `InMemoryPublisherKeyStore` 快照：一次校验只对着一份一致的信任视图。
+- 内置官方仓库本轮不实现：基址与根公钥未定，不写占位 URL，不建 `OfficialRepository.swift`。
