@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import Foundation
-import TsuyomiProtocol
+
 
 /// RFC 8785 JSON canonicalisation. Signatures are computed over these bytes, so the output must be
 /// byte-identical to the producer's canonical form (`tsuyomi-extensions/tools/build-fixture.mjs`):

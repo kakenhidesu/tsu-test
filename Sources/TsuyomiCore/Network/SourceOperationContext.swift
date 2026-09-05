@@ -187,7 +187,7 @@ public func remoteLibraryReadContext(
     try SourceOperationContext(kind: .remoteLibraryRead, policy: policy, cursor: cursor)
 }
 
-func remoteLibraryAddContext(
+public func remoteLibraryAddContext(
     policy: RemoteOperationRequestPolicy,
     remoteBookId: String,
     addToken: String

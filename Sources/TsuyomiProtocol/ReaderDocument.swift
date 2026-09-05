@@ -89,3 +89,14 @@ public struct ReaderDocument: Hashable, Sendable, Codable {
         ]))
     }
 }
+
+public extension ReaderDocument {
+    /// reader-document-v1 §Content digest: SHA-256 over the RFC 8785 canonical block payload. A
+    /// changed digest is a reflow/restore event for the same identity, never a second identity.
+    static func contentDigest(of blocks: [ReaderBlock]) -> String {
+        guard let canonical = try? Rfc8785.canonicalize(.array(blocks.map(\.json))) else {
+            return String(repeating: "0", count: 64)
+        }
+        return Sha256.hex(canonical)
+    }
+}
