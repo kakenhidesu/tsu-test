@@ -85,7 +85,7 @@ public final class LibraryModel: ObservableObject {
     public func moveShortcut(from source: IndexSet, to destination: Int) {
         var current = shortcuts
         current.move(fromOffsets: source, toOffset: destination)
-        preferences.setShortcutOrder(current.map(.id))
+        preferences.setShortcutOrder(current.map { $0.id })
         objectWillChange.send()
     }
 
@@ -138,7 +138,7 @@ public final class LibraryModel: ObservableObject {
     /// a computed order.
     public func move(_ identity: BookIdentity, to index: Int) async {
         guard isArranging else { return }
-        var order = project(entries).map(.book.identity)
+        var order = project(entries).map { $0.book.identity }
         guard let from = order.firstIndex(of: identity) else { return }
         order.remove(at: from)
         order.insert(identity, at: min(max(index, 0), order.count))
@@ -200,7 +200,7 @@ public final class LibraryModel: ObservableObject {
 
     public func selectAll() {
         switch selectionKind {
-        case .books: selectedBooks = Set(project(entries).map(.book.identity))
+        case .books: selectedBooks = Set(project(entries).map { $0.book.identity })
         case .collections: selectedCollections = Set(allCollections.map(\.collectionId))
         case nil: break
         }
