@@ -27,14 +27,6 @@ public enum WebLoginSessionError: Error, Equatable, Sendable {
     case noSettledPage
 }
 
-/// What the window did with a navigation. `plaintextAccepted` is not a refusal: the navigation is
-/// allowed, and the reader is told that whatever they type and whatever session is captured from it
-/// crossed the network unencrypted.
-public enum WebNavigationBlock: String, Sendable, Equatable, CaseIterable {
-    case plaintextAccepted = "PLAINTEXT_ACCEPTED"
-    case originNotDeclared = "ORIGIN_NOT_DECLARED"
-}
-
 /// A user-visible, one-at-a-time login or verification session. Web content is never handed to an
 /// extension: the session only proves which declared-origin page settled and stores the resulting
 /// declared-origin cookies and the exact user agent into one encrypted source/origin partition,
@@ -44,7 +36,6 @@ public final class ControlledWebLoginSession: NSObject {
     private let sourceId: String
     private let allowedOrigins: Set<HttpsOrigin>
     private let sessions: VerifiedBrowserSessionStore
-    private let onBlockedNavigation: (URL, WebNavigationBlock) -> Void
 
     private var webView: WKWebView?
     private var isActive = false
@@ -53,8 +44,7 @@ public final class ControlledWebLoginSession: NSObject {
     public init(
         sourceId: String,
         allowedOrigins: Set<HttpsOrigin>,
-        sessions: VerifiedBrowserSessionStore,
-        onBlockedNavigation: @escaping (URL, WebNavigationBlock) -> Void = { _, _ in }
+        sessions: VerifiedBrowserSessionStore
     ) throws {
         guard isNonBlank(sourceId), !allowedOrigins.isEmpty else {
             throw WebLoginSessionError.originNotDeclared
@@ -62,7 +52,6 @@ public final class ControlledWebLoginSession: NSObject {
         self.sourceId = sourceId
         self.allowedOrigins = allowedOrigins
         self.sessions = sessions
-        self.onBlockedNavigation = onBlockedNavigation
         super.init()
     }
 
@@ -193,25 +182,21 @@ public final class ControlledWebLoginSession: NSObject {
         return normalized
     }
 
-    /// The declared origins bound which host the window may reach; inside that host a redirect chain
+    /// The declared origins bound which host this window may reach; inside that host a redirect chain
     /// may fall back to plain HTTP, because a site that redirects its own login page off HTTPS is
-    /// otherwise unreachable. Everything the host itself fetches stays HTTPS-only: this relaxation
-    /// covers the user-driven window alone, and `plaintext` reports when it has been taken.
-    private func blockReason(_ url: URL) -> WebNavigationBlock? {
+    /// otherwise unreachable. Everything the host itself fetches stays HTTPS-only.
+    private func isReachable(_ url: URL) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
               let host = url.host?.lowercased(), !host.isEmpty,
               url.user == nil, url.password == nil else {
-            return .originNotDeclared
+            return false
         }
-        guard allowedOrigins.contains(where: { declared in
+        return allowedOrigins.contains { declared in
             guard let components = URLComponents(string: declared.canonical),
                   components.host?.lowercased() == host else { return false }
             guard let port = url.port else { return true }
             return port == components.port ?? (scheme == "https" ? 443 : 80)
-        }) else {
-            return .originNotDeclared
         }
-        return scheme == "https" ? nil : .plaintextAccepted
     }
 
     nonisolated static func origin(of url: String) throws -> HttpsOrigin {
@@ -243,18 +228,9 @@ extension ControlledWebLoginSession: WKNavigationDelegate {
         decidePolicyFor navigationAction: WKNavigationAction
     ) async -> WKNavigationActionPolicy {
         guard let url = navigationAction.request.url else { return .cancel }
-        let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? false
-        switch blockReason(url) {
-        case .originNotDeclared:
-            if isMainFrame { navigation.clear() }
-            onBlockedNavigation(url, .originNotDeclared)
+        guard isReachable(url) else {
+            if navigationAction.targetFrame?.isMainFrame == true { navigation.clear() }
             return .cancel
-        case .plaintextAccepted:
-            if isMainFrame { navigation.clear() }
-            onBlockedNavigation(url, .plaintextAccepted)
-            return .allow
-        case nil:
-            break
         }
         if navigationAction.targetFrame?.isMainFrame ?? false,
            let normalized = try? normalizedAllowedUrl(url.absoluteString) {

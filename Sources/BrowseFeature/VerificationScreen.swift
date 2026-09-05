@@ -6,30 +6,12 @@ import TsuyomiProtocol
 import TsuyomiUI
 import WebKit
 
-public struct BlockedNavigation: Sendable {
-    public let url: URL
-    public let reason: WebNavigationBlock
-
-    var explanation: String {
-        switch reason {
-        case .plaintextAccepted:
-            return "\(url.host ?? "该站点") 把这一页放在 http 上。页面已放行，但你在其中输入的内容"
-                + "与随后保存的登录态都以明文经过网络，请只在你能接受这一点时继续。"
-        case .originNotDeclared:
-            return "已拦截前往 \(url.host ?? "该地址") 的跳转：它不在该来源声明的站点范围内。"
-        }
-    }
-
-    var isRefusal: Bool { reason == .originNotDeclared }
-}
-
 /// The user completes a login or a site challenge here by hand. The host never scripts the page,
 /// never solves a challenge, and writes nothing remotely; closing the sheet stores nothing.
 @MainActor
 public final class VerificationModel: ObservableObject {
     @Published public private(set) var webView: WKWebView?
     @Published public private(set) var failure: String?
-    @Published public private(set) var blocked: BlockedNavigation?
     @Published public private(set) var isFinished = false
 
     private let sourceId: String
@@ -59,10 +41,7 @@ public final class VerificationModel: ObservableObject {
             let opened = try ControlledWebLoginSession(
                 sourceId: sourceId,
                 allowedOrigins: origins,
-                sessions: sessions,
-                onBlockedNavigation: { [weak self] url, reason in
-                    Task { @MainActor in self?.blocked = BlockedNavigation(url: url, reason: reason) }
-                }
+                sessions: sessions
             )
             session = opened
             webView = try await opened.open(initialUrl: initialUrl, userAgent: userAgent)
@@ -135,22 +114,13 @@ public struct VerificationScreen: View {
         return .loading
     }
 
-    @ViewBuilder
     private var notice: some View {
-        VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
-            Text("请在下面自行完成登录或人工验证。应用不会替你点击、填写或绕过任何验证。")
-            if let blocked = model.blocked {
-                Text(blocked.explanation)
-                    .foregroundStyle(
-                        blocked.isRefusal ? TsuyomiTheme.Palette.warning : TsuyomiTheme.Palette.danger
-                    )
-            }
-        }
-        .font(TsuyomiTheme.Typography.caption)
-        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(TsuyomiTheme.Metrics.gutter)
-        .background(TsuyomiTheme.Palette.raisedSurface)
+        Text("请在下面自行完成登录或人工验证。应用不会替你点击、填写或绕过任何验证。")
+            .font(TsuyomiTheme.Typography.caption)
+            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(TsuyomiTheme.Metrics.gutter)
+            .background(TsuyomiTheme.Palette.raisedSurface)
     }
 }
 
