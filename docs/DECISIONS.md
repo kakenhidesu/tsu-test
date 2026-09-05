@@ -39,3 +39,4 @@
 
 - iOS 禁止 `evaluateJavaScript`/user script，因此 `ControlledWebLoginSession` 不从 WebView 读取 HTML：它只产出 `VerifiedPageNavigationBinding`（请求 URL 与落定页面 URL）与声明 origin 的 Cookie/UA，页面正文由宿主用这些凭据经 `HostNetworkGateway` 重新 GET 取得，`CapturedVerifiedPage` 由该结果构造。
 - WKWebView 显式报告服务端重定向，因此导航追踪器比 Android 版更严格：只有宿主发起的加载与它观察到的重定向能落定，任何用户手势导航直接作废绑定。
+- `TsuyomiUI` 依赖 `TsuyomiCore` 而非仅 `TsuyomiProtocol`：第 6.5 节要求 `CoverImage` 直接消费 `CoverUiState`（其载荷是 `UIImage`，不能下沉到禁止 UIKit 的 `TsuyomiProtocol`），复制一份等价 DTO 会违反反冗余规则。依赖方向仍是单向的，`TsuyomiUI` 不做任何能力判定。

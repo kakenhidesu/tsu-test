@@ -189,7 +189,7 @@ public final class ControlledWebLoginSession: NSObject {
         (try? normalizedAllowedUrl(url.absoluteString)) != nil
     }
 
-    static func origin(of url: String) throws -> HttpsOrigin {
+    nonisolated static func origin(of url: String) throws -> HttpsOrigin {
         guard let components = URLComponents(string: url),
               components.scheme?.lowercased() == "https",
               let host = components.host, !host.isEmpty,
@@ -204,7 +204,7 @@ public final class ControlledWebLoginSession: NSObject {
         return origin
     }
 
-    static func matches(cookie: HTTPCookie, host: String) -> Bool {
+    nonisolated static func matches(cookie: HTTPCookie, host: String) -> Bool {
         let domain = cookie.domain.hasPrefix(".") ? String(cookie.domain.dropFirst()) : cookie.domain
         let lowered = domain.lowercased()
         let target = host.lowercased()
