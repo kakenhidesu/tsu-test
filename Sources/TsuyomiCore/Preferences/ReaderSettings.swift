@@ -72,10 +72,16 @@ public struct LibraryPresentationPreferences: Hashable, Sendable {
 
     public var shortcutOrder: [String]
     public var shortcutLocked: Bool
+    public var hiddenSystemNodes: [String]
 
-    public init(shortcutOrder: [String] = [], shortcutLocked: Bool = false) {
+    public init(
+        shortcutOrder: [String] = [],
+        shortcutLocked: Bool = false,
+        hiddenSystemNodes: [String] = []
+    ) {
         self.shortcutOrder = shortcutOrder
         self.shortcutLocked = shortcutLocked
+        self.hiddenSystemNodes = hiddenSystemNodes
     }
 
     static func sanitized(_ order: [String]) -> [String] {

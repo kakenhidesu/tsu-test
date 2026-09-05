@@ -15,6 +15,7 @@ public final class AppContainer: ObservableObject {
     public let progress: ReadingProgressStore
     public let remoteLibrary: RemoteLibraryStore
     public let credentials: SourceCredentialStore
+    public let collections: CollectionStore
     public let gateway: HostNetworkGateway
     public let registry: SourceRegistry
     public let preferences: AppPreferences
@@ -32,6 +33,7 @@ public final class AppContainer: ObservableObject {
         progress = ReadingProgressStore(database: database)
         remoteLibrary = RemoteLibraryStore(database: database)
         credentials = try SourceCredentialStore(roots: roots)
+        collections = CollectionStore(database: database)
         gateway = HostNetworkGateway(
             transport: URLSessionHostHttpTransport(userAgent: AppContainer.userAgent)
         )

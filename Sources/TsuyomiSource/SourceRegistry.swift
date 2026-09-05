@@ -12,6 +12,8 @@ public struct InstalledSource: Hashable, Sendable {
     public let displayName: String
     public let summary: String
     public let publisherFingerprint: String
+    public let packageSha256: String
+    public let networkOrigins: Set<HttpsOrigin>
     public let supportsHome: Bool
     public let supportsWebLogin: Bool
     public let supportsRemoteRead: Bool
@@ -73,6 +75,8 @@ public actor SourceRegistry {
             displayName: manifest.displayName,
             summary: manifest.summary,
             publisherFingerprint: verified.publisherFingerprint,
+            packageSha256: verified.packageSha256,
+            networkOrigins: manifest.capabilities.network.origins,
             supportsHome: manifest.capabilities.home.enabled,
             supportsWebLogin: manifest.capabilities.webLogin.enabled,
             supportsRemoteRead: manifest.capabilities.remoteLibrary.read,

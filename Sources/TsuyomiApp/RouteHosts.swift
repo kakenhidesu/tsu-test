@@ -82,11 +82,18 @@ struct RemoteLibraryHost: View {
 }
 
 struct BookHost: View {
+    private let coverState: (SourceBookSummary) -> CoverUiState
     @ObservedObject var flow: SourceFlowController
     @StateObject private var model: BookModel
 
-    init(container: AppContainer, flow: SourceFlowController, identity: BookIdentity) {
+    init(
+        container: AppContainer,
+        flow: SourceFlowController,
+        identity: BookIdentity,
+        coverState: @escaping (SourceBookSummary) -> CoverUiState
+    ) {
         self.flow = flow
+        self.coverState = coverState
         _model = StateObject(
             wrappedValue: BookModel(
                 identity: identity,
@@ -100,7 +107,7 @@ struct BookHost: View {
     var body: some View {
         BookScreen(
             model: model,
-            coverState: { flow.cover($0) },
+            coverState: coverState,
             openChapter: { chapter in
                 flow.remember(chapter: chapter)
                 Task { await flow.push(.reader(model.identity, chapter.chapterId)) }

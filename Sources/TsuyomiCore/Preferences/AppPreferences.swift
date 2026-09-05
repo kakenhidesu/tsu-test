@@ -24,7 +24,10 @@ public final class AppPreferences: ObservableObject {
             shortcutOrder: LibraryPresentationPreferences.sanitized(
                 defaults.stringArray(forKey: Key.shortcutOrder) ?? []
             ),
-            shortcutLocked: defaults.bool(forKey: Key.shortcutLocked)
+            shortcutLocked: defaults.bool(forKey: Key.shortcutLocked),
+            hiddenSystemNodes: LibraryPresentationPreferences.sanitized(
+                defaults.stringArray(forKey: Key.hiddenSystemNodes) ?? []
+            )
         )
         self.reader = AppPreferences.readReaderSettings(defaults)
         self.lastAppliedImportDigest = defaults.string(forKey: Key.lastAppliedImportDigest)
@@ -44,6 +47,13 @@ public final class AppPreferences: ObservableObject {
     public func setShortcutLocked(_ locked: Bool) {
         library.shortcutLocked = locked
         defaults.set(locked, forKey: Key.shortcutLocked)
+    }
+
+    /// Hiding a system node only removes an entry point; the books it would list stay on the shelf.
+    public func setHiddenSystemNodes(_ nodes: [String]) {
+        let sanitized = LibraryPresentationPreferences.sanitized(nodes)
+        library.hiddenSystemNodes = sanitized
+        defaults.set(sanitized, forKey: Key.hiddenSystemNodes)
     }
 
     public func setReader(_ settings: ReaderSettings) {
@@ -117,6 +127,7 @@ public final class AppPreferences: ObservableObject {
         static let colorScheme = "color_scheme"
         static let shortcutOrder = "library_shortcut_order"
         static let shortcutLocked = "library_shortcut_locked"
+        static let hiddenSystemNodes = "library_hidden_system_nodes"
         static let readerFontSize = "reader_font_size"
         static let readerLineHeight = "reader_line_height"
         static let readerHorizontalMargin = "reader_horizontal_margin"

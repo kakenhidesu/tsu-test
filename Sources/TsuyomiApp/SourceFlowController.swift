@@ -58,8 +58,14 @@ public final class SourceFlowController: ObservableObject {
 
     /// The one cover accessor every screen uses, so the partition binding lives in exactly one place.
     public func cover(_ summary: SourceBookSummary) -> CoverUiState {
-        covers?.state(for: summary, width: 216, height: 324)
-            ?? .fallback(FallbackSpec(title: summary.title, sourceLabel: openSource?.displayName))
+        covers?.state(
+            identity: summary.identity,
+            title: summary.title,
+            coverUrl: summary.coverUrl,
+            referrerUrl: summary.canonicalUrl,
+            width: CoverPixels.width,
+            height: CoverPixels.height
+        ) ?? .fallback(FallbackSpec(title: summary.title, sourceLabel: openSource?.displayName))
     }
 
     public func pop() async {
@@ -119,9 +125,10 @@ public final class SourceFlowController: ObservableObject {
         openSource = source
         covers = try? SourceCoverProvider(
             source: source,
-            packageRevision: client.packageInfo.packageSha256,
-            credentialRevision: await credentialRevision(source),
-            origins: client.packageInfo.manifest.capabilities.network.origins,
+            credentialRevision: await SourceCoverProvider.credentialRevision(
+                for: source,
+                credentials: container.credentials
+            ),
             roots: container.roots,
             fetcher: client
         )
@@ -133,19 +140,5 @@ public final class SourceFlowController: ObservableObject {
         guard let source = openSource else { return }
         openSource = nil
         await container.registry.close(source.sourceId)
-    }
-
-    /// Covers are cached per credential state, so signing in or out must not reveal the previous
-    /// session's images.
-    private func credentialRevision(_ source: InstalledSource) async -> String {
-        var parts: [String] = []
-        for origin in source.webLoginOrigins.sorted(by: { CanonicalOrder.precedes($0.canonical, $1.canonical) }) {
-            guard let partition = try? SourceCredentialPartition(
-                sourceId: source.sourceId.value,
-                origin: origin
-            ) else { continue }
-            parts.append((try? container.credentials.get(partition)) == nil ? "0" : "1")
-        }
-        return parts.isEmpty ? "anonymous" : parts.joined()
     }
 }

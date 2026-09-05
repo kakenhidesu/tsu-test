@@ -52,3 +52,8 @@
 - `@main` 放在 Xcode App target，库里只有 `TsuyomiRootScene`：SPM target 内的 `@main` 会与测试宿主冲突，且组合根需要保持可被单元测试构造。
 - `SourceExtensionClient` 直接实现 `CoverMediaFetcher`：封面与正文共用同一份 `SourceNetworkGrant`（cookie 作用域、origin、响应上限），另建一个封面通道会复制一份可放宽的授权。
 - `LibraryWriteArbiter`（Android `DisplayWriteArbiter`）随 M4 书架显示写入一起落地：M3 没有任何显示字段写入需要它仲裁。
+- `RootTabs` 先只有 `library` 与 `browse` 两个 tab；`more`（设置/备份/帮助/关于）随 M6 加入，不为尚不存在的屏留占位。
+- 书架封面用只读缓存取图（`CachedOnlyCoverFetcher`）：绘制书架不能为每个来源开一条 JS 运行时通道，因此只显示宿主已经下载过的封面。
+- 封面分区键（package 摘要 + 凭据状态）由 `SourceCoverProvider.credentialRevision` 单点推导：浏览流与书架若各推一份，登录状态一变两边就会读到不同的缓存目录。
+- 收藏夹是同一书架的一个视图（`LibraryModel.open(collection:)`），不是第二个书架：布局、筛选、多选全部复用，避免第二套列表状态。
+- `LibraryCollection` 的展开/子层级与快捷栏重排随后续提交落地，本次只交付三布局、多选、系统节点显隐、拖拽建夹与拖入收藏夹。

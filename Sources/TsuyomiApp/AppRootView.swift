@@ -1,17 +1,41 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import BrowseFeature
+import LibraryFeature
 import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiUI
 
-/// The browse tab's navigation stack. Every screen under it is built here so a route and the model
-/// that serves it are created together and die together.
+public enum RootTab: String, Hashable, CaseIterable {
+    case library
+    case browse
+
+    var title: LocalizedStringKey {
+        switch self {
+        case .library: return "书架"
+        case .browse: return "浏览"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .library: return "books.vertical"
+        case .browse: return "safari"
+        }
+    }
+}
+
+/// The root tabs and the browse tab's navigation stack. Every source screen is built here so a route
+/// and the model that serves it are created together and die together.
 public struct AppRootView: View {
     @ObservedObject private var container: AppContainer
     @ObservedObject private var flow: SourceFlowController
     @StateObject private var browse: BrowseModel
+    @StateObject private var library: LibraryModel
+    @StateObject private var libraryCovers: LibraryCoverProvider
+    @State private var tab: RootTab = .library
+    @State private var libraryPath: [BookIdentity] = []
 
     public init(container: AppContainer, flow: SourceFlowController) {
         self.container = container
@@ -23,9 +47,57 @@ public struct AppRootView: View {
                 remoteLibrary: container.remoteLibrary
             )
         )
+        _library = StateObject(
+            wrappedValue: LibraryModel(
+                library: container.library,
+                collections: container.collections,
+                preferences: container.preferences
+            )
+        )
+        _libraryCovers = StateObject(
+            wrappedValue: LibraryCoverProvider(
+                roots: container.roots,
+                registry: container.registry,
+                credentials: container.credentials
+            )
+        )
     }
 
     public var body: some View {
+        TabView(selection: $tab) {
+            libraryTab
+                .tabItem { Label(RootTab.library.title, systemImage: RootTab.library.symbol) }
+                .tag(RootTab.library)
+            browseTab
+                .tabItem { Label(RootTab.browse.title, systemImage: RootTab.browse.symbol) }
+                .tag(RootTab.browse)
+        }
+        .preferredColorScheme(container.preferences.colorScheme.colorScheme)
+        .onChange(of: tab) { selected in
+            guard selected != .browse else { return }
+            Task { await flow.popToRoot() }
+        }
+    }
+
+    private var libraryTab: some View {
+        NavigationStack(path: $libraryPath) {
+            LibraryScreen(
+                model: library,
+                coverState: { libraryCovers.cover($0) },
+                openBook: { libraryPath.append($0) }
+            )
+            .navigationDestination(for: BookIdentity.self) { identity in
+                BookHost(
+                    container: container,
+                    flow: flow,
+                    identity: identity,
+                    coverState: { libraryCovers.cover($0) }
+                )
+            }
+        }
+    }
+
+    private var browseTab: some View {
         NavigationStack(path: $flow.path) {
             browseScreen
                 .navigationDestination(for: Route.self) { destination($0) }
@@ -34,7 +106,6 @@ public struct AppRootView: View {
                     await flow.restore()
                 }
         }
-        .preferredColorScheme(container.preferences.colorScheme.colorScheme)
     }
 
     private var browseScreen: some View {
@@ -61,7 +132,7 @@ public struct AppRootView: View {
         case .remoteLibrary(let sourceId):
             RemoteLibraryHost(container: container, flow: flow, sourceId: sourceId)
         case .detail(let identity):
-            BookHost(container: container, flow: flow, identity: identity)
+            BookHost(container: container, flow: flow, identity: identity, coverState: { flow.cover($0) })
         case .reader(let identity, let chapterId):
             ReaderHost(container: container, flow: flow, identity: identity, chapterId: chapterId)
         case .verification:
