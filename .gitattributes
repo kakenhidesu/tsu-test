@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# quickjs-ng is upstream source vendored verbatim (see Sources/CQuickJS/quickjs-ng/UPSTREAM.md).
+# It is never hand-edited, so it is excluded from language statistics and from diff review.
+Sources/CQuickJS/quickjs-ng/** linguist-vendored
+Sources/CQuickJS/quickjs-ng/** -diff
