@@ -179,7 +179,7 @@ public final class LibraryModel: ObservableObject {
             displayOrder: Int64(allCollections.count)
         )
         guard let collection else { return }
-        try? await collections.createManualCollectionWithMemberships(collection, books)
+        try? await collections.createManualCollectionWithMemberships(collection, identities: books)
         endSelection()
         await load()
     }
