@@ -3,6 +3,7 @@
 import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
+import TsuyomiUI
 import UIKit
 
 /// Which third of the surface the reader tapped. Volume-key paging does not exist on iOS, so tap
@@ -16,25 +17,25 @@ public enum ReaderTapZone: Sendable, Equatable {
 /// Draws exactly the fragments the page plan measured. Nothing here re-measures: the view asks the
 /// layout for the current page's range and renders that fragment sequence, so a rendered page can
 /// never disagree with the plan a locator was resolved against.
-final class ReaderPageView: UIView {
-    var layout: ReaderTextLayout? {
+public final class ReaderPageView: UIView {
+    public var layout: ReaderTextLayout? {
         didSet { setNeedsDisplay() }
     }
 
-    var pageIndex = 0 {
+    public var pageIndex = 0 {
         didSet { if pageIndex != oldValue { setNeedsDisplay() } }
     }
 
     /// Paged and dual-page render one and two columns of the same plan; scroll renders the whole
     /// document from the top of the visible range.
-    var flow: ReaderPresentation = .paged {
+    public var flow: ReaderPresentation = .paged {
         didSet { if flow != oldValue { setNeedsDisplay() } }
     }
 
-    var horizontalMargin: CGFloat = 24
-    var textColor: UIColor = .label
+    public var horizontalMargin: CGFloat = 24
+    public var textColor: UIColor = .label
 
-    override func draw(_ rect: CGRect) {
+    override public func draw(_ rect: CGRect) {
         guard let layout, let context = UIGraphicsGetCurrentContext() else { return }
         context.saveGState()
         defer { context.restoreGState() }
@@ -78,7 +79,7 @@ public struct ReaderSurface: UIViewRepresentable {
     private let layout: ReaderTextLayout
     private let pageIndex: Int
     private let flow: ReaderPresentation
-    private let palette: TsuyomiReaderPaletteColors
+    private let theme: ReaderTheme
     private let horizontalMargin: CGFloat
     private let onTap: (ReaderTapZone) -> Void
 
@@ -86,14 +87,14 @@ public struct ReaderSurface: UIViewRepresentable {
         layout: ReaderTextLayout,
         pageIndex: Int,
         flow: ReaderPresentation,
-        palette: TsuyomiReaderPaletteColors,
+        theme: ReaderTheme,
         horizontalMargin: CGFloat,
         onTap: @escaping (ReaderTapZone) -> Void
     ) {
         self.layout = layout
         self.pageIndex = pageIndex
         self.flow = flow
-        self.palette = palette
+        self.theme = theme
         self.horizontalMargin = horizontalMargin
         self.onTap = onTap
     }
@@ -120,8 +121,8 @@ public struct ReaderSurface: UIViewRepresentable {
         view.pageIndex = pageIndex
         view.flow = flow
         view.horizontalMargin = horizontalMargin
-        view.backgroundColor = palette.background
-        view.textColor = palette.foreground
+        view.backgroundColor = theme.backgroundColor
+        view.textColor = theme.foregroundColor
         view.accessibilityLabel = accessibilityLabel(view)
         view.setNeedsDisplay()
     }
@@ -153,41 +154,3 @@ public struct ReaderSurface: UIViewRepresentable {
     }
 }
 
-/// The two colours the drawing view needs. Passing resolved colours keeps the reader surface free of
-/// theme lookup logic and makes a palette change a colour-only update.
-public struct TsuyomiReaderPaletteColors: Sendable {
-    public let background: UIColor
-    public let foreground: UIColor
-
-    public init(background: UIColor, foreground: UIColor) {
-        self.background = background
-        self.foreground = foreground
-    }
-
-    public static func resolved(_ theme: ReaderTheme) -> TsuyomiReaderPaletteColors {
-        switch theme {
-        case .paper:
-            return .init(
-                background: UIColor(red: 0.98, green: 0.97, blue: 0.94, alpha: 1),
-                foreground: UIColor(red: 0.13, green: 0.12, blue: 0.11, alpha: 1)
-            )
-        case .warmGray:
-            return .init(
-                background: UIColor(red: 0.91, green: 0.89, blue: 0.86, alpha: 1),
-                foreground: UIColor(red: 0.16, green: 0.15, blue: 0.14, alpha: 1)
-            )
-        case .nightInk:
-            return .init(
-                background: UIColor(red: 0.09, green: 0.10, blue: 0.12, alpha: 1),
-                foreground: UIColor(red: 0.80, green: 0.81, blue: 0.84, alpha: 1)
-            )
-        case .black:
-            return .init(background: .black, foreground: UIColor(white: 0.72, alpha: 1))
-        case .inkGreen:
-            return .init(
-                background: UIColor(red: 0.80, green: 0.85, blue: 0.78, alpha: 1),
-                foreground: UIColor(red: 0.11, green: 0.16, blue: 0.11, alpha: 1)
-            )
-        }
-    }
-}
