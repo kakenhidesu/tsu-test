@@ -89,6 +89,8 @@
 - 每个视图只挂一个 `.sheet`：iOS 16 上同一视图挂第二个 `.sheet` 会静默地永远不弹出。需要多种弹层时用一个 `.sheet` 加内容分支（扩展市场的"仓库授信/安装审批"、仓库详情的"包详情/安装审批"、阅读器的"设置/目录"三处都按此收敛）。
 - 导入 `.hxp` 的文件选择器接受任意文件类型：扩展是靠校验字节而不是靠文件名被接纳的，按扩展名过滤只会把文件从选择器里藏起来，却挡不住任何东西。
 - 失败提示画在内容分支之外：全新安装时扩展页处于空状态，错误如果只画在内容里就永远看不见。
-- `fileImporter` 挂在与 `.sheet` 不同的视图上：它自身就是一次 sheet 呈现，挂在已经拥有 `.sheet` 的视图上会在 iOS 16 静默失效。
+- 导入 `.hxp` 不用 SwiftUI `.fileImporter`，而是把 `UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)` 包成 `UIViewControllerRepresentable`（`ArchivePicker`）：`.fileImporter` 是就地打开，选中一个文件要等系统向本进程签发安全作用域授权，这一步失败时选择器既不关闭也不回调，应用里没有任何代码能观察到；`asCopy` 让系统把文件复制进本应用的临时目录，读取不再依赖授权；`.item` 是所有类型的根，动态推断类型的文件也能选中。选择器 sheet 挂在分段 `Picker` 上（与容器的审批 sheet 分属不同视图），导入在它的 `onDismiss` 里启动，审批 sheet 因此不会与选择器的关闭动画争抢同一个呈现点。
+- 去掉 `LSSupportsOpeningDocumentsInPlace`：本应用只导入归档、不就地编辑，文件 App 交来的是 `Documents/Inbox` 里的副本。两条入口拿到的都是自己拥有的副本，`importPackage(at:)` 读一次即删，`startAccessingSecurityScopedResource` 随之消失。
+- `.onOpenURL` 先等 `AppContainer.loadTrust()`，且只在扩展页不在栈顶时才推入它；`loadTrust()` 记住第一次的 Task 供后续调用等待：冷启动时校验若跑在信任列表读完之前会误报 `UNKNOWN_PUBLISHER`，而两个扩展页观察同一个 `pendingInstall` 会触发两次 sheet 呈现。模型正忙时导入报 `BUSY` 而不是静默丢弃。
 - 导入过程逐段报告状态（已选择文件 → 已读取 N 字节 → 校验结果）：一次停下来的导入必须说清停在哪一步，否则用户只能看到"点了没反应"。
 - 设备构建的 `CFBundleVersion` 取 CI run number，关于页显示版本号：旁加载的两份包在外观上无法区分，装了哪一版必须能在应用里读出来。

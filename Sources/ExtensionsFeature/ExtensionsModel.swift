@@ -128,35 +128,32 @@ public final class ExtensionsModel: ObservableObject {
         await load()
     }
 
-    /// Reads a file the system handed over — from the in-app picker or from Files opening a `.hxp`
-    /// with this app. The security-scoped read lives here so both entry points share one path, and
-    /// each stage reports itself: an import that stops has to say where.
+    /// The one way an archive arrives from a file, whether the in-app picker or Files handed it over.
+    /// Both deliver a copy this app owns, so it is read once and deleted whatever the outcome, and
+    /// each stage reports itself: an import that stops has to say where. Verification and approval
+    /// are the same as for a repository download; only the way the bytes arrived differs.
     public func importPackage(at url: URL) async {
-        importStatus = "已选择 \(url.lastPathComponent)"
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        do {
-            let bytes = try Data(contentsOf: url)
-            importStatus = "已读取 \(bytes.count) 字节，正在校验"
-            await importPackage(bytes)
-        } catch {
-            importStatus = nil
-            failureCode = "UNREADABLE_FILE"
+        guard !isBusy else {
+            failureCode = "BUSY"
+            return
         }
-    }
-
-    /// Installing a `.hxp` the reader picked themselves. It takes the same verification and approval
-    /// path a repository download takes; only the way the bytes arrived differs.
-    public func importPackage(_ archiveBytes: Data) async {
-        guard !isBusy else { return }
         isBusy = true
-        defer { isBusy = false }
         failureCode = nil
+        importStatus = "已选择 \(url.lastPathComponent)"
+        defer {
+            importStatus = nil
+            isBusy = false
+        }
+        let bytes = try? Data(contentsOf: url)
+        try? FileManager.default.removeItem(at: url)
+        guard let bytes else {
+            failureCode = "UNREADABLE_FILE"
+            return
+        }
+        importStatus = "已读取 \(bytes.count) 字节，正在校验"
         do {
-            pendingInstall = try await lifecycle.prepare(archiveBytes: archiveBytes, declaring: nil)
-            importStatus = nil
+            pendingInstall = try await lifecycle.prepare(archiveBytes: bytes, declaring: nil)
         } catch {
-            importStatus = nil
             failureCode = SafeErrorCode.of(error)
         }
     }

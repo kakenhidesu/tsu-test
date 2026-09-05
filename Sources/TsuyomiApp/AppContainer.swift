@@ -25,6 +25,7 @@ public final class AppContainer: ObservableObject {
     public let hostApi: SemanticVersion
     public let preferences: AppPreferences
     public let snapshots: SourceFlowSnapshotStore
+    private var trustLoad: Task<Void, Never>?
 
     public static let userAgent = "Tsuyomi/1.0 (iOS)"
     public static let hostApiVersion = "1.0.0"
@@ -65,10 +66,16 @@ public final class AppContainer: ObservableObject {
         snapshots = SourceFlowSnapshotStore(defaults: defaults)
     }
 
-    /// Trust is read from disk before anything is verified. The acceptance fixture publisher exists
-    /// in DEBUG builds alone, so a package signed with the published fixture key can never load in
-    /// production even if it reaches the device.
+    /// Trust is read from disk once, before anything is verified; every caller awaits that same read.
+    /// The acceptance fixture publisher exists in DEBUG builds alone, so a package signed with the
+    /// published fixture key can never load in production even if it reaches the device.
     public func loadTrust() async {
+        let load = trustLoad ?? Task { await readTrust() }
+        trustLoad = load
+        await load.value
+    }
+
+    private func readTrust() async {
         await trust.load()
         #if DEBUG
         if let key = try? Phase2TestPublisher.key(), trust.resolve(keyId: key.keyId) == nil {

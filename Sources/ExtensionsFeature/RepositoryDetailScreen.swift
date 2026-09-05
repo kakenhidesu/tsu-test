@@ -58,8 +58,6 @@ public struct RepositoryDetailScreen: View {
         } message: {
             Text("只会删除它的缓存索引。已安装的扩展继续可用，发布者信任也保留，可在发布者页单独管理。")
         }
-        // One sheet, not two: on iOS 16 a second `.sheet` on the same view silently never presents,
-        // which would leave the install review unreachable after the package sheet closed.
         .sheet(
             isPresented: Binding(
                 get: { selected != nil || model.pendingInstall != nil },

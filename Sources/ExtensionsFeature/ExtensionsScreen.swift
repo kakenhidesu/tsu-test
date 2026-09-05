@@ -5,6 +5,7 @@ import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiSource
 import TsuyomiUI
+import UIKit
 import UniformTypeIdentifiers
 
 enum ExtensionsSegment: String, CaseIterable, Hashable {
@@ -26,6 +27,7 @@ public struct ExtensionsScreen: View {
     @State private var segment: ExtensionsSegment = .installed
     @State private var isAdding = false
     @State private var isImporting = false
+    @State private var pickedArchive: URL?
     @State private var base = ""
 
     public init(
@@ -47,19 +49,16 @@ public struct ExtensionsScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(TsuyomiTheme.Metrics.gutter)
-            // Attached here, not on the container: `fileImporter` presents a sheet of its own, and a
-            // view that already owns a `.sheet` will silently swallow it on iOS 16. Any file may be
-            // chosen — an extension is admitted by verifying its bytes, never by trusting its name.
-            .fileImporter(
-                isPresented: $isImporting,
-                allowedContentTypes: [.data],
-                allowsMultipleSelection: false
-            ) { result in
-                guard case .success(let urls) = result, let url = urls.first else { return }
+            .sheet(isPresented: $isImporting, onDismiss: {
+                guard let url = pickedArchive else { return }
+                pickedArchive = nil
                 Task { await model.importPackage(at: url) }
+            }) {
+                ArchivePicker { url in
+                    pickedArchive = url
+                    isImporting = false
+                }
             }
-            // The banner sits outside the content branch: a fresh install has no extensions and no
-            // repositories, and a failure there would otherwise have nowhere to appear.
             if let status = model.importStatus {
                 Text(status)
                     .font(TsuyomiTheme.Typography.caption)
@@ -115,7 +114,6 @@ public struct ExtensionsScreen: View {
         } message: {
             Text("仓库是一个 HTTPS 基址，其下托管 index.json 与 index.sig。")
         }
-        // One sheet, not two: on iOS 16 a second `.sheet` on the same view silently never presents.
         .sheet(
             isPresented: Binding(
                 get: { model.pendingApproval != nil || model.pendingInstall != nil },
@@ -193,6 +191,42 @@ public struct ExtensionsScreen: View {
                     }
                 }
             }
+        }
+    }
+}
+
+/// The system's document picker, asked for a copy: the archive arrives in this app's own temporary
+/// directory, so reading it never depends on a security-scoped grant. Every type is selectable
+/// because an extension is admitted by verifying its bytes, not by its name.
+struct ArchivePicker: UIViewControllerRepresentable {
+    let onFinish: (URL?) -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(onFinish: onFinish) }
+
+    func makeUIViewController(context: Context) -> UIDocumentPickerViewController {
+        let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.item], asCopy: true)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ picker: UIDocumentPickerViewController, context: Context) {
+        context.coordinator.onFinish = onFinish
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UIDocumentPickerDelegate {
+        var onFinish: (URL?) -> Void
+
+        init(onFinish: @escaping (URL?) -> Void) {
+            self.onFinish = onFinish
+        }
+
+        func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+            onFinish(urls.first)
+        }
+
+        func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+            onFinish(nil)
         }
     }
 }
