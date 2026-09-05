@@ -108,6 +108,7 @@ public struct AppRootView: View {
             browseScreen
                 .navigationDestination(for: Route.self) { destination($0) }
                 .task {
+                    await container.loadTrust()
                     await browse.load()
                     await flow.restore()
                 }

@@ -19,6 +19,10 @@ public final class AppContainer: ObservableObject {
     public let transfers: TransferRepository
     public let gateway: HostNetworkGateway
     public let registry: SourceRegistry
+    public let installedExtensions: InstalledExtensionStore
+    public let trust: PublisherTrustStore
+    public let repositories: RepositoryStore
+    public let hostApi: SemanticVersion
     public let preferences: AppPreferences
     public let snapshots: SourceFlowSnapshotStore
 
@@ -39,37 +43,45 @@ public final class AppContainer: ObservableObject {
         gateway = HostNetworkGateway(
             transport: URLSessionHostHttpTransport(userAgent: AppContainer.userAgent)
         )
-        let installed = InstalledExtensionStore(
-            files: try QuotaFileStore(
-                roots: roots,
-                root: .extensions,
-                namespace: "installed-extensions",
-                quota: StorageQuota(maximumBytes: 128 * 1024 * 1024, maximumEntries: 512)
-            )
+        let extensionFiles = try QuotaFileStore(
+            roots: roots,
+            root: .extensions,
+            namespace: "installed-extensions",
+            quota: StorageQuota(maximumBytes: 128 * 1024 * 1024, maximumEntries: 512)
         )
+        installedExtensions = InstalledExtensionStore(files: extensionFiles)
+        trust = PublisherTrustStore(files: extensionFiles)
+        repositories = RepositoryStore(files: extensionFiles)
+        hostApi = try SemanticVersion(AppContainer.hostApiVersion)
         registry = SourceRegistry(
             installer: ExtensionInstaller(
-                verifier: HxpArchiveVerifier(
-                    publisherKeys: AppContainer.publisherKeys(),
-                    hostApiVersion: try SemanticVersion(AppContainer.hostApiVersion)
-                ),
-                store: installed
+                verifier: HxpArchiveVerifier(publisherKeys: trust, hostApiVersion: hostApi),
+                store: installedExtensions
             ),
-            store: installed,
+            store: installedExtensions,
             gateway: gateway
         )
         preferences = AppPreferences(defaults: defaults)
         snapshots = SourceFlowSnapshotStore(defaults: defaults)
     }
 
-    /// A release build trusts only publishers the user has added. The acceptance fixture key exists
-    /// in DEBUG builds alone, so a published package signed with it can never load in production.
-    private static func publisherKeys() -> InMemoryPublisherKeyStore {
+    /// Trust is read from disk before anything is verified. The acceptance fixture publisher exists
+    /// in DEBUG builds alone, so a package signed with the published fixture key can never load in
+    /// production even if it reaches the device.
+    public func loadTrust() async {
+        await trust.load()
         #if DEBUG
-        if let key = try? Phase2TestPublisher.key() {
-            return InMemoryPublisherKeyStore(keys: [key])
+        if let key = try? Phase2TestPublisher.key(), trust.resolve(keyId: key.keyId) == nil {
+            try? await trust.approve(
+                TrustedPublisher(
+                    keyId: key.keyId,
+                    publicKey: key.publicKey,
+                    trust: .builtInTest,
+                    repositoryId: nil,
+                    approvedAt: Date(timeIntervalSince1970: 0)
+                )
+            )
         }
         #endif
-        return InMemoryPublisherKeyStore()
     }
 }

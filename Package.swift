@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "ReaderFeature", targets: ["ReaderFeature"]),
         .library(name: "LibraryFeature", targets: ["LibraryFeature"]),
         .library(name: "TransferFeature", targets: ["TransferFeature"]),
+        .library(name: "ExtensionsFeature", targets: ["ExtensionsFeature"]),
         .library(name: "TsuyomiApp", targets: ["TsuyomiApp"])
     ],
     targets: [
@@ -89,10 +90,15 @@ let package = Package(
         ),
 
         .target(
+            name: "ExtensionsFeature",
+            dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiSource", "TsuyomiUI"]
+        ),
+
+        .target(
             name: "TsuyomiApp",
             dependencies: [
                 "BookFeature", "BrowseFeature", "LibraryFeature", "ReaderFeature", "SearchFeature",
-                "TransferFeature",
+                "ExtensionsFeature", "TransferFeature",
                 "TsuyomiCore", "TsuyomiProtocol", "TsuyomiSource", "TsuyomiUI"
             ]
         ),

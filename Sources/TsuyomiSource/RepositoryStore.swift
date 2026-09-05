@@ -64,9 +64,9 @@ public actor RepositoryStore {
         guard !loaded else { return }
         loaded = true
         guard let bytes = try? await files.read(path),
-              let rows = try? JSONDecoder().decode(JSONValue.self, from: bytes).objectValue?.array("repositories")
-        else { return }
-        for row in rows ?? [] {
+              let root = try? JSONDecoder().decode(JSONValue.self, from: bytes).objectValue,
+              let rows = root.array("repositories") else { return }
+        for row in rows {
             guard let object = row.objectValue,
                   let repositoryId = object.string("repositoryId"),
                   let base = object.string("base").flatMap({ try? HttpsOrigin($0) }),
