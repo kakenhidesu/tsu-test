@@ -61,7 +61,7 @@ public actor FileHostNetworkCache: HostNetworkCache {
 
     public func get(_ key: HostNetworkCacheKey) async -> SourceNetworkResponse? {
         let path = self.path(key)
-        guard let bytes = try? await files.read(path), let bytes else { return nil }
+        guard let bytes = try? await files.read(path) else { return nil }
         guard let decoded = try? decode(bytes, expected: key) else {
             _ = try? await files.delete(path)
             return nil
