@@ -9,6 +9,7 @@ let package = Package(
     platforms: [.iOS("16.4")],
     products: [
         .library(name: "TsuyomiProtocol", targets: ["TsuyomiProtocol"]),
+        .library(name: "ReverseImportCheck", targets: ["ReverseImportCheck"]),
         .library(name: "TsuyomiCore", targets: ["TsuyomiCore"]),
         .library(name: "TsuyomiSource", targets: ["TsuyomiSource"]),
         .library(name: "TsuyomiReader", targets: ["TsuyomiReader"]),
