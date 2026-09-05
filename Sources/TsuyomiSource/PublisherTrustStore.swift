@@ -55,14 +55,14 @@ public final class PublisherTrustStore: PublisherKeyResolver {
               let root = try? JSONDecoder().decode(JSONValue.self, from: bytes).objectValue else {
             return
         }
-        var loaded = State()
+        var publishers: [String: TrustedPublisher] = [:]
         for row in root.array("publishers") ?? [] {
             guard let object = row.objectValue,
                   let keyId = object.string("keyId"),
                   let hex = object.string("publicKey"), let publicKey = Data(hex: hex),
                   let trust = object.string("trust").flatMap(PublisherTrust.init(rawValue:)),
                   let approvedAt = object.instant("approvedAt") else { continue }
-            loaded.publishers[keyId] = TrustedPublisher(
+            publishers[keyId] = TrustedPublisher(
                 keyId: keyId,
                 publicKey: publicKey,
                 trust: trust,
@@ -70,8 +70,11 @@ public final class PublisherTrustStore: PublisherKeyResolver {
                 approvedAt: approvedAt
             )
         }
-        loaded.revokedFingerprints = Set((root.array("revokedFingerprints") ?? []).compactMap(\.stringValue))
-        loaded.revokedPackages = Set((root.array("revokedPackages") ?? []).compactMap(\.stringValue))
+        let loaded = State(
+            publishers: publishers,
+            revokedFingerprints: Set((root.array("revokedFingerprints") ?? []).compactMap(\.stringValue)),
+            revokedPackages: Set((root.array("revokedPackages") ?? []).compactMap(\.stringValue))
+        )
         state.withLock { $0 = loaded }
     }
 
