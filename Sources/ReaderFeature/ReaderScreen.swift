@@ -52,11 +52,23 @@ public struct ReaderScreen: View {
             guard phase != .active else { return }
             Task { await model.flush() }
         }
-        .sheet(isPresented: $model.isSettingsPresented) {
-            ReaderSettingsSheet(settings: $model.settings) { model.apply($0) }
-        }
-        .sheet(isPresented: $model.isDirectoryPresented) {
-            directory
+        // One sheet, not two: on iOS 16 a second `.sheet` on the same view silently never presents,
+        // which would make the directory unreachable once the settings sheet had been attached.
+        .sheet(
+            isPresented: Binding(
+                get: { model.isSettingsPresented || model.isDirectoryPresented },
+                set: { presented in
+                    guard !presented else { return }
+                    model.isSettingsPresented = false
+                    model.isDirectoryPresented = false
+                }
+            )
+        ) {
+            if model.isSettingsPresented {
+                ReaderSettingsSheet(settings: $model.settings) { model.apply($0) }
+            } else {
+                directory
+            }
         }
     }
 

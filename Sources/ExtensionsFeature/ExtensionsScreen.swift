@@ -47,13 +47,21 @@ public struct ExtensionsScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(TsuyomiTheme.Metrics.gutter)
+            // The banner sits outside the content branch: a fresh install has no extensions and no
+            // repositories, and a failure there would otherwise have nowhere to appear.
+            if let code = model.failureCode {
+                Text("上一步没有完成（\(code)）。")
+                    .font(TsuyomiTheme.Typography.caption)
+                    .foregroundStyle(TsuyomiTheme.Palette.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            }
+            if model.isBusy {
+                ProgressView()
+                    .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
+            }
             StateView(model.state, retry: { Task { await model.load() } }) { content in
                 List {
-                    if let code = model.failureCode {
-                        Text("上一步没有完成（\(code)）。")
-                            .font(TsuyomiTheme.Typography.caption)
-                            .foregroundStyle(TsuyomiTheme.Palette.danger)
-                    }
                     switch segment {
                     case .installed: installedRows(content.installed)
                     case .repositories: repositoryRows(content.repositories)
@@ -76,28 +84,15 @@ public struct ExtensionsScreen: View {
                 .disabled(model.isBusy)
             }
         }
+        // Any file may be chosen: an extension is admitted by verifying its bytes, never by trusting
+        // the name, so filtering the picker by extension would only hide files from the reader.
         .fileImporter(
             isPresented: $isImporting,
-            allowedContentTypes: [UTType(filenameExtension: "hxp") ?? .data],
+            allowedContentTypes: [.data],
             allowsMultipleSelection: false
         ) { result in
             guard case .success(let urls) = result, let url = urls.first else { return }
             Task { await model.importPackage(at: url) }
-        }
-        .sheet(
-            isPresented: Binding(
-                get: { model.pendingInstall != nil },
-                set: { if !$0 { model.discardPendingInstall() } }
-            )
-        ) {
-            if let prepared = model.pendingInstall {
-                InstallReviewScreen(
-                    prepared: prepared,
-                    isBusy: model.isBusy,
-                    onApprove: { Task { await model.approvePendingInstall() } },
-                    onCancel: { model.discardPendingInstall() }
-                )
-            }
         }
         .alert("添加仓库", isPresented: $isAdding) {
             TextField("https://example.org/tsuyomi", text: $base)
@@ -112,14 +107,26 @@ public struct ExtensionsScreen: View {
         } message: {
             Text("仓库是一个 HTTPS 基址，其下托管 index.json 与 index.sig。")
         }
+        // One sheet, not two: on iOS 16 a second `.sheet` on the same view silently never presents.
         .sheet(
             isPresented: Binding(
-                get: { model.pendingApproval != nil },
-                set: { if !$0 { model.discardApproval() } }
+                get: { model.pendingApproval != nil || model.pendingInstall != nil },
+                set: { presented in
+                    guard !presented else { return }
+                    model.discardApproval()
+                    model.discardPendingInstall()
+                }
             )
         ) {
             if let pending = model.pendingApproval {
                 RepositoryApprovalSheet(pending: pending, model: model)
+            } else if let prepared = model.pendingInstall {
+                InstallReviewScreen(
+                    prepared: prepared,
+                    isBusy: model.isBusy,
+                    onApprove: { Task { await model.approvePendingInstall() } },
+                    onCancel: { model.discardPendingInstall() }
+                )
             }
         }
         .task { await model.load() }

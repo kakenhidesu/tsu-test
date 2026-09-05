@@ -58,13 +58,16 @@ public struct RepositoryDetailScreen: View {
         } message: {
             Text("只会删除它的缓存索引。已安装的扩展继续可用，发布者信任也保留，可在发布者页单独管理。")
         }
-        .sheet(item: $selected) { package in
-            PackageScreen(package: package, model: model)
-        }
+        // One sheet, not two: on iOS 16 a second `.sheet` on the same view silently never presents,
+        // which would leave the install review unreachable after the package sheet closed.
         .sheet(
             isPresented: Binding(
-                get: { model.pendingInstall != nil },
-                set: { if !$0 { model.discardPendingInstall() } }
+                get: { selected != nil || model.pendingInstall != nil },
+                set: { presented in
+                    guard !presented else { return }
+                    selected = nil
+                    model.discardPendingInstall()
+                }
             )
         ) {
             if let prepared = model.pendingInstall {
@@ -74,6 +77,8 @@ public struct RepositoryDetailScreen: View {
                     onApprove: { Task { await model.approvePendingInstall() } },
                     onCancel: { model.discardPendingInstall() }
                 )
+            } else if let package = selected {
+                PackageScreen(package: package, model: model)
             }
         }
         .task { await model.loadCached() }
