@@ -29,7 +29,13 @@ public struct SearchScreen: View {
                 historyStrip
             }
             StateView(model.state, retry: { Task { await model.submit() } }) { results in
-                results.isStaleOffline ? staleResults(results) : freshResults(results)
+                VStack(spacing: 0) {
+                    if results.isStaleOffline {
+                        TsuyomiStatusBadge("离线缓存结果", tone: .warning)
+                            .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
+                    }
+                    grid(results)
+                }
             }
         }
         .navigationTitle("搜索")
@@ -75,16 +81,7 @@ public struct SearchScreen: View {
         .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
     }
 
-    @ViewBuilder
-    private func staleResults(_ results: SearchResults) -> some View {
-        VStack(spacing: 0) {
-            TsuyomiStatusBadge("离线缓存结果", tone: .warning)
-                .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
-            freshResults(results)
-        }
-    }
-
-    private func freshResults(_ results: SearchResults) -> some View {
+    private func grid(_ results: SearchResults) -> some View {
         VStack(spacing: 0) {
             ScrollView {
                 LazyVGrid(columns: columns, alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
