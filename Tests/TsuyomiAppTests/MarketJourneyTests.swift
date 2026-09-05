@@ -4,6 +4,7 @@ import CryptoKit
 import ExtensionsFeature
 import Foundation
 import os
+import TsuyomiApp
 import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiSource
@@ -176,7 +177,7 @@ private struct MarketWorld {
         let installed = InstalledExtensionStore(files: files)
         trust = PublisherTrustStore(files: files)
         repositories = RepositoryStore(files: files)
-        let hostApi = try SemanticVersion("1.1.0")
+        let hostApi = try SemanticVersion(AppContainer.hostApiVersion)
         let gateway = HostNetworkGateway(transport: host)
         registry = SourceRegistry(
             installer: ExtensionInstaller(

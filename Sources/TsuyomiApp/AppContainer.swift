@@ -28,7 +28,10 @@ public final class AppContainer: ObservableObject {
     private var trustLoad: Task<Void, Never>?
 
     public static let userAgent = "Tsuyomi/1.0 (iOS)"
-    public static let hostApiVersion = "1.0.0"
+    /// The host API this app implements. It is the version an extension's declared range is checked
+    /// against, so a value lower than what the runtime actually provides rejects every package built
+    /// for the real API.
+    public static let hostApiVersion = "1.1.0"
 
     public init(base: URL, defaults: UserDefaults) throws {
         roots = try StorageRoots(base: base)

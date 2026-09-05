@@ -5,6 +5,7 @@ import Foundation
 import os
 import ReaderFeature
 import SearchFeature
+import TsuyomiApp
 import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiSource
@@ -160,7 +161,10 @@ private struct FixtureWorld {
             )
         )
         let installer = ExtensionInstaller(
-            verifier: HxpArchiveVerifier(publisherKeys: keys, hostApiVersion: try SemanticVersion("1.1.0")),
+            verifier: HxpArchiveVerifier(
+                publisherKeys: keys,
+                hostApiVersion: try SemanticVersion(AppContainer.hostApiVersion)
+            ),
             store: store
         )
         let prepared = try await installer.prepare(

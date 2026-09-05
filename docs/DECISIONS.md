@@ -94,3 +94,5 @@
 - `.onOpenURL` 先等 `AppContainer.loadTrust()`，且只在扩展页不在栈顶时才推入它；`loadTrust()` 记住第一次的 Task 供后续调用等待：冷启动时校验若跑在信任列表读完之前会误报 `UNKNOWN_PUBLISHER`，而两个扩展页观察同一个 `pendingInstall` 会触发两次 sheet 呈现。模型正忙时导入报 `BUSY` 而不是静默丢弃。
 - 导入过程逐段报告状态（已选择文件 → 已读取 N 字节 → 校验结果）：一次停下来的导入必须说清停在哪一步，否则用户只能看到"点了没反应"。
 - 设备构建的 `CFBundleVersion` 取 CI run number，关于页显示版本号：旁加载的两份包在外观上无法区分，装了哪一版必须能在应用里读出来。
+- 宿主 API 版本常量为 `1.1.0`，与 Android 端 `HxpArchiveVerifier` 的默认值一致：扩展声明的 `hostApi` 区间是拿这个值去比对的，填低了会拒绝掉每一个为真实 API 构建的包。端到端测试改为读取 `AppContainer.hostApiVersion` 而不是写死字面量——先前测试写死正确值、应用里是错值，两边各自自洽，缺陷因此一路到了设备上。
+- 导入在视图稳定后由 `.task(id:)` 启动，不在 sheet 的 `onDismiss` 里启动：在关闭动画期间开始的工作可能在下一次渲染前就结束，结果因此无从显示。
