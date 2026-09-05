@@ -78,6 +78,7 @@ enum SafeWebCode {
         case .alreadyActive: return "SESSION_ALREADY_ACTIVE"
         case .notActive: return "SESSION_NOT_ACTIVE"
         case .originNotDeclared: return "ORIGIN_NOT_DECLARED"
+        case .emptyCapture: return "EMPTY_CAPTURE"
         case .noSettledPage: return "NO_SETTLED_PAGE"
         }
     }
