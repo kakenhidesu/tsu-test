@@ -6,6 +6,8 @@
 	<array>
 		<string>org.tsuyomi.ios.reading</string>
 	</array>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<false/>
 	<key>UTExportedTypeDeclarations</key>
 	<array>
 		<dict>
