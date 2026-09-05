@@ -49,18 +49,15 @@ public struct ExtensionsScreen: View {
             }
             .pickerStyle(.segmented)
             .padding(TsuyomiTheme.Metrics.gutter)
-            .sheet(isPresented: $isImporting) {
+            .sheet(isPresented: $isImporting, onDismiss: {
+                guard let url = pickedArchive else { return }
+                pickedArchive = nil
+                Task { await model.importPackage(at: url) }
+            }) {
                 ArchivePicker { url in
                     pickedArchive = url
                     isImporting = false
                 }
-            }
-            // Started from the settled view rather than from `onDismiss`: work begun during the
-            // dismissal transition can finish before the next render, leaving its outcome unshown.
-            .task(id: pickedArchive) {
-                guard let url = pickedArchive else { return }
-                pickedArchive = nil
-                await model.importPackage(at: url)
             }
             if let status = model.importStatus {
                 Text(status)
