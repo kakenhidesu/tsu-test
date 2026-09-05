@@ -238,17 +238,31 @@ public final class LibraryModel: ObservableObject {
     /// Dropping one book on another makes a collection holding both, which is the only way to create
     /// one without leaving the shelf.
     public func createCollection(named title: String, from books: [BookIdentity]) async {
-        guard !books.isEmpty else { return }
-        let collection = try? LibraryCollection(
+        guard !books.isEmpty, let collection = record(title, kind: .manual) else { return }
+        try? await collections.createManualCollectionWithMemberships(collection, identities: books)
+        endSelection()
+        await load()
+    }
+
+    public func createManualCollection(named title: String) async {
+        guard let collection = record(title, kind: .manual) else { return }
+        try? await collections.createCollection(collection)
+        await load()
+    }
+
+    public func createSmartCollection(named title: String, rule: SmartRule) async {
+        guard let collection = record(title, kind: .smart) else { return }
+        try? await collections.createSmartCollection(collection, rule: rule)
+        await load()
+    }
+
+    private func record(_ title: String, kind: CollectionKind) -> LibraryCollection? {
+        try? LibraryCollection(
             collectionId: UUID().uuidString,
-            kind: .manual,
+            kind: kind,
             title: title,
             parentCollectionId: nil,
             displayOrder: Int64(allCollections.count)
         )
-        guard let collection else { return }
-        try? await collections.createManualCollectionWithMemberships(collection, identities: books)
-        endSelection()
-        await load()
     }
 }

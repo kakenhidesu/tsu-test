@@ -12,6 +12,7 @@ public struct LibraryScreen: View {
     @State private var newCollectionTitle = ""
     @State private var pendingPair: [BookIdentity] = []
     @State private var insertionIndex: Int?
+    @State private var isCreatingCollection = false
 
     public init(
         model: LibraryModel,
@@ -52,6 +53,9 @@ public struct LibraryScreen: View {
         } message: {
             Text("把这 \(pendingPair.count) 本书放进一个新的收藏夹。")
         }
+        .sheet(isPresented: $isCreatingCollection) {
+            CollectionEditorScreen(model: model)
+        }
         .task { await model.load() }
     }
 
@@ -61,6 +65,9 @@ public struct LibraryScreen: View {
             ToolbarItem(placement: .topBarLeading) {
                 Button("返回书架") { Task { await model.open(collection: nil) } }
             }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("新建收藏夹") { isCreatingCollection = true }
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button(model.isArranging ? "完成排序" : "排序整理") {
@@ -98,7 +105,7 @@ public struct LibraryScreen: View {
                     spacing: TsuyomiTheme.Metrics.gutter,
                     insertionIndex: insertionIndex
                 ) {
-                    ForEach(Array(entries.enumerated()), id: .element.book.identity) { index, entry in
+                    ForEach(Array(entries.enumerated()), id: \.element.book.identity) { index, entry in
                         gridCard(entry, at: index)
                     }
                 }
