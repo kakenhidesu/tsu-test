@@ -82,6 +82,10 @@ let package = Package(
                 "BookFeature", "BrowseFeature", "ReaderFeature", "SearchFeature",
                 "TsuyomiCore", "TsuyomiProtocol", "TsuyomiSource", "TsuyomiUI"
             ]
+        ),
+        .testTarget(
+            name: "TsuyomiAppTests",
+            dependencies: ["BookFeature", "ReaderFeature", "SearchFeature", "TsuyomiApp"]
         )
     ]
 )

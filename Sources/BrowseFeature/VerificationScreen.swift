@@ -96,15 +96,7 @@ public struct VerificationScreen: View {
     public var body: some View {
         VStack(spacing: 0) {
             notice
-            if let webView = model.webView {
-                WebViewContainer(webView: webView)
-            } else if let failure = model.failure {
-                StateView(TsuyomiScreenState<Never>.failed(code: failure, detail: "无法打开受控浏览器。")) { _ in
-                    EmptyView()
-                }
-            } else {
-                StateView(TsuyomiScreenState<Never>.loading) { _ in EmptyView() }
-            }
+            StateView(state) { WebViewContainer(webView: $0) }
         }
         .navigationTitle("站点验证")
         .navigationBarTitleDisplayMode(.inline)
@@ -118,6 +110,12 @@ public struct VerificationScreen: View {
             }
         }
         .task { await model.start() }
+    }
+
+    private var state: TsuyomiScreenState<WKWebView> {
+        if let webView = model.webView { return .content(webView) }
+        if let failure = model.failure { return .failed(code: failure, detail: "无法打开受控浏览器。") }
+        return .loading
     }
 
     @ViewBuilder
