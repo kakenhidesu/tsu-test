@@ -12,13 +12,15 @@ public struct BlockedNavigation: Sendable {
 
     var explanation: String {
         switch reason {
-        case .notHttps:
-            return "已拦截前往 \(url.host ?? "该地址") 的跳转：它不是 HTTPS。宿主只允许加密连接，"
-                + "如果站点把登录页重定向到 http，就无法在这里完成登录。"
+        case .plaintextAccepted:
+            return "\(url.host ?? "该站点") 把这一页放在 http 上。页面已放行，但你在其中输入的内容"
+                + "与随后保存的登录态都以明文经过网络，请只在你能接受这一点时继续。"
         case .originNotDeclared:
             return "已拦截前往 \(url.host ?? "该地址") 的跳转：它不在该来源声明的站点范围内。"
         }
     }
+
+    var isRefusal: Bool { reason == .originNotDeclared }
 }
 
 /// The user completes a login or a site challenge here by hand. The host never scripts the page,
@@ -139,7 +141,9 @@ public struct VerificationScreen: View {
             Text("请在下面自行完成登录或人工验证。应用不会替你点击、填写或绕过任何验证。")
             if let blocked = model.blocked {
                 Text(blocked.explanation)
-                    .foregroundStyle(TsuyomiTheme.Palette.warning)
+                    .foregroundStyle(
+                        blocked.isRefusal ? TsuyomiTheme.Palette.warning : TsuyomiTheme.Palette.danger
+                    )
             }
         }
         .font(TsuyomiTheme.Typography.caption)
