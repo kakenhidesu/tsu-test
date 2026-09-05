@@ -35,7 +35,10 @@ let package = Package(
             publicHeadersPath: "include",
             cSettings: [
                 .headerSearchPath("quickjs-ng"),
-                .define("_GNU_SOURCE")
+                .define("_GNU_SOURCE"),
+                // Vendored upstream source is never hand-edited, so its own diagnostics are silenced
+                // here rather than by touching the files (see quickjs-ng/UPSTREAM.md).
+                .unsafeFlags(["-w"])
             ]
         ),
         .target(name: "TsuyomiSource", dependencies: ["CQuickJS", "TsuyomiCore", "TsuyomiProtocol"]),

@@ -153,12 +153,13 @@ public actor QuickJsRuntimeLane {
         guard !isClosed else { throw QuickJsRuntimeError.closed }
         try resetIfRequired()
         guard handle != 0 else { throw QuickJsRuntimeError.closed }
-        let status = tsuyomi_qjs_prepare_operation(handle, Int32(limits.maximumExecutionWallTimeMs))
+        let operationHandle = handle
+        let status = tsuyomi_qjs_prepare_operation(operationHandle, Int32(limits.maximumExecutionWallTimeMs))
         guard status == TSUYOMI_QJS_OK else { throw QuickJsRuntimeError.mapped(status) }
-        activeOperation.withLock { $0 = handle }
+        activeOperation.withLock { $0 = operationHandle }
         defer { activeOperation.withLock { $0 = 0 } }
         do {
-            return try operation(handle)
+            return try operation(operationHandle)
         } catch let failure as QuickJsRuntimeError {
             if failure.invalidatesContext { discardContext() }
             throw failure
