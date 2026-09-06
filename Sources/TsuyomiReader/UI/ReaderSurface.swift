@@ -77,62 +77,176 @@ public final class ReaderPageView: UIView {
     }
 }
 
-/// Carries the page view and slides one page off as the next comes on. Turning a page is the reader's
-/// only continuous feedback that anything happened, and a hard cut reads as a glitch rather than a
-/// turn. The outgoing page is a snapshot, so only one page is ever drawn.
-public final class ReaderPagingView: UIView {
-    public let page = ReaderPageView()
+/// One page as a view controller, so `UIPageViewController` can carry it. It holds only the index it
+/// draws: the page plan and the reading position live above it.
+final class ReaderPageController: UIViewController {
+    let index: Int
+    let page = ReaderPageView()
 
-    override public init(frame: CGRect) {
-        super.init(frame: frame)
-        addSubview(page)
-        clipsToBounds = true
+    init(index: Int) {
+        self.index = index
+        super.init(nibName: nil, bundle: nil)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError("not a storyboard view") }
+    required init?(coder: NSCoder) { fatalError("not a storyboard controller") }
 
-    override public func layoutSubviews() {
-        super.layoutSubviews()
-        guard page.layer.animationKeys() == nil else { return }
-        page.frame = bounds
+    override func loadView() {
+        page.isOpaque = true
+        page.contentMode = .redraw
+        page.pageIndex = index
+        view = page
+    }
+}
+
+/// Hosts the pages and turns them. `UIPageViewController` draws both turns the reader can choose:
+/// its scroll style is the slide, its page-curl style is the curl, and each is draggable rather than
+/// only tappable. The style is fixed when that controller is created, so changing the setting
+/// rebuilds the child instead of mutating it.
+public final class ReaderPagingController: UIViewController {
+    /// What the reader is looking at, as far as this controller has been told.
+    private(set) var shownIndex = 0
+    private(set) var transitionStyle: ReaderPageTransition = .slide
+    var pageCount = 0
+    var configure: ((ReaderPageView) -> Void)?
+    var onTurn: ((Int) -> Void)?
+    var onTap: ((ReaderTapZone) -> Void)?
+
+    private var pages: UIPageViewController?
+
+    override public func viewDidLoad() {
+        super.viewDidLoad()
+        view.addGestureRecognizer(UITapGestureRecognizer(target: self, action: #selector(handleTap(_:))))
+        rebuild()
     }
 
-    /// `direction` is +1 when the next page arrives from the trailing edge and -1 for the previous
-    /// one. Anything that is not a single step — a chapter change, a re-pagination, an accessibility
-    /// setting that asks for less motion — is set without animating.
-    func show(pageIndex: Int, direction: Int) {
-        guard direction != 0, !UIAccessibility.isReduceMotionEnabled, bounds.width > 0,
-              let outgoing = page.snapshotView(afterScreenUpdates: false) else {
-            page.pageIndex = pageIndex
+    /// Reduce Motion turns every choice into the immediate one. A curl is a large, unavoidable
+    /// movement, and that setting is to be respected rather than styled around.
+    private var effectiveStyle: ReaderPageTransition {
+        UIAccessibility.isReduceMotionEnabled ? .immediate : transitionStyle
+    }
+
+    func apply(style: ReaderPageTransition, index: Int, pageCount: Int) {
+        self.pageCount = pageCount
+        let styleChanged = style != transitionStyle
+        transitionStyle = style
+        guard !styleChanged, pages != nil else {
+            shownIndex = index
+            rebuild()
             return
         }
-        outgoing.frame = bounds
-        addSubview(outgoing)
-        page.pageIndex = pageIndex
-        page.frame = bounds.offsetBy(dx: CGFloat(direction) * bounds.width, dy: 0)
-        UIView.animate(
-            withDuration: 0.3,
-            delay: 0,
-            options: [.curveEaseInOut, .beginFromCurrentState]
-        ) {
-            self.page.frame = self.bounds
-            outgoing.frame = self.bounds.offsetBy(dx: CGFloat(-direction) * self.bounds.width, dy: 0)
-        } completion: { _ in
-            outgoing.removeFromSuperview()
+        guard index != shownIndex else {
+            visiblePages().forEach(refresh)
+            return
+        }
+        let forward = index > shownIndex
+        let animated = effectiveStyle != .immediate && abs(index - shownIndex) == 1
+        shownIndex = index
+        pages?.setViewControllers(
+            [makePage(index)],
+            direction: forward ? .forward : .reverse,
+            animated: animated
+        )
+    }
+
+    private func visiblePages() -> [ReaderPageView] {
+        (pages?.viewControllers ?? []).compactMap { ($0 as? ReaderPageController)?.page }
+    }
+
+    private func rebuild() {
+        pages?.willMove(toParent: nil)
+        pages?.view.removeFromSuperview()
+        pages?.removeFromParent()
+        let controller = UIPageViewController(
+            transitionStyle: effectiveStyle == .curl ? .pageCurl : .scroll,
+            navigationOrientation: .horizontal
+        )
+        controller.delegate = self
+        // No data source means no interactive turn, which is what the immediate choice asks for: the
+        // page changes when the reader taps, with no gesture that could animate it.
+        controller.dataSource = effectiveStyle == .immediate ? nil : self
+        controller.setViewControllers([makePage(shownIndex)], direction: .forward, animated: false)
+        addChild(controller)
+        controller.view.frame = view.bounds
+        controller.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(controller.view)
+        controller.didMove(toParent: self)
+        // The curl style brings its own edge taps, which would turn a page the tap zones have already
+        // turned. Its pan stays: dragging the corner is the whole point of a curl.
+        for recognizer in controller.gestureRecognizers where recognizer is UITapGestureRecognizer {
+            recognizer.isEnabled = false
+        }
+        pages = controller
+    }
+
+    private func makePage(_ index: Int) -> ReaderPageController {
+        let controller = ReaderPageController(index: index)
+        refresh(controller.page)
+        return controller
+    }
+
+    private func refresh(_ page: ReaderPageView) {
+        configure?(page)
+        page.setNeedsDisplay()
+    }
+
+    @objc private func handleTap(_ recognizer: UITapGestureRecognizer) {
+        let x = recognizer.location(in: view).x
+        let third = view.bounds.width / 3
+        if x < third {
+            onTap?(.previous)
+        } else if x > third * 2 {
+            onTap?(.next)
+        } else {
+            onTap?(.toggleChrome)
         }
     }
 }
 
-/// Hosts the drawing view and routes taps and swipes. It owns no reading position: it reports the
-/// page the reader moved to and lets the coordinator decide what that means semantically.
-public struct ReaderSurface: UIViewRepresentable {
+extension ReaderPagingController: UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+    public func pageViewController(
+        _ pageViewController: UIPageViewController,
+        viewControllerBefore viewController: UIViewController
+    ) -> UIViewController? {
+        guard let current = viewController as? ReaderPageController, current.index > 0 else { return nil }
+        return makePage(current.index - 1)
+    }
+
+    public func pageViewController(
+        _ pageViewController: UIPageViewController,
+        viewControllerAfter viewController: UIViewController
+    ) -> UIViewController? {
+        guard let current = viewController as? ReaderPageController,
+              current.index + 1 < pageCount else { return nil }
+        return makePage(current.index + 1)
+    }
+
+    /// A drag that settled is the reader moving their position, so it is reported upwards; one that
+    /// was let go of and sprang back is not.
+    public func pageViewController(
+        _ pageViewController: UIPageViewController,
+        didFinishAnimating finished: Bool,
+        previousViewControllers: [UIViewController],
+        transitionCompleted completed: Bool
+    ) {
+        guard completed,
+              let current = pageViewController.viewControllers?.first as? ReaderPageController else { return }
+        shownIndex = current.index
+        onTurn?(current.index)
+    }
+}
+
+/// Hosts the paging controller and routes taps. It owns no reading position: it reports the page the
+/// reader moved to and lets the model decide what that means semantically.
+public struct ReaderSurface: UIViewControllerRepresentable {
     private let layout: ReaderTextLayout
     private let pageIndex: Int
     private let flow: ReaderPresentation
     private let theme: ReaderTheme
+    private let transition: ReaderPageTransition
     private let horizontalMargin: CGFloat
     private let onTap: (ReaderTapZone) -> Void
+    private let onTurn: (Int) -> Void
     private let onPageDrawn: (Int) -> Void
 
     public init(
@@ -140,98 +254,52 @@ public struct ReaderSurface: UIViewRepresentable {
         pageIndex: Int,
         flow: ReaderPresentation,
         theme: ReaderTheme,
+        transition: ReaderPageTransition,
         horizontalMargin: CGFloat,
         onTap: @escaping (ReaderTapZone) -> Void,
+        onTurn: @escaping (Int) -> Void,
         onPageDrawn: @escaping (Int) -> Void
     ) {
-        self.onPageDrawn = onPageDrawn
         self.layout = layout
         self.pageIndex = pageIndex
         self.flow = flow
         self.theme = theme
+        self.transition = transition
         self.horizontalMargin = horizontalMargin
         self.onTap = onTap
+        self.onTurn = onTurn
+        self.onPageDrawn = onPageDrawn
     }
 
-    public func makeCoordinator() -> Coordinator { Coordinator(onTap: onTap) }
-
-    public func makeUIView(context: Context) -> ReaderPagingView {
-        let container = ReaderPagingView()
-        container.page.isOpaque = true
-        container.page.contentMode = .redraw
-        container.addGestureRecognizer(
-            UITapGestureRecognizer(target: context.coordinator, action: #selector(Coordinator.handleTap(_:)))
-        )
-        for direction in [UISwipeGestureRecognizer.Direction.left, .right] {
-            let swipe = UISwipeGestureRecognizer(
-                target: context.coordinator,
-                action: #selector(Coordinator.handleSwipe(_:))
-            )
-            swipe.direction = direction
-            container.addGestureRecognizer(swipe)
-        }
-        container.isAccessibilityElement = true
-        container.accessibilityTraits = .staticText
-        return container
+    public func makeUIViewController(context: Context) -> ReaderPagingController {
+        ReaderPagingController()
     }
 
-    public func updateUIView(_ container: ReaderPagingView, context: Context) {
-        context.coordinator.onTap = onTap
-        let view = container.page
-        let turned = context.coordinator.turn(to: pageIndex, key: layout.layoutKey, flow: flow)
-        view.onPageDrawn = onPageDrawn
-        view.layout = layout
-        view.flow = flow
-        view.horizontalMargin = horizontalMargin
-        view.backgroundColor = theme.backgroundColor
-        container.backgroundColor = theme.backgroundColor
+    public func updateUIViewController(_ controller: ReaderPagingController, context: Context) {
+        controller.onTap = onTap
+        controller.onTurn = onTurn
+        controller.view.backgroundColor = theme.backgroundColor
+        controller.view.isAccessibilityElement = true
+        controller.view.accessibilityTraits = .staticText
+        controller.view.accessibilityLabel = accessibilityLabel()
         layout.apply(textColor: theme.foregroundColor)
-        container.accessibilityLabel = accessibilityLabel()
-        container.show(pageIndex: pageIndex, direction: turned)
-        view.setNeedsDisplay()
+        let plan = layout
+        let currentFlow = flow
+        let background = theme.backgroundColor
+        let margin = horizontalMargin
+        let drawn = onPageDrawn
+        controller.configure = { page in
+            page.layout = plan
+            page.flow = currentFlow
+            page.horizontalMargin = margin
+            page.backgroundColor = background
+            page.onPageDrawn = drawn
+        }
+        controller.apply(style: transition, index: pageIndex, pageCount: layout.pages.count)
     }
 
     private func accessibilityLabel() -> String {
         guard layout.pages.indices.contains(pageIndex) else { return "正文" }
         return "正文，第 \(pageIndex + 1) 页，共 \(layout.pages.count) 页"
     }
-
-    @MainActor
-    public final class Coordinator {
-        var onTap: (ReaderTapZone) -> Void
-        private var shown: (index: Int, key: LayoutKey, flow: ReaderPresentation)?
-
-        init(onTap: @escaping (ReaderTapZone) -> Void) {
-            self.onTap = onTap
-        }
-
-        /// Which way the page moved, and only when it moved by one page of the same plan. A new
-        /// chapter, a re-pagination or a flow change replaces the page rather than turning it.
-        func turn(to index: Int, key: LayoutKey, flow: ReaderPresentation) -> Int {
-            defer { shown = (index, key, flow) }
-            guard let shown, shown.key == key, shown.flow == flow else { return 0 }
-            let step = index - shown.index
-            return abs(step) == 1 ? (step > 0 ? 1 : -1) : 0
-        }
-
-        @objc func handleTap(_ recognizer: UITapGestureRecognizer) {
-            guard let view = recognizer.view else { return }
-            let x = recognizer.location(in: view).x
-            let third = view.bounds.width / 3
-            if x < third {
-                onTap(.previous)
-            } else if x > third * 2 {
-                onTap(.next)
-            } else {
-                onTap(.toggleChrome)
-            }
-        }
-
-        /// Swiping is the gesture a reader reaches for first; the tap zones stay because they are the
-        /// only affordance that works one-handed at the edge of a large screen.
-        @objc func handleSwipe(_ recognizer: UISwipeGestureRecognizer) {
-            onTap(recognizer.direction == .left ? .next : .previous)
-        }
-    }
 }
-

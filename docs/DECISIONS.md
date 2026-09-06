@@ -131,3 +131,7 @@
 - 标签改为逐个 badge，按 `TsuyomiWrappingRow` 自动折行：来源声明多少个标签、每个多长都无法预知，单行 `HStack` 只能裁掉或挤成看不清的窄条。
 - 简介默认限制 4 行，可展开：简介可以很长，而读者点进这一页是为了目录。
 - 阅读器本轮只做到"滑动翻页 + 手势"，不照搬安卓的翻页实现；卷页/仿真翻页与拖拽跟手留待后续（用户明示按 iOS 系统阅读应用的形态逐步扩展）。
+- 翻页效果是读者的选项（`ReaderPageTransition`：滑动/卷页/无），由 `UIPageViewController` 承载：它的 `.scroll` 就是滑动、`.pageCurl` 就是卷页，两者都自带跟手拖拽，不必自己实现两套动画。transitionStyle 只能在构造时确定，所以改设置是重建子控制器而不是改属性。选「无」时不设 dataSource——没有 dataSource 就没有可交互的翻页手势，这正是「无动画」的含义。Reduce Motion 打开时无条件按「无」处理：卷页是一次幅度很大的运动，那个设置是用来遵守的，不是用来绕开的。
+- 卷页样式自带的边缘点击被禁用（`gestureRecognizers` 里的 tap），只保留它的拖拽：三分屏点击已经承担了上一页/下一页/呼出控件三件事，两套点击叠在一起会一次翻两页。
+- 拖拽落定后由 `didFinishAnimating(transitionCompleted:)` 上报页码，`ReaderModel.turned(toPage:)` 记录落点；弹回的拖拽不上报。与 `step(_:)` 不同，拖拽到章首/章尾不会翻到相邻章——数据源在两端返回 nil，越章只能由点击或目录发起。
+- `pageTransition` 不进 `layoutKey`，也不进 `tsuyomi-transfer` 的可导出子集：它是呈现方式，既不改变任何一页的边界，也不是跨端可移植的阅读偏好。

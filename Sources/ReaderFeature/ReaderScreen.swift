@@ -28,8 +28,10 @@ public struct ReaderScreen: View {
                         pageIndex: model.visiblePageIndex,
                         flow: model.settings.flow,
                         theme: model.settings.theme,
+                        transition: model.settings.pageTransition,
                         horizontalMargin: model.settings.horizontalMargin,
                         onTap: { model.tapped($0) },
+                        onTurn: { model.turned(toPage: $0) },
                         onPageDrawn: { model.pageDrawn($0) }
                     )
                     ReaderChrome(

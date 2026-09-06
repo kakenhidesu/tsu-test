@@ -14,6 +14,14 @@ public enum ReaderPresentation: String, Sendable, CaseIterable, Codable {
     case dualPage
 }
 
+/// How a page turn is drawn. Presentation only: none of these changes where a page ends, so a page
+/// plan stays valid across a change and the reader does not repaginate.
+public enum ReaderPageTransition: String, Sendable, CaseIterable, Codable {
+    case slide
+    case curl
+    case immediate
+}
+
 public enum ReaderTheme: String, Sendable, CaseIterable, Codable {
     case paper
     case warmGray
@@ -35,6 +43,7 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
     public var horizontalMargin: Double
     public var paragraphSpacing: Double
     public var flow: ReaderPresentation
+    public var pageTransition: ReaderPageTransition
     public var theme: ReaderTheme
     public var lockPortrait: Bool
     public var progressVisible: Bool
@@ -47,6 +56,7 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
         horizontalMargin: Double = 24,
         paragraphSpacing: Double = 12,
         flow: ReaderPresentation = .paged,
+        pageTransition: ReaderPageTransition = .slide,
         theme: ReaderTheme = .paper,
         lockPortrait: Bool = false,
         progressVisible: Bool = true,
@@ -58,6 +68,7 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
         self.horizontalMargin = horizontalMargin.clamped(to: Self.horizontalMarginRange)
         self.paragraphSpacing = paragraphSpacing.clamped(to: Self.paragraphSpacingRange)
         self.flow = flow
+        self.pageTransition = pageTransition
         self.theme = theme
         self.lockPortrait = lockPortrait
         self.progressVisible = progressVisible

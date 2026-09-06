@@ -142,6 +142,14 @@ public final class ReaderModel: ObservableObject {
         move(toPage: next)
     }
 
+    /// A page the reader turned to by dragging. The surface has already moved, so this records where
+    /// it landed rather than deciding it; a drag off either end is not offered, so unlike `step` it
+    /// can never mean "open the neighbouring chapter".
+    public func turned(toPage page: Int) {
+        guard let textLayout, textLayout.pages.indices.contains(page), page != pageIndex else { return }
+        move(toPage: page)
+    }
+
     public func openAdjacent(_ delta: Int) async {
         let target = chapterIndex + delta
         guard chapters.indices.contains(target) else { return }

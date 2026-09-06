@@ -63,6 +63,7 @@ public final class AppPreferences: ObservableObject {
         defaults.set(settings.horizontalMargin, forKey: Key.readerHorizontalMargin)
         defaults.set(settings.paragraphSpacing, forKey: Key.readerParagraphSpacing)
         defaults.set(settings.flow.rawValue, forKey: Key.readerFlow)
+        defaults.set(settings.pageTransition.rawValue, forKey: Key.readerPageTransition)
         defaults.set(settings.theme.rawValue, forKey: Key.readerTheme)
         defaults.set(settings.lockPortrait, forKey: Key.readerLockPortrait)
         defaults.set(settings.progressVisible, forKey: Key.readerProgressVisible)
@@ -115,6 +116,8 @@ public final class AppPreferences: ObservableObject {
             paragraphSpacing: defaults.object(forKey: Key.readerParagraphSpacing) as? Double
                 ?? stored.paragraphSpacing,
             flow: defaults.string(forKey: Key.readerFlow).flatMap(ReaderPresentation.init(rawValue:)) ?? stored.flow,
+            pageTransition: defaults.string(forKey: Key.readerPageTransition)
+                .flatMap(ReaderPageTransition.init(rawValue:)) ?? stored.pageTransition,
             theme: defaults.string(forKey: Key.readerTheme).flatMap(ReaderTheme.init(rawValue:)) ?? stored.theme,
             lockPortrait: defaults.object(forKey: Key.readerLockPortrait) as? Bool ?? stored.lockPortrait,
             progressVisible: defaults.object(forKey: Key.readerProgressVisible) as? Bool ?? stored.progressVisible,
@@ -133,6 +136,7 @@ public final class AppPreferences: ObservableObject {
         static let readerHorizontalMargin = "reader_horizontal_margin"
         static let readerParagraphSpacing = "reader_paragraph_spacing"
         static let readerFlow = "reader_flow"
+        static let readerPageTransition = "reader_page_transition"
         static let readerTheme = "reader_theme"
         static let readerLockPortrait = "reader_lock_portrait"
         static let readerProgressVisible = "reader_progress_visible"

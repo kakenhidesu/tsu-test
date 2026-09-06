@@ -68,6 +68,11 @@ public struct ReaderSettingsSheet: View {
                         options: readingFlowOptions,
                         selection: binding(\.flow)
                     )
+                    SegmentedSelector(
+                        label: "翻页效果",
+                        options: pageTransitionOptions,
+                        selection: binding(\.pageTransition)
+                    )
                     Toggle("锁定竖屏", isOn: binding(\.lockPortrait))
                     Toggle("显示进度", isOn: binding(\.progressVisible))
                 }
@@ -86,6 +91,10 @@ public struct ReaderSettingsSheet: View {
 
     private var readingFlowOptions: [(value: ReaderPresentation, title: LocalizedStringKey)] {
         [(.scroll, "滚动"), (.paged, "单页"), (.dualPage, "双页")]
+    }
+
+    private var pageTransitionOptions: [(value: ReaderPageTransition, title: LocalizedStringKey)] {
+        [(.slide, "滑动"), (.curl, "卷页"), (.immediate, "无")]
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {
