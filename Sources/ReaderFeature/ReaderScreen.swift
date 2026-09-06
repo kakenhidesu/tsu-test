@@ -53,6 +53,9 @@ public struct ReaderScreen: View {
         /// otherwise a dark system appearance writes near-white text onto a paper background.
         .environment(\.colorScheme, model.settings.theme.colorScheme)
         .navigationBarHidden(true)
+        /// Reading is the whole screen. A tab bar under the text is one more thing to hit by accident
+        /// while turning a page, and it says the reader is a pane inside a tab when it is not.
+        .toolbar(.hidden, for: .tabBar)
         .statusBarHidden(model.settings.immersive && !model.isChromeVisible)
         .persistentSystemOverlays(model.settings.immersive ? .hidden : .automatic)
         .task { await model.open() }
@@ -111,6 +114,7 @@ public struct ReaderScreen: View {
                             TsuyomiStatusBadge("当前", tone: .positive)
                         }
                     }
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

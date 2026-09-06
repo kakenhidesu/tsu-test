@@ -37,6 +37,7 @@ public final class ReaderTextLayout {
     private var settings: ReaderSettings
     private var width: CGFloat = 0
     private var height: CGFloat = 0
+    private var textColor: UIColor = .label
 
     public init(document: ReaderDocument, settings: ReaderSettings) throws {
         self.settings = settings
@@ -186,9 +187,27 @@ public final class ReaderTextLayout {
             attributes: [
                 .font: UIFont.systemFont(ofSize: size, weight: weight),
                 .paragraphStyle: paragraph,
+                .foregroundColor: textColor,
                 ReaderTextLayout.blockKindKey: kind
             ]
         )
+    }
+
+    /// The theme's ink. Colour is not a metric: it changes what a page looks like and never where a
+    /// page ends, so it is applied over the whole string instead of being folded into the layout key,
+    /// and a theme switch still does not repaginate. Drawing takes its colour from the string, so
+    /// without this the text is whatever TextKit defaults to — black, invisible on a dark theme.
+    public func apply(textColor: UIColor) {
+        guard textColor != self.textColor else { return }
+        self.textColor = textColor
+        guard let storage = contentStorage.textStorage, storage.length > 0 else { return }
+        storage.beginEditing()
+        storage.addAttribute(
+            .foregroundColor,
+            value: textColor,
+            range: NSRange(location: 0, length: storage.length)
+        )
+        storage.endEditing()
     }
 
     private func utf16Offset(in blockIndex: Int, codePointOffset: Int) -> Int {
