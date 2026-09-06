@@ -119,3 +119,5 @@
 - 书架 tab 有自己的导航栈（`LibraryRoute`），不复用 `Route`：`Route` 归 `SourceFlowController` 管，它要按来源快照恢复现场，而从书架打开的书不属于任何来源流程。`BookHost` 与 `ReaderHost` 因此不再自己决定往哪里压栈，由承载它们的栈注入——此前从书架点章节会把 reader 压进浏览 tab 的栈里，那个栈书架永远不显示，表现为"点了没反应"。
 - `AppRootView` 直接观察 `AppPreferences`：偏好发布在它自己身上，不发布在 `AppContainer` 上，通过 `container.preferences` 读取会把根视图排除在更新之外，深浅色选择要等下一次别的原因触发重绘（比如切 tab）才生效。
 - 来源失败的可行动提示收敛到 `SourceFailureGuidance`：同一个错误码在哪个屏上都是同一个意思，每屏各写一份的结果就是书籍页对着一个"站点要求人工验证"显示"来源返回的页面无法解析"。
+- 受控登录窗口实现 `WKUIDelegate.createWebViewWith`，把请求新窗口的导航（`target="_blank"`，这些站点链到自己页面的常用写法）在原窗口里加载，并始终返回 nil：这个会话按设计只有一个受控窗口，不实现这个回调时 WebKit 会直接丢掉那次导航，表现为"点哪本书都没反应"——而且登录本身不受影响，因为登录表单是同框架提交的，于是这个缺陷在"能登录"的表象下藏着。新窗口请求仍走同一条 `isReachable` 判定，不构成第二条放宽的入口。
+- `isReachable` 提为 `nonisolated static`（按声明 origin 集合判定）：这条规则决定窗口能去哪里，已经两次成为缺陷来源，而它本身是纯逻辑，没有理由不可测。

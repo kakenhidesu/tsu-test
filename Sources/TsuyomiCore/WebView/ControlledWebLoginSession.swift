@@ -71,6 +71,7 @@ public final class ControlledWebLoginSession: NSObject {
         view.customUserAgent = try await restoredUserAgent(initialOrigin) ?? userAgent
         view.allowsBackForwardNavigationGestures = false
         view.navigationDelegate = self
+        view.uiDelegate = self
         webView = view
         isActive = true
 
@@ -182,16 +183,20 @@ public final class ControlledWebLoginSession: NSObject {
         return normalized
     }
 
+    private func isReachable(_ url: URL) -> Bool {
+        ControlledWebLoginSession.isReachable(url, within: allowedOrigins)
+    }
+
     /// The declared origins bound which host this window may reach; inside that host a redirect chain
     /// may fall back to plain HTTP, because a site that redirects its own login page off HTTPS is
     /// otherwise unreachable. Everything the host itself fetches stays HTTPS-only.
-    private func isReachable(_ url: URL) -> Bool {
+    nonisolated static func isReachable(_ url: URL, within origins: Set<HttpsOrigin>) -> Bool {
         guard let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
               let host = url.host?.lowercased(), !host.isEmpty,
               url.user == nil, url.password == nil else {
             return false
         }
-        return allowedOrigins.contains { declared in
+        return origins.contains { declared in
             guard let components = URLComponents(string: declared.canonical),
                   components.host?.lowercased() == host else { return false }
             guard let port = url.port else { return true }
@@ -219,6 +224,27 @@ public final class ControlledWebLoginSession: NSObject {
         let lowered = domain.lowercased()
         let target = host.lowercased()
         return target == lowered || target.hasSuffix(".\(lowered)")
+    }
+}
+
+extension ControlledWebLoginSession: WKUIDelegate {
+    /// A link that asks for a new window — `target="_blank"`, which is how most of these sites link
+    /// to their own pages — has nowhere to open one: this session is deliberately a single controlled
+    /// window. Without answering here WebKit drops the navigation and the tap does nothing at all, so
+    /// the request is loaded in place instead. It still passes the same origin check as any other
+    /// navigation, and returning nil means no second window is ever created.
+    public func webView(
+        _ webView: WKWebView,
+        createWebViewWith configuration: WKWebViewConfiguration,
+        for navigationAction: WKNavigationAction,
+        windowFeatures: WKWindowFeatures
+    ) -> WKWebView? {
+        guard navigationAction.targetFrame == nil, let url = navigationAction.request.url,
+              isReachable(url) else {
+            return nil
+        }
+        webView.load(navigationAction.request)
+        return nil
     }
 }
 

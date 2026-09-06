@@ -91,4 +91,20 @@ final class VerifiedPageNavigationTests: XCTestCase {
             ControlledWebLoginSession.matches(cookie: try cookie(domain: "example.com"), host: "www.wenku8.net")
         )
     }
+
+    /// What the login window may navigate to, including the window a `target="_blank"` link asks for.
+    /// The declared host is the boundary; the scheme is not, because the site redirects its own pages
+    /// onto plaintext and a window that refuses to follow is a window nothing can be done in.
+    func testTheWindowReachesItsDeclaredHostOnEitherScheme() throws {
+        let origins: Set<HttpsOrigin> = [try HttpsOrigin("https://www.wenku8.net")]
+        func reaches(_ url: String) throws -> Bool {
+            ControlledWebLoginSession.isReachable(try XCTUnwrap(URL(string: url)), within: origins)
+        }
+        XCTAssertTrue(try reaches("https://www.wenku8.net/book/1234.htm"))
+        XCTAssertTrue(try reaches("http://www.wenku8.net/book/1234.htm"))
+        XCTAssertFalse(try reaches("https://pic.wenku8.com/cover.jpg"), "an undeclared host stays out")
+        XCTAssertFalse(try reaches("https://www.wenku8.net:8443/book/1234.htm"), "so does another port")
+        XCTAssertFalse(try reaches("file:///etc/passwd"))
+        XCTAssertFalse(try reaches("https://user:secret@www.wenku8.net/"))
+    }
 }
