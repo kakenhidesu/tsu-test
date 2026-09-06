@@ -61,6 +61,10 @@ public struct BookScreen: View {
                     .frame(width: 110, height: 110 / TsuyomiTheme.Metrics.coverAspectRatio)
                     .clipShape(RoundedRectangle(cornerRadius: TsuyomiTheme.Metrics.cornerRadius))
                 VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
+                    /// The whole group is set against the cover's bottom edge, not its top: title,
+                    /// author, badges and actions read downwards to that line, and the slack falls
+                    /// above the title where a short title simply leaves the cover taller.
+                    Spacer(minLength: 0)
                     Text(content.detail.summary.title)
                         .font(TsuyomiTheme.Typography.sectionTitle)
                         .lineLimit(3)
@@ -78,12 +82,9 @@ public struct BookScreen: View {
                             TsuyomiStatusBadge("离线缓存", tone: .warning)
                         }
                     }
-                    /// The title, author and badges stack from the top and the actions sit on the
-                    /// cover's bottom edge, which is the line the reference aligns to.
-                    Spacer(minLength: TsuyomiTheme.Metrics.tightGutter)
                     shelfActions(content)
                 }
-                .frame(maxHeight: .infinity, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .bottomLeading)
             }
             /// The row is at least as tall as the cover, so the column has a bottom to reach; a fixed
             /// height on the column alone positions it without stretching it, and the spacer inside

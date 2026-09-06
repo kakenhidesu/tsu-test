@@ -173,7 +173,7 @@ final class SourceJourneyTests: XCTestCase {
 
 /// One installed fixture source backed by a fake transport that answers from the fixture files.
 @MainActor
-private struct FixtureWorld {
+struct FixtureWorld {
     let sourceId: SourceId
     let registry: SourceRegistry
     let library: LibraryRepository

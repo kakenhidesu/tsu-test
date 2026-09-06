@@ -137,6 +137,16 @@ jobs:
           path: Tsuyomi-main/tsuyomi-extensions/fixtures/wenku8/wenku8-fixture.hxp
           if-no-files-found: error
 
+      # Screens rendered by InterfaceSnapshotTests. There is no device in this loop, so these are how
+      # a layout is looked at before it reaches one.
+      - name: Upload interface snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: InterfaceSnapshots
+          path: SnapshotOutput
+          if-no-files-found: warn
+
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
