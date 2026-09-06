@@ -23,6 +23,23 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # The acceptance fixture extension is rebuilt from its own source rather than trusted as a
+      # committed binary. It carries a local patch to its page classifier
+      # (docs/FIXTURE_EXTENSION_PATCH.md), so the archive the tests and the device build use has to be
+      # the one that source produces. Its own test suite runs first: this repository does not own that
+      # extension, and a patch to it has to answer to its tests before it reaches ours.
+      - name: Rebuild the acceptance fixture extension
+        run: |
+          set -euo pipefail
+          root=Tsuyomi-main/tsuyomi-extensions
+          if [ ! -d "$root/src" ]; then
+            echo "extension source not mirrored; keeping the archive as checked out"
+            exit 0
+          fi
+          node --version
+          (cd "$root" && npm ci && npm test && npm run package:fixture)
+          (cd "$root/fixtures/wenku8" && shasum -a 256 -c wenku8-fixture.sha256)
+
       - name: Resolve simulator destination
         id: sim
         run: |
@@ -109,6 +126,15 @@ jobs:
         with:
           name: Tsuyomi-unsigned-ipa
           path: Tsuyomi-unsigned.ipa
+          if-no-files-found: error
+
+      # Published beside the app because the two have to match: this archive is signed with the
+      # published fixture seed, which only a Debug build trusts.
+      - name: Upload the acceptance fixture extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: wenku8-fixture-hxp
+          path: Tsuyomi-main/tsuyomi-extensions/fixtures/wenku8/wenku8-fixture.hxp
           if-no-files-found: error
 
       - name: Upload test results
