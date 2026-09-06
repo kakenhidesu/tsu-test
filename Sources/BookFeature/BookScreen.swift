@@ -78,13 +78,17 @@ public struct BookScreen: View {
                             TsuyomiStatusBadge("离线缓存", tone: .warning)
                         }
                     }
-                    /// The column is exactly as tall as the cover and its actions sit on that bottom
-                    /// edge, which is the line the reference aligns everything to.
-                    Spacer(minLength: 0)
+                    /// The title, author and badges stack from the top and the actions sit on the
+                    /// cover's bottom edge, which is the line the reference aligns to.
+                    Spacer(minLength: TsuyomiTheme.Metrics.tightGutter)
                     shelfActions(content)
                 }
-                .frame(height: 110 / TsuyomiTheme.Metrics.coverAspectRatio, alignment: .topLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
             }
+            /// The row is at least as tall as the cover, so the column has a bottom to reach; a fixed
+            /// height on the column alone positions it without stretching it, and the spacer inside
+            /// then has nothing to push against — which is why the actions kept floating mid-row.
+            .frame(minHeight: 110 / TsuyomiTheme.Metrics.coverAspectRatio)
             if let description = content.detail.description {
                 summary(description)
             }

@@ -18,6 +18,10 @@ public struct ReaderSettingsSheet: View {
     /// page under the card is drawn in.
     @Environment(\.colorScheme) private var colorScheme
     @State private var isShowingOptions = false
+    @State private var isShowingSizeDots = false
+    /// Counts the steps taken rather than watching the size itself, so the dots hide on a timer that
+    /// each new step restarts, and never appear merely because the panel opened.
+    @State private var sizeSteps = 0
 
     public init(
         settings: Binding<ReaderSettings>,
@@ -110,8 +114,9 @@ public struct ReaderSettingsSheet: View {
         }
     }
 
-    /// The dots are the run itself: the capsule alone says the size can change, the dots say where in
-    /// the run it is and how far it can still go.
+    /// The dots answer "where in the run is this, and how much is left" — a question only asked while
+    /// stepping. They appear on a step and go again shortly after, and their space is always reserved
+    /// so the row does not jump as they come and go.
     private var sizeDots: some View {
         HStack(spacing: 4) {
             ForEach(ReaderSettings.fontSizeSteps.indices, id: \.self) { index in
@@ -123,19 +128,36 @@ public struct ReaderSettingsSheet: View {
                     .frame(width: 5, height: 5)
             }
         }
+        .opacity(isShowingSizeDots ? 1 : 0)
+        .animation(.default, value: isShowingSizeDots)
         .accessibilityHidden(true)
+        .task(id: sizeSteps) {
+            guard sizeSteps > 0 else { return }
+            try? await Task.sleep(nanoseconds: 1_400_000_000)
+            isShowingSizeDots = false
+        }
     }
 
     /// The themes, as the pages they make: each tile is drawn in the palette in force right now and
     /// says its name, so the choice is the thing itself rather than a word for it.
+    /// Rows of three rather than a lazy grid: a lazy container materialises its cells on its own
+    /// schedule, and inside a panel that is animating in that reads as the tiles arriving before the
+    /// card they sit on. Six tiles are not worth deferring.
     private var themes: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible(), spacing: TsuyomiTheme.Metrics.tightGutter), count: 3),
-            spacing: TsuyomiTheme.Metrics.tightGutter
-        ) {
-            ForEach(ReaderTheme.allCases, id: \.self) { theme in
-                themeTile(theme)
+        VStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+            ForEach(themeRows, id: \.first) { row in
+                HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+                    ForEach(row, id: \.self) { theme in
+                        themeTile(theme)
+                    }
+                }
             }
+        }
+    }
+
+    private var themeRows: [[ReaderTheme]] {
+        stride(from: 0, to: ReaderTheme.allCases.count, by: 3).map { start in
+            Array(ReaderTheme.allCases[start..<min(start + 3, ReaderTheme.allCases.count)])
         }
     }
 
@@ -181,6 +203,8 @@ public struct ReaderSettingsSheet: View {
             updated.stepFontSize(delta)
             settings = updated
             onChange(updated)
+            isShowingSizeDots = true
+            sizeSteps += 1
         } label: {
             Text("字")
                 .font(.system(size: pointSize))

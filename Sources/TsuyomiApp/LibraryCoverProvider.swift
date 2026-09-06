@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import Combine
 import Foundation
 import TsuyomiCore
 import TsuyomiProtocol
@@ -28,6 +29,7 @@ public final class LibraryCoverProvider: ObservableObject {
     private let registry: SourceRegistry
     private let credentials: SourceCredentialStore
     private var providers: [String: SourceCoverProvider] = [:]
+    private var providerUpdates: [String: AnyCancellable] = [:]
     private var resolved = Set<String>()
 
     public init(roots: StorageRoots, registry: SourceRegistry, credentials: SourceCredentialStore) {
@@ -92,6 +94,12 @@ public final class LibraryCoverProvider: ObservableObject {
                   )
             else { return }
             self.providers[sourceId] = provider
+            // Bumping the revision here only announces that the provider exists. A cover finishing its
+            // read from disk changes that provider, which publishes on itself — a nested observable
+            // its owner has to forward, or the shelf stays blank until something else redraws it.
+            self.providerUpdates[sourceId] = provider.objectWillChange.sink { [weak self] _ in
+                self?.revision += 1
+            }
             self.revision += 1
         }
     }

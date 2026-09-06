@@ -146,13 +146,15 @@ public struct ReaderChrome: View {
     private var panel: some View {
         VStack(alignment: .trailing, spacing: TsuyomiTheme.Metrics.tightGutter) {
             if isScrubbing { bubble }
-            VStack(spacing: 0) {
-                directoryRow
-                Divider()
-                panelRow(title: "主题与设置", symbol: "textformat.size") {
-                    isMenuOpen = false
-                    actions.onOpenSettings()
-                }
+            /// Two cards, not one card with a rule through it: the reference separates them, and they
+            /// are separate things — one is where you are in the chapter, the other is what the page
+            /// looks like.
+            directoryRow
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+                .clipShape(RoundedRectangle(cornerRadius: 14))
+            panelRow(title: "主题与设置", symbol: "textformat.size") {
+                isMenuOpen = false
+                actions.onOpenSettings()
             }
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
             .clipShape(RoundedRectangle(cornerRadius: 14))
@@ -190,19 +192,19 @@ public struct ReaderChrome: View {
     private var directoryRow: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
-                if isScrubbing {
-                    /// One length for both: the fill ends at `edge` and the marker stands on `edge`,
-                    /// so there is no second formula for them to disagree by. The finger maps back
-                    /// through the same width below, which is why the marker sits under it.
-                    let edge = proxy.size.width * fraction
-                    Rectangle()
-                        .fill(TsuyomiTheme.Palette.primaryText.opacity(0.14))
-                        .frame(width: edge)
-                    Rectangle()
-                        .fill(TsuyomiTheme.Palette.primaryText)
-                        .frame(width: 2, height: 24)
-                        .offset(x: edge - 1)
-                }
+                /// The proportion is on the row at rest, not only under a finger: this is where the
+                /// reader looks to see how far in they are, and a bar that only appears once you drag
+                /// it cannot answer that. One length for both marks — the fill ends at `edge` and the
+                /// marker stands on `edge` — so there is no second formula to disagree by, and the
+                /// finger maps back through the same width below.
+                let edge = proxy.size.width * fraction
+                Rectangle()
+                    .fill(TsuyomiTheme.Palette.primaryText.opacity(0.14))
+                    .frame(width: edge)
+                Rectangle()
+                    .fill(TsuyomiTheme.Palette.primaryText.opacity(isScrubbing ? 1 : 0.5))
+                    .frame(width: 2, height: 24)
+                    .offset(x: edge - 1)
                 HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                     Text("目录")
                         .font(TsuyomiTheme.Typography.body)

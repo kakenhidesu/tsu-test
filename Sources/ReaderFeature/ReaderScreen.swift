@@ -92,6 +92,8 @@ public struct ReaderScreen: View {
         Color.black.opacity(0.001)
             .onTapGesture { model.isSettingsPresented = false }
             .accessibilityHidden(true)
+            .transition(.opacity)
+            .zIndex(1)
         ReaderSettingsSheet(
             settings: $model.settings,
             appearance: $appearance,
@@ -100,7 +102,7 @@ public struct ReaderScreen: View {
         )
         .frame(maxHeight: .infinity, alignment: .bottom)
         .transition(.move(edge: .bottom))
-        .zIndex(1)
+        .zIndex(2)
     }
 
     /// Pagination is measured against the box the text actually gets, which is the screen less the
