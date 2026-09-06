@@ -242,7 +242,7 @@ public struct ReaderSurface: UIViewControllerRepresentable {
     private let layout: ReaderTextLayout
     private let pageIndex: Int
     private let flow: ReaderPresentation
-    private let theme: ReaderTheme
+    private let palette: ReaderPalette
     private let transition: ReaderPageTransition
     private let horizontalMargin: CGFloat
     private let onTap: (ReaderTapZone) -> Void
@@ -253,7 +253,7 @@ public struct ReaderSurface: UIViewControllerRepresentable {
         layout: ReaderTextLayout,
         pageIndex: Int,
         flow: ReaderPresentation,
-        theme: ReaderTheme,
+        palette: ReaderPalette,
         transition: ReaderPageTransition,
         horizontalMargin: CGFloat,
         onTap: @escaping (ReaderTapZone) -> Void,
@@ -263,7 +263,7 @@ public struct ReaderSurface: UIViewControllerRepresentable {
         self.layout = layout
         self.pageIndex = pageIndex
         self.flow = flow
-        self.theme = theme
+        self.palette = palette
         self.transition = transition
         self.horizontalMargin = horizontalMargin
         self.onTap = onTap
@@ -278,14 +278,14 @@ public struct ReaderSurface: UIViewControllerRepresentable {
     public func updateUIViewController(_ controller: ReaderPagingController, context: Context) {
         controller.onTap = onTap
         controller.onTurn = onTurn
-        controller.view.backgroundColor = theme.backgroundColor
+        controller.view.backgroundColor = palette.backgroundColor
         controller.view.isAccessibilityElement = true
         controller.view.accessibilityTraits = .staticText
         controller.view.accessibilityLabel = accessibilityLabel()
-        layout.apply(textColor: theme.foregroundColor)
+        layout.apply(textColor: palette.foregroundColor, inkStroke: palette.inkStroke)
         let plan = layout
         let currentFlow = flow
-        let background = theme.backgroundColor
+        let background = palette.backgroundColor
         let margin = horizontalMargin
         let drawn = onPageDrawn
         controller.configure = { page in

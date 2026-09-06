@@ -76,7 +76,7 @@ public final class AppPreferences: ObservableObject {
             flow: reader.flow == .scroll ? "scroll" : "paged",
             fontScale: reader.fontSize / 18.0,
             lineHeight: reader.lineHeight,
-            theme: reader.theme.rawValue
+            theme: reader.theme.transferName
         )
     }
 
@@ -96,7 +96,7 @@ public final class AppPreferences: ObservableObject {
             if let lineHeight = preferences.lineHeight, (0.8...3.0).contains(lineHeight) {
                 updated.lineHeight = lineHeight.clamped(to: ReaderSettings.lineHeightRange)
             }
-            if let theme = preferences.theme, let parsed = ReaderTheme(rawValue: theme) {
+            if let theme = preferences.theme, let parsed = ReaderTheme(transferName: theme) {
                 updated.theme = parsed
             }
             setReader(updated)
@@ -115,7 +115,10 @@ public final class AppPreferences: ObservableObject {
             paragraphSpacing: defaults.object(forKey: Key.readerParagraphSpacing) as? Double
                 ?? stored.paragraphSpacing,
             flow: defaults.string(forKey: Key.readerFlow).flatMap(ReaderPresentation.init(rawValue:)) ?? stored.flow,
-            theme: defaults.string(forKey: Key.readerTheme).flatMap(ReaderTheme.init(rawValue:)) ?? stored.theme,
+            /// A value stored before the themes were paired is one of the transfer words, so the same
+            /// reading serves both rather than a migration that would run once and then be dead.
+            theme: defaults.string(forKey: Key.readerTheme)
+                .flatMap { ReaderTheme(rawValue: $0) ?? ReaderTheme(transferName: $0) } ?? stored.theme,
             pageTransition: defaults.string(forKey: Key.readerPageTransition)
                 .flatMap(ReaderPageTransition.init(rawValue:)) ?? stored.pageTransition,
             lockPortrait: defaults.object(forKey: Key.readerLockPortrait) as? Bool ?? stored.lockPortrait,

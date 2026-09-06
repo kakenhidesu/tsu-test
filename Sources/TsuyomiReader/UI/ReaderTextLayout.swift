@@ -38,6 +38,7 @@ public final class ReaderTextLayout {
     private var width: CGFloat = 0
     private var height: CGFloat = 0
     private var textColor: UIColor = .label
+    private var inkStroke: CGFloat = 0
 
     public init(document: ReaderDocument, settings: ReaderSettings) throws {
         self.settings = settings
@@ -188,6 +189,8 @@ public final class ReaderTextLayout {
                 .font: UIFont.systemFont(ofSize: size, weight: weight),
                 .paragraphStyle: paragraph,
                 .foregroundColor: textColor,
+                .strokeColor: textColor,
+                .strokeWidth: inkStroke,
                 ReaderTextLayout.blockKindKey: kind
             ]
         )
@@ -195,16 +198,18 @@ public final class ReaderTextLayout {
 
     /// The theme's ink. Colour is not a metric: it changes what a page looks like and never where a
     /// page ends, so it is applied over the whole string instead of being folded into the layout key,
-    /// and a theme switch still does not repaginate. Drawing takes its colour from the string, so
-    /// without this the text is whatever TextKit defaults to — black, invisible on a dark theme.
-    public func apply(textColor: UIColor) {
-        guard textColor != self.textColor else { return }
+    /// and a theme switch still does not repaginate. The stroke is ink too — it is drawn around the
+    /// same glyphs at the same advances, which is what lets a heavier theme keep every page boundary
+    /// where a heavier face would not. Drawing takes its colour from the string, so without this the
+    /// text is whatever TextKit defaults to — black, invisible on a dark theme.
+    public func apply(textColor: UIColor, inkStroke: CGFloat) {
+        guard textColor != self.textColor || inkStroke != self.inkStroke else { return }
         self.textColor = textColor
+        self.inkStroke = inkStroke
         guard let storage = contentStorage.textStorage, storage.length > 0 else { return }
         storage.beginEditing()
-        storage.addAttribute(
-            .foregroundColor,
-            value: textColor,
+        storage.addAttributes(
+            [.foregroundColor: textColor, .strokeColor: textColor, .strokeWidth: inkStroke],
             range: NSRange(location: 0, length: storage.length)
         )
         storage.endEditing()

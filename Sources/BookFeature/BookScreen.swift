@@ -194,7 +194,10 @@ public struct BookScreen: View {
                 /// a height, the text still truncates to fit it. This makes it ask for the height it
                 /// needs, which is what "展开" is supposed to mean.
                 .fixedSize(horizontal: false, vertical: true)
+            /// Borderless, because a list row hands its whole area to a button in the default style —
+            /// and the tags share this row, so a tap on one of them was landing here.
             Button(isSummaryExpanded ? "收起" : "展开") { isSummaryExpanded.toggle() }
+                .buttonStyle(.borderless)
                 .font(TsuyomiTheme.Typography.caption)
         }
     }

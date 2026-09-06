@@ -15,8 +15,8 @@ public struct DisplaySettingsScreen: View {
 
     public var body: some View {
         Form {
-            Section("外观") {
-                Picker("主题", selection: colorScheme) {
+            Section {
+                Picker("外观", selection: colorScheme) {
                     Text("跟随系统").tag(ColorSchemePreference.system)
                     Text("浅色").tag(ColorSchemePreference.light)
                     Text("深色").tag(ColorSchemePreference.dark)

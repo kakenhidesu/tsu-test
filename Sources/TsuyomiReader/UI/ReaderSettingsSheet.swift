@@ -4,15 +4,19 @@ import SwiftUI
 import TsuyomiCore
 import TsuyomiUI
 
-/// The reader's own settings panel, shaped like the one it sits beside on this platform: a titled
-/// sheet, a row of controls for the things changed most often, and everything else behind 选项. It
-/// writes the same `ReaderSettings` the settings tab writes — one set of values, two presentations,
-/// each the right one for where it appears.
+/// The reader's own settings panel: a card drawn over the page, with a row of controls for the things
+/// changed most often, the themes as tiles, and everything else behind 选项. It writes the same
+/// `ReaderSettings` the settings tab writes — one set of values, two presentations, each the right
+/// one for where it appears. It is exactly as tall as what it holds, and its owner puts it up and
+/// takes it down; nothing here is presented except 选项, which is a form and wants a sheet's room.
 public struct ReaderSettingsSheet: View {
     @Binding private var settings: ReaderSettings
     @Binding private var appearance: ColorSchemePreference
     private let onChange: (ReaderSettings) -> Void
     private let onClose: () -> Void
+    /// The appearance in force, which picks the palette every tile is drawn in — the same one the
+    /// page under the card is drawn in.
+    @Environment(\.colorScheme) private var colorScheme
     @State private var isShowingOptions = false
 
     public init(
@@ -32,13 +36,17 @@ public struct ReaderSettingsSheet: View {
             heading
             controls
             themes
-            Spacer(minLength: 0)
         }
         .padding(TsuyomiTheme.Metrics.gutter)
         .frame(maxWidth: .infinity, alignment: .leading)
-        /// One height, and no second detent to drag it to: this panel is a fixed set of controls over
-        /// a page, and a reader who pulls it to full screen has lost the page they were setting.
-        .presentationDetents([.height(400)])
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .padding(.horizontal, TsuyomiTheme.Metrics.tightGutter)
+        .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
+        .gesture(
+            DragGesture(minimumDistance: 24).onEnded { value in
+                if value.translation.height > 60 { onClose() }
+            }
+        )
         .sheet(isPresented: $isShowingOptions) {
             NavigationStack {
                 ReaderSettingsForm(settings: $settings, onChange: onChange, hiding: .offeredInTheReader)
@@ -82,79 +90,107 @@ public struct ReaderSettingsSheet: View {
         }
     }
 
-    /// One row: the size, then the things that change how a page behaves. Each is a control the
-    /// reference puts here, and each writes through immediately.
+    /// One row, one shape: four capsules of one size, so the row reads as one set of controls rather
+    /// than three pills and a button. The size capsule carries its dots underneath, which is why the
+    /// row lines up on its top edge and not its middle.
     private var controls: some View {
-        HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-            HStack(spacing: 0) {
-                sizeButton(delta: -1, symbol: "textformat.size.smaller", label: "缩小字号")
-                Divider().frame(height: 22)
-                sizeButton(delta: 1, symbol: "textformat.size.larger", label: "放大字号")
+        HStack(alignment: .top, spacing: TsuyomiTheme.Metrics.tightGutter) {
+            VStack(spacing: 6) {
+                HStack(spacing: 0) {
+                    sizeButton(delta: -1, pointSize: 14, label: "缩小字号")
+                    Divider().frame(height: 22)
+                    sizeButton(delta: 1, pointSize: 22, label: "放大字号")
+                }
+                .background(TsuyomiTheme.Palette.raisedSurface, in: Capsule())
+                sizeDots
             }
-            .background(TsuyomiTheme.Palette.raisedSurface, in: Capsule())
             flowMenu
             transitionMenu
             appearanceMenu
         }
     }
 
-    /// The themes, as the pages they make: each tile is drawn in its own colours and says its name, so
-    /// the choice is the thing itself rather than a word for it.
+    /// The dots are the run itself: the capsule alone says the size can change, the dots say where in
+    /// the run it is and how far it can still go.
+    private var sizeDots: some View {
+        HStack(spacing: 4) {
+            ForEach(ReaderSettings.fontSizeSteps.indices, id: \.self) { index in
+                Circle()
+                    .fill(index <= settings.fontSizeStep ? TsuyomiTheme.Palette.primaryText : Color.clear)
+                    .overlay {
+                        Circle().strokeBorder(TsuyomiTheme.Palette.primaryText.opacity(0.35), lineWidth: 1)
+                    }
+                    .frame(width: 5, height: 5)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// The themes, as the pages they make: each tile is drawn in the palette in force right now and
+    /// says its name, so the choice is the thing itself rather than a word for it.
     private var themes: some View {
         LazyVGrid(
             columns: Array(repeating: GridItem(.flexible(), spacing: TsuyomiTheme.Metrics.tightGutter), count: 3),
             spacing: TsuyomiTheme.Metrics.tightGutter
         ) {
             ForEach(ReaderTheme.allCases, id: \.self) { theme in
-                Button {
-                    var updated = settings
-                    updated.theme = theme
-                    settings = updated
-                    onChange(updated)
-                } label: {
-                    VStack(spacing: 2) {
-                        HStack(alignment: .firstTextBaseline, spacing: 1) {
-                            Text("大").font(.system(size: 22, weight: .bold))
-                            Text("小").font(.system(size: 14))
-                        }
-                        .foregroundStyle(theme.foreground)
-                        Text(theme.label)
-                            .font(TsuyomiTheme.Typography.badge)
-                            .foregroundStyle(theme.foreground.opacity(0.7))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 72)
-                    .background(theme.background, in: RoundedRectangle(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .strokeBorder(
-                                settings.theme == theme
-                                    ? TsuyomiTheme.Palette.primaryText
-                                    : Color.clear,
-                                lineWidth: 2
-                            )
-                    }
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(theme.label)
-                .accessibilityAddTraits(settings.theme == theme ? [.isSelected] : [])
+                themeTile(theme)
             }
         }
     }
 
-    private func sizeButton(delta: Double, symbol: String, label: LocalizedStringKey) -> some View {
-        Button {
+    private func themeTile(_ theme: ReaderTheme) -> some View {
+        let palette = theme.palette(for: colorScheme)
+        let selected = settings.theme == theme
+        return Button {
             var updated = settings
-            let range = ReaderSettings.fontSizeRange
-            updated.fontSize = min(max(updated.fontSize + delta, range.lowerBound), range.upperBound)
+            updated.theme = theme
             settings = updated
             onChange(updated)
         } label: {
-            Image(systemName: symbol)
-                .frame(maxWidth: .infinity)
-                .frame(height: TsuyomiTheme.Metrics.minimumTouchTarget)
+            VStack(spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 1) {
+                    Text("大").font(.system(size: 22, weight: theme == .bold ? .heavy : .semibold))
+                    Text("小").font(.system(size: 14, weight: theme == .bold ? .bold : .regular))
+                }
+                .foregroundStyle(palette.foreground)
+                Text(theme.label)
+                    .font(TsuyomiTheme.Typography.badge)
+                    .foregroundStyle(palette.foreground.opacity(0.7))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 64)
+            .background(palette.background, in: RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .strokeBorder(
+                        selected ? TsuyomiTheme.Palette.primaryText : TsuyomiTheme.Palette.separator,
+                        lineWidth: selected ? 2 : 1
+                    )
+            }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(theme.label)
+        .accessibilityAddTraits(selected ? [.isSelected] : [])
+    }
+
+    private func sizeButton(delta: Int, pointSize: CGFloat, label: LocalizedStringKey) -> some View {
+        let enabled = settings.canStepFontSize(delta)
+        return Button {
+            var updated = settings
+            updated.stepFontSize(delta)
+            settings = updated
+            onChange(updated)
+        } label: {
+            Text("字")
+                .font(.system(size: pointSize))
+                .foregroundStyle(enabled ? TsuyomiTheme.Palette.primaryText : TsuyomiTheme.Palette.tertiaryText)
+                .frame(maxWidth: .infinity)
+                .frame(height: TsuyomiTheme.Metrics.minimumTouchTarget)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
         .accessibilityLabel(label)
     }
 
@@ -176,23 +212,16 @@ public struct ReaderSettingsSheet: View {
         }
     }
 
-    /// The page's colour lives here because it is the app's appearance, not a reader-only theme.
+    /// The page's light or dark lives here because it is the app's appearance, not a reader-only
+    /// theme: a theme is two palettes, and this is what chooses between them.
     private var appearanceMenu: some View {
-        Menu {
+        controlMenu(symbol: "circle.lefthalf.filled", label: "外观") {
             Picker("外观", selection: $appearance) {
                 Label("浅色", systemImage: "sun.max").tag(ColorSchemePreference.light)
                 Label("深色", systemImage: "moon").tag(ColorSchemePreference.dark)
                 Label("匹配设备", systemImage: "circle.lefthalf.filled").tag(ColorSchemePreference.system)
             }
-        } label: {
-            Image(systemName: "circle.lefthalf.filled")
-                .frame(
-                    width: TsuyomiTheme.Metrics.minimumTouchTarget,
-                    height: TsuyomiTheme.Metrics.minimumTouchTarget
-                )
-                .background(TsuyomiTheme.Palette.raisedSurface, in: Circle())
         }
-        .accessibilityLabel("外观")
     }
 
     private func controlMenu(

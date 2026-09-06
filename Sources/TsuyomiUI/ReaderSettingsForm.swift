@@ -44,7 +44,7 @@ public struct ReaderSettingsForm: View {
             Section("排版") {
                 if !hidden.contains(.fontSize) {
                     SettingsRow(title: "字号", supporting: "\(Int(settings.fontSize)) pt") {
-                        Stepper("字号", value: binding(\.fontSize), in: ReaderSettings.fontSizeRange, step: 1)
+                        Stepper("字号", onIncrement: fontSizeStep(1), onDecrement: fontSizeStep(-1))
                             .labelsHidden()
                     }
                 }
@@ -99,6 +99,18 @@ public struct ReaderSettingsForm: View {
 
     private var transitionOptions: [(value: ReaderPageTransition, title: LocalizedStringKey)] {
         [(.slide, "滑动"), (.curl, "卷页"), (.immediate, "无")]
+    }
+
+    /// The same run of sizes the reader's own panel steps along, so the two never disagree about what
+    /// one step is; nil at either end, which is how a stepper shows it has no further to go.
+    private func fontSizeStep(_ delta: Int) -> (() -> Void)? {
+        guard settings.canStepFontSize(delta) else { return nil }
+        return {
+            var updated = settings
+            updated.stepFontSize(delta)
+            settings = updated
+            onChange(updated)
+        }
     }
 
     private func binding<Value>(_ keyPath: WritableKeyPath<ReaderSettings, Value>) -> Binding<Value> {

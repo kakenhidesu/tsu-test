@@ -149,12 +149,13 @@ public struct ReaderChrome: View {
             VStack(spacing: 0) {
                 directoryRow
                 Divider()
-                panelRow(title: "主题与设置", detail: "大小", symbol: "textformat.size") {
+                panelRow(title: "主题与设置", symbol: "textformat.size") {
                     isMenuOpen = false
                     actions.onOpenSettings()
                 }
             }
             .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .clipShape(RoundedRectangle(cornerRadius: 14))
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                 if let previous = actions.onPreviousChapter {
                     Button {
@@ -181,35 +182,39 @@ public struct ReaderChrome: View {
         .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
     }
 
-    /// The 目录 row is the scrubber. It reads as a row until a finger drags along it, and then it is a
-    /// track: the same bar, which is why the progress belongs on it. Dragging drives the preview
-    /// session — a frozen preview follows the finger — and releasing performs the one navigation. A
-    /// tap that does not travel opens the directory instead.
+    /// The 目录 row is the scrubber. It stays a row — the name, the percentage and the icon keep their
+    /// places — and while a finger drags along it the read portion fills in underneath them, so the
+    /// row is the track rather than being swapped for one. Dragging drives the preview session — a
+    /// frozen preview follows the finger — and releasing performs the one navigation. A tap that does
+    /// not travel opens the directory instead.
     private var directoryRow: some View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 if isScrubbing {
+                    /// One length for both: the fill ends at `edge` and the marker stands on `edge`,
+                    /// so there is no second formula for them to disagree by. The finger maps back
+                    /// through the same width below, which is why the marker sits under it.
+                    let edge = proxy.size.width * fraction
                     Rectangle()
                         .fill(TsuyomiTheme.Palette.primaryText.opacity(0.14))
-                        .frame(width: max(proxy.size.width * fraction, 0))
-                    Capsule()
+                        .frame(width: edge)
+                    Rectangle()
                         .fill(TsuyomiTheme.Palette.primaryText)
-                        .frame(width: 4, height: 26)
-                        .offset(x: thumbOffset(in: proxy.size.width))
-                } else {
-                    HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-                        Text("目录")
-                            .font(TsuyomiTheme.Typography.body)
-                            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                        Text("\(percentRead)%")
-                            .font(TsuyomiTheme.Typography.supporting)
-                            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                        Spacer()
-                        Image(systemName: "list.bullet")
-                            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                    }
-                    .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+                        .frame(width: 2, height: 24)
+                        .offset(x: edge - 1)
                 }
+                HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+                    Text("目录")
+                        .font(TsuyomiTheme.Typography.body)
+                        .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                    Text("\(percentRead)%")
+                        .font(TsuyomiTheme.Typography.supporting)
+                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                    Spacer()
+                    Image(systemName: "list.bullet")
+                        .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                }
+                .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .contentShape(Rectangle())
@@ -278,27 +283,14 @@ public struct ReaderChrome: View {
         min(max(Int((fraction * Double(max(pageCount - 1, 0))).rounded()), 0), max(pageCount - 1, 0))
     }
 
-    /// The thumb stays inside the track at both ends rather than hanging half off it.
-    private func thumbOffset(in width: CGFloat) -> CGFloat {
-        6 + max(width - 16, 0) * fraction
-    }
-
     private func clamped(_ value: Double) -> Double { min(max(value, 0), 1) }
 
-    private func panelRow(
-        title: LocalizedStringKey,
-        detail: String,
-        symbol: String,
-        action: @escaping () -> Void
-    ) -> some View {
+    private func panelRow(title: LocalizedStringKey, symbol: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                 Text(title)
                     .font(TsuyomiTheme.Typography.body)
                     .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                Text(detail)
-                    .font(TsuyomiTheme.Typography.supporting)
-                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 Spacer()
                 Image(systemName: symbol)
                     .foregroundStyle(TsuyomiTheme.Palette.primaryText)
@@ -310,9 +302,10 @@ public struct ReaderChrome: View {
         .buttonStyle(.plain)
     }
 
+    /// Read from the page the bar points at, so the figure moves with the finger.
     private var percentRead: Int {
-        guard pageCount > 1 else { return 100 }
-        return Int((Double(pageIndex + 1) / Double(pageCount) * 100).rounded())
+        guard pageCount > 0 else { return 0 }
+        return Int((Double(scrubTargetPage + 1) / Double(pageCount) * 100).rounded())
     }
 }
 

@@ -10,12 +10,14 @@ public struct ReaderScreen: View {
     @ObservedObject private var model: ReaderModel
     @Environment(\.scenePhase) private var scenePhase
     /// The app's appearance, which the reader's own panel offers beside the page themes exactly as
-    /// the reference does — the themes colour the page, this decides everything around it.
+    /// the reference does: a theme is two palettes, and this decides which one the page is drawn in.
     @Binding private var appearance: ColorSchemePreference
+    @Environment(\.colorScheme) private var colorScheme
     private let onLeave: () -> Void
 
-    /// The page carries the reader's chosen theme.
-    private var theme: ReaderTheme { model.settings.theme }
+    /// The page's colours. The palette is chosen by the appearance the subtree already has, so the
+    /// semantic colours drawn over the page resolve against the page without being told to.
+    private var palette: ReaderPalette { model.settings.theme.palette(for: colorScheme) }
 
     public init(
         model: ReaderModel,
@@ -38,7 +40,7 @@ public struct ReaderScreen: View {
                         layout: content.layout,
                         pageIndex: model.visiblePageIndex,
                         flow: model.settings.flow,
-                        theme: theme,
+                        palette: palette,
                         transition: model.settings.pageTransition,
                         horizontalMargin: model.settings.horizontalMargin,
                         onTap: { model.tapped($0) },
@@ -57,16 +59,15 @@ public struct ReaderScreen: View {
                         progressVisible: model.settings.progressVisible,
                         actions: actions(content)
                     )
+                    if model.isSettingsPresented { settingsPanel }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .animation(.default, value: model.isSettingsPresented)
             }
             .onAppear { model.resize(readingSize(proxy.size)) }
             .onChange(of: proxy.size) { size in model.resize(readingSize(size)) }
         }
-        .background(theme.background)
-        /// The theme is the reader's choice, not the system's. Everything drawn over the page resolves
-        /// semantic colours, so the subtree is told which appearance it is actually sitting on.
-        .environment(\.colorScheme, theme.isDark ? .dark : .light)
+        .background(palette.background)
         .navigationBarHidden(true)
         /// Reading is the whole screen. A tab bar under the text is one more thing to hit by accident
         /// while turning a page, and it says the reader is a pane inside a tab when it is not.
@@ -80,27 +81,26 @@ public struct ReaderScreen: View {
             guard phase != .active else { return }
             Task { await model.flush() }
         }
-        .sheet(
-            isPresented: Binding(
-                get: { model.isSettingsPresented || model.isDirectoryPresented },
-                set: { presented in
-                    guard !presented else { return }
-                    model.isSettingsPresented = false
-                    model.isDirectoryPresented = false
-                }
-            )
-        ) {
-            if model.isSettingsPresented {
-                ReaderSettingsSheet(
-                    settings: $model.settings,
-                    appearance: $appearance,
-                    onChange: { model.apply($0) },
-                    onClose: { model.isSettingsPresented = false }
-                )
-            } else {
-                directory
-            }
-        }
+        .sheet(isPresented: $model.isDirectoryPresented) { directory }
+    }
+
+    /// Drawn over the page rather than presented over it: a sheet can be pulled past its one height
+    /// and springs back, and there is no switch for that. Here the panel is as tall as its controls
+    /// and no taller, and a tap on the page or a pull downwards puts it away.
+    @ViewBuilder
+    private var settingsPanel: some View {
+        Color.black.opacity(0.001)
+            .onTapGesture { model.isSettingsPresented = false }
+            .accessibilityHidden(true)
+        ReaderSettingsSheet(
+            settings: $model.settings,
+            appearance: $appearance,
+            onChange: { model.apply($0) },
+            onClose: { model.isSettingsPresented = false }
+        )
+        .frame(maxHeight: .infinity, alignment: .bottom)
+        .transition(.move(edge: .bottom))
+        .zIndex(1)
     }
 
     /// Pagination is measured against the box the text actually gets, which is the screen less the
