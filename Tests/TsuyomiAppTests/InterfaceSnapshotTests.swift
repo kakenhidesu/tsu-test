@@ -113,13 +113,24 @@ final class InterfaceSnapshotTests: XCTestCase {
         // SwiftUI commits its layout on the next run-loop pass, so a snapshot taken in the same turn
         // catches the view before it has one.
         RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        let image = UIGraphicsImageRenderer(size: size).image { _ in
-            controller.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        // The layer tree, not `drawHierarchy`: that one needs the render server to have presented the
+        // window, which never happens in a test, and it does not fail — it hands back a blank image.
+        // Core Animation will not draw a `UIVisualEffectView`, so a material reads as nothing here
+        // while everything laid out on top of it still renders, which is what these images are for.
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            controller.view.layer.render(in: context.cgContext)
         }
         guard let data = image.pngData() else {
             return XCTFail("\(name) produced no image")
         }
-        XCTAssertGreaterThan(data.count, 1_000, "\(name) rendered blank")
+        // A blank page is small but not tiny, so file size proves nothing: a white 393×852 PNG is
+        // 15 KB. Count what is actually on it instead — a screen with content has many distinct
+        // colours, and every renderer that quietly failed so far produced one or two.
+        XCTAssertGreaterThan(
+            InterfaceSnapshotTests.distinctColours(in: image),
+            8,
+            "\(name) rendered blank or near-blank"
+        )
         let url = InterfaceSnapshotTests.outputDirectory.appendingPathComponent("\(name).png")
         do {
             try FileManager.default.createDirectory(
@@ -130,6 +141,26 @@ final class InterfaceSnapshotTests: XCTestCase {
         } catch {
             XCTFail("could not write \(name): \(error)")
         }
+    }
+
+    /// Samples the image down to a small grid and counts the distinct pixels in it. Cheap, and enough
+    /// to tell a rendered screen from a flat one without knowing what the screen should look like.
+    private static func distinctColours(in image: UIImage) -> Int {
+        guard let source = image.cgImage else { return 0 }
+        let width = 40
+        let height = 80
+        var pixels = [UInt32](repeating: 0, count: width * height)
+        guard let context = CGContext(
+            data: &pixels,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width * 4,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return 0 }
+        context.draw(source, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return Set(pixels).count
     }
 
     /// Beside the package, where the CI job collects them.
