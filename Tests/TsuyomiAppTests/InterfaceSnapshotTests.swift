@@ -24,21 +24,20 @@ import XCTest
 /// glyph resolves against a live backdrop. Those still need the device.
 @MainActor
 final class InterfaceSnapshotTests: XCTestCase {
-    private var directory: URL!
-
-    override func setUpWithError() throws {
-        directory = URL(fileURLWithPath: NSTemporaryDirectory())
+    /// The scratch directory is made inside the test rather than in `setUp`: those overrides are not
+    /// main-actor isolated, and this case is, so they cannot touch its state.
+    private func scratchDirectory() throws -> URL {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("snapshot-\(UUID().uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    }
-
-    override func tearDownWithError() throws {
-        try? FileManager.default.removeItem(at: directory)
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        return url
     }
 
     /// The book screen, from the same offline fixture world the journey tests use, so what is drawn
     /// is a page the app really produced rather than a hand-made stand-in.
     func testBookScreenSnapshots() async throws {
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
         let world = try await FixtureWorld(directory: directory)
         let identity = try BookIdentity(sourceId: world.sourceId.value, remoteBookId: "1234")
         let model = BookModel(
