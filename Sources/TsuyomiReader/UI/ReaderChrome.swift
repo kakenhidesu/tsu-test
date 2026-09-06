@@ -319,3 +319,4 @@ struct CircularChromeLabel: View {
             )
             .background(.regularMaterial, in: Circle())
     }
+}
