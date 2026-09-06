@@ -132,7 +132,8 @@ struct ReaderHost: View {
                 startChapterId: chapterId,
                 settings: container.preferences.reader,
                 registry: container.registry,
-                progressStore: container.progress
+                progressStore: container.progress,
+                persist: { [preferences = container.preferences] in preferences.setReader($0) }
             )
         )
     }

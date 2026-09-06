@@ -36,6 +36,7 @@ public final class ReaderModel: ObservableObject {
     public let identity: BookIdentity
     private let registry: SourceRegistry
     private let progressStore: ReadingProgressStore
+    private let persist: @MainActor (ReaderSettings) -> Void
     private let documents = ReaderDocumentCache()
     private let clock: () -> Date
     private let startChapterId: String
@@ -55,6 +56,7 @@ public final class ReaderModel: ObservableObject {
         settings: ReaderSettings,
         registry: SourceRegistry,
         progressStore: ReadingProgressStore,
+        persist: @MainActor @escaping (ReaderSettings) -> Void = { _ in },
         clock: @escaping () -> Date = Date.init
     ) {
         self.identity = identity
@@ -63,6 +65,7 @@ public final class ReaderModel: ObservableObject {
         self.settings = settings
         self.registry = registry
         self.progressStore = progressStore
+        self.persist = persist
         self.clock = clock
     }
 
@@ -113,8 +116,12 @@ public final class ReaderModel: ObservableObject {
         try? relayout()
     }
 
+    /// Settings changed inside a book are the settings, not a copy of them that lives as long as the
+    /// screen does: they are written to the store here, so leaving the reader keeps them and the
+    /// settings tab shows what was chosen.
     public func apply(_ updated: ReaderSettings) {
         settings = updated
+        persist(updated)
         session?.switchPresentation(updated.flow)
         try? relayout()
     }

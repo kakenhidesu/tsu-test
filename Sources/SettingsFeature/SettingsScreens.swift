@@ -36,47 +36,31 @@ public struct DisplaySettingsScreen: View {
     }
 }
 
-/// The reader defaults a newly opened book starts from. Changing them here never moves a reading
-/// position: a locator is semantic, so the same position simply lands on a different page.
-public struct ReaderDefaultsScreen: View {
+/// The reader settings, reached from the settings tab rather than from inside a book. They are not
+/// defaults that a book then diverges from: there is one set of reader settings, and this screen and
+/// the reader's own sheet are two ways to the same values, through the same controls. Changing them
+/// never moves a reading position — a locator is semantic, so the same position simply lands on a
+/// different page.
+public struct ReaderSettingsScreen: View {
     @ObservedObject private var preferences: AppPreferences
-    @State private var settings: ReaderSettings
 
     public init(preferences: AppPreferences) {
         self.preferences = preferences
-        _settings = State(initialValue: preferences.reader)
     }
 
     public var body: some View {
-        Form {
-            Section("排版") {
-                Stepper("字号 \(Int(settings.fontSize))", value: $settings.fontSize, in: 12...32, step: 1)
-                Stepper("行高 \(settings.lineHeight, specifier: "%.1f")", value: $settings.lineHeight, in: 1.0...2.4, step: 0.1)
-                Stepper("边距 \(Int(settings.horizontalMargin))", value: $settings.horizontalMargin, in: 8...64, step: 2)
-                Stepper("段距 \(Int(settings.paragraphSpacing))", value: $settings.paragraphSpacing, in: 0...32, step: 2)
-            }
-            Section("翻页") {
-                Picker("阅读方式", selection: $settings.flow) {
-                    Text("滚动").tag(ReaderPresentation.scroll)
-                    Text("分页").tag(ReaderPresentation.paged)
-                    Text("双页").tag(ReaderPresentation.dualPage)
-                }
-                Picker("配色", selection: $settings.theme) {
-                    ForEach(ReaderTheme.allCases, id: \.self) { theme in
-                        Text(theme.label).tag(theme)
-                    }
-                }
-            }
-            Section("导航") {
-                Toggle("锁定竖屏", isOn: $settings.lockPortrait)
-                Toggle("显示进度", isOn: $settings.progressVisible)
-                Toggle("沉浸模式", isOn: $settings.immersive)
-                Toggle("阅读时不息屏", isOn: $settings.keepAwake)
-            }
-        }
-        .navigationTitle("阅读器默认值")
-        .navigationBarTitleDisplayMode(.inline)
-        .onChange(of: settings) { updated in preferences.setReader(updated) }
+        ReaderSettingsForm(settings: settings)
+            .navigationTitle("阅读器设置")
+            .navigationBarTitleDisplayMode(.inline)
+    }
+
+    /// Read straight from the store rather than from a snapshot taken when this screen was built, so
+    /// what it shows is what a book last left there.
+    private var settings: Binding<ReaderSettings> {
+        Binding(
+            get: { preferences.reader },
+            set: { preferences.setReader($0) }
+        )
     }
 }
 

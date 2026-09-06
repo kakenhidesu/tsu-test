@@ -75,7 +75,7 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 
 | 项 | 结果 |
 |---|---|
-| 设置屏 | 显示（外观，无 profile）、阅读器默认值（排版/翻页/导航分组）、数据（明写迁移含与不含项）、帮助（可搜索折叠）、关于（许可证全文）|
+| 设置屏 | 显示（外观，无 profile）、阅读器设置（排版/翻页/导航分组，与阅读器内同一份控件与同一份存储）、数据（明写迁移含与不含项）、帮助（可搜索折叠）、关于（许可证全文）|
 | 文档 | `docs/OPTION_APPLICABILITY_IOS.md` 逐项记录可见性判定；`THIRD_PARTY_NOTICES.md` 记录 QuickJS-ng 与源码摘要；README 重写 |
 | Reduce Motion | 插入位让位与快捷栏收折在 Reduce Motion 下降级为无动画切换 |
 | `NSUserActivity` | 阅读页发布活动（只含书与章，不含进度，不参与 Handoff），根视图接管续读并切到浏览 tab |

@@ -135,3 +135,5 @@
 - 卷页样式自带的边缘点击被禁用（`gestureRecognizers` 里的 tap），只保留它的拖拽：三分屏点击已经承担了上一页/下一页/呼出控件三件事，两套点击叠在一起会一次翻两页。
 - 拖拽落定后由 `didFinishAnimating(transitionCompleted:)` 上报页码，`ReaderModel.turned(toPage:)` 记录落点；弹回的拖拽不上报。与 `step(_:)` 不同，拖拽到章首/章尾不会翻到相邻章——数据源在两端返回 nil，越章只能由点击或目录发起。
 - `pageTransition` 不进 `layoutKey`，也不进 `tsuyomi-transfer` 的可导出子集：它是呈现方式，既不改变任何一页的边界，也不是跨端可移植的阅读偏好。
+- 阅读器设置只有一份：设置 tab 的「阅读器设置」（原「阅读器默认值」）与阅读器内的设置面板共用同一个 `ReaderSettingsForm`，写的也是同一个 `AppPreferences.reader`。此前是两份手写的控件列表，已经漂移——设置屏用 Picker、缺「翻页效果」，而且阅读器里改完根本不落盘，退出即丢。「默认值」这个名字本身就是错的：不存在"默认值"与"每本书的设置"两层，只有一份设置。
+- 设置屏直接按绑定读写 `preferences.reader`，不再在构造时取一份 `@State` 快照：快照会在书里改过设置之后显示旧值。

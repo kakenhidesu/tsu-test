@@ -7,7 +7,7 @@ import TsuyomiUI
 
 enum MoreRoute: Hashable {
     case display
-    case readerDefaults
+    case readerSettings
     case data
     case transfer
     case help
@@ -37,7 +37,7 @@ struct MoreScreen: View {
             List {
                 Section("设置") {
                     row("显示", "paintpalette", .display)
-                    row("阅读器默认值", "textformat", .readerDefaults)
+                    row("阅读器设置", "textformat", .readerSettings)
                 }
                 Section("数据") {
                     row("数据", "externaldrive", .data)
@@ -64,8 +64,8 @@ struct MoreScreen: View {
         switch route {
         case .display:
             DisplaySettingsScreen(preferences: container.preferences)
-        case .readerDefaults:
-            ReaderDefaultsScreen(preferences: container.preferences)
+        case .readerSettings:
+            ReaderSettingsScreen(preferences: container.preferences)
         case .data:
             DataSettingsScreen { path.append(.transfer) }
         case .transfer:
