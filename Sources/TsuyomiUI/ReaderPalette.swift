@@ -31,14 +31,10 @@ public extension ReaderTheme {
     var background: Color { Color(uiColor: backgroundColor) }
     var foreground: Color { Color(uiColor: foregroundColor) }
 
-    /// The appearance this theme actually presents, which the system appearance has no say in: a
-    /// reader on paper is a light surface even at night, and anything drawn over it that resolves a
-    /// semantic colour has to resolve it against this.
-    var colorScheme: ColorScheme {
-        switch self {
-        case .paper, .warmGray, .inkGreen: return .light
-        case .nightInk, .black: return .dark
-        }
+    /// The page under the appearance actually in force, `system` already resolved. The reader has no
+    /// colour setting of its own: it is light or dark because the app is.
+    static func reading(under scheme: ColorScheme) -> ReaderTheme {
+        scheme == .dark ? .nightInk : .paper
     }
 
     var label: LocalizedStringKey {

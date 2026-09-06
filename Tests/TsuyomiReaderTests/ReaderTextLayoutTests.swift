@@ -82,10 +82,13 @@ final class ReaderTextLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(position.blockIndex, 20)
     }
 
-    func testAColourOnlyChangeKeepsTheLayoutKey() throws {
+    /// Only what changes a page boundary may change the key. The page turn is drawn, not measured,
+    /// and the colours come from the app's appearance and are not in the settings at all.
+    func testAPresentationOnlyChangeKeepsTheLayoutKey() throws {
         var settings = ReaderSettings()
         let first = try ReaderTextLayout.key(settings: settings, width: 390)
-        settings.theme = .nightInk
+        settings.pageTransition = .curl
+        settings.progressVisible.toggle()
         let second = try ReaderTextLayout.key(settings: settings, width: 390)
         XCTAssertEqual(first, second)
 

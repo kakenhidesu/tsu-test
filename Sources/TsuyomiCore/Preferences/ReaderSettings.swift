@@ -22,6 +22,9 @@ public enum ReaderPageTransition: String, Sendable, CaseIterable, Codable {
     case immediate
 }
 
+/// The page's colours. It is not a reader setting of its own: there is one appearance choice in this
+/// app and the page follows it, so this is derived from that choice rather than picked separately.
+/// The full set survives because it is the vocabulary a `tsuyomi-transfer` file speaks.
 public enum ReaderTheme: String, Sendable, CaseIterable, Codable {
     case paper
     case warmGray
@@ -44,10 +47,8 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
     public var paragraphSpacing: Double
     public var flow: ReaderPresentation
     public var pageTransition: ReaderPageTransition
-    public var theme: ReaderTheme
     public var lockPortrait: Bool
     public var progressVisible: Bool
-    public var immersive: Bool
     public var keepAwake: Bool
 
     public init(
@@ -57,10 +58,8 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
         paragraphSpacing: Double = 12,
         flow: ReaderPresentation = .paged,
         pageTransition: ReaderPageTransition = .slide,
-        theme: ReaderTheme = .paper,
         lockPortrait: Bool = false,
         progressVisible: Bool = true,
-        immersive: Bool = false,
         keepAwake: Bool = true
     ) {
         self.fontSize = fontSize.clamped(to: Self.fontSizeRange)
@@ -69,10 +68,8 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
         self.paragraphSpacing = paragraphSpacing.clamped(to: Self.paragraphSpacingRange)
         self.flow = flow
         self.pageTransition = pageTransition
-        self.theme = theme
         self.lockPortrait = lockPortrait
         self.progressVisible = progressVisible
-        self.immersive = immersive
         self.keepAwake = keepAwake
     }
 }
@@ -107,5 +104,15 @@ public struct LibraryPresentationPreferences: Hashable, Sendable {
 extension Double {
     func clamped(to range: ClosedRange<Double>) -> Double {
         isFinite ? Swift.min(Swift.max(self, range.lowerBound), range.upperBound) : range.lowerBound
+    }
+}
+
+public extension ReaderTheme {
+    var isDark: Bool { self == .nightInk || self == .black }
+
+    /// The page under an app appearance. `system` reads as light here because this is the value a
+    /// transfer file carries, and a file cannot say "whatever that device was set to".
+    static func reading(under appearance: ColorSchemePreference) -> ReaderTheme {
+        appearance == .dark ? .nightInk : .paper
     }
 }

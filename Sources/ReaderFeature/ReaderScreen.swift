@@ -9,7 +9,11 @@ import TsuyomiUI
 public struct ReaderScreen: View {
     @ObservedObject private var model: ReaderModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.colorScheme) private var colorScheme
     private let onLeave: () -> Void
+
+    /// The page is light or dark because the app is. There is no reader-only colour choice.
+    private var theme: ReaderTheme { ReaderTheme.reading(under: colorScheme) }
 
     public init(model: ReaderModel, onLeave: @escaping () -> Void) {
         self.model = model
@@ -27,7 +31,7 @@ public struct ReaderScreen: View {
                         layout: content.layout,
                         pageIndex: model.visiblePageIndex,
                         flow: model.settings.flow,
-                        theme: model.settings.theme,
+                        theme: theme,
                         transition: model.settings.pageTransition,
                         horizontalMargin: model.settings.horizontalMargin,
                         onTap: { model.tapped($0) },
@@ -35,7 +39,6 @@ public struct ReaderScreen: View {
                         onPageDrawn: { model.pageDrawn($0) }
                     )
                     ReaderChrome(
-                        bookTitle: model.bookTitle,
                         chapterTitle: content.chapterTitle,
                         pageIndex: model.visiblePageIndex,
                         pageCount: content.pageCount,
@@ -49,17 +52,15 @@ public struct ReaderScreen: View {
             .onAppear { model.resize(proxy.size) }
             .onChange(of: proxy.size) { size in model.resize(size) }
         }
-        .background(model.settings.theme.background)
-        /// A reader theme is the reader's own choice, not the system's. Everything drawn over it
-        /// resolves semantic colours, so the subtree is told which appearance it is sitting on;
-        /// otherwise a dark system appearance writes near-white text onto a paper background.
-        .environment(\.colorScheme, model.settings.theme.colorScheme)
+        .background(theme.background)
         .navigationBarHidden(true)
         /// Reading is the whole screen. A tab bar under the text is one more thing to hit by accident
         /// while turning a page, and it says the reader is a pane inside a tab when it is not.
         .toolbar(.hidden, for: .tabBar)
-        .statusBarHidden(model.settings.immersive && !model.isChromeVisible)
-        .persistentSystemOverlays(model.settings.immersive ? .hidden : .automatic)
+        /// The clock and the home indicator belong to the controls, not to the page: with the chrome
+        /// away there is nothing on screen but the text, and one tap brings all of it back together.
+        .statusBarHidden(!model.isChromeVisible)
+        .persistentSystemOverlays(model.isChromeVisible ? .automatic : .hidden)
         .task { await model.open() }
         .onChange(of: scenePhase) { phase in
             guard phase != .active else { return }

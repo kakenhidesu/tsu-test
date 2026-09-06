@@ -149,14 +149,3 @@ public struct AboutScreen: View {
     }
 }
 
-extension ReaderTheme {
-    var label: LocalizedStringKey {
-        switch self {
-        case .paper: return "纸白"
-        case .warmGray: return "暖灰"
-        case .nightInk: return "夜墨"
-        case .black: return "纯黑"
-        case .inkGreen: return "护眼绿"
-        }
-    }
-}

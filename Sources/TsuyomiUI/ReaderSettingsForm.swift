@@ -48,11 +48,6 @@ public struct ReaderSettingsForm: View {
                     )
                     .labelsHidden()
                 }
-                Picker("阅读主题", selection: binding(\.theme)) {
-                    ForEach(ReaderTheme.allCases, id: \.self) { theme in
-                        Text(theme.label).tag(theme)
-                    }
-                }
             }
 
             Section("翻页") {
@@ -67,7 +62,6 @@ public struct ReaderSettingsForm: View {
             }
 
             Section("导航") {
-                Toggle("沉浸模式", isOn: binding(\.immersive))
                 Toggle("阅读时常亮", isOn: binding(\.keepAwake))
             }
         }
