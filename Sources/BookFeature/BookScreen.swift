@@ -91,42 +91,66 @@ public struct BookScreen: View {
         .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
     }
 
-    /// The shelf and 稍后再读 are icon-sized because they are not why this screen is open; 开始阅读 is.
-    /// Nothing here can produce a remote write.
+    /// The shelf and 稍后再读 are two square icon buttons the size of a touch target and no larger:
+    /// they are not why this screen is open. They hug the leading edge rather than stretching, which
+    /// is what a bordered button in a wide column does if left to itself.
     private func shelfActions(_ content: BookDetailState) -> some View {
         HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-            Button {
+            iconAction(
+                symbol: content.inLibrary ? "bookmark.fill" : "bookmark",
+                label: content.inLibrary ? "移出书架" : "加入书架",
+                isOn: content.inLibrary
+            ) {
                 Task { content.inLibrary ? await model.removeFromLibrary() : await model.addToLibrary() }
-            } label: {
-                Image(systemName: content.inLibrary ? "bookmark.fill" : "bookmark")
-                    .frame(
-                        width: TsuyomiTheme.Metrics.minimumTouchTarget,
-                        height: TsuyomiTheme.Metrics.minimumTouchTarget
-                    )
             }
-            .accessibilityLabel(content.inLibrary ? "移出书架" : "加入书架")
-            Button {
+            iconAction(
+                symbol: content.readLater ? "clock.fill" : "clock",
+                label: content.readLater ? "取消稍后再读" : "稍后再读",
+                isOn: content.readLater
+            ) {
                 Task { await model.toggleReadLater() }
-            } label: {
-                Image(systemName: content.readLater ? "clock.fill" : "clock")
-                    .frame(
-                        width: TsuyomiTheme.Metrics.minimumTouchTarget,
-                        height: TsuyomiTheme.Metrics.minimumTouchTarget
-                    )
             }
-            .accessibilityLabel(content.readLater ? "取消稍后再读" : "稍后再读")
+            Spacer(minLength: 0)
         }
-        .buttonStyle(.bordered)
         .disabled(model.isBusy)
     }
 
+    private func iconAction(
+        symbol: String,
+        label: LocalizedStringKey,
+        isOn: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 17, weight: .semibold))
+                .foregroundStyle(isOn ? TsuyomiTheme.Palette.accent : TsuyomiTheme.Palette.secondaryText)
+                .frame(
+                    width: TsuyomiTheme.Metrics.minimumTouchTarget,
+                    height: TsuyomiTheme.Metrics.minimumTouchTarget
+                )
+                .background(
+                    TsuyomiTheme.Palette.raisedSurface,
+                    in: RoundedRectangle(cornerRadius: TsuyomiTheme.Metrics.tightGutter)
+                )
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    /// The label carries the width, not the frame around the button: a bordered button draws its
+    /// background around its label, so widening the frame alone leaves a small button in a wide box.
     private func startReading(_ content: BookDetailState) -> some View {
         Group {
             if let chapter = startingChapter(content) {
-                Button(content.resumeChapterId == nil ? "开始阅读" : "继续阅读") { openChapter(chapter) }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity, minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                Button {
+                    openChapter(chapter)
+                } label: {
+                    Text(content.resumeChapterId == nil ? "开始阅读" : "继续阅读")
+                        .font(TsuyomiTheme.Typography.body.weight(.semibold))
+                        .frame(maxWidth: .infinity, minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                }
+                .buttonStyle(.borderedProminent)
             }
         }
     }
@@ -209,11 +233,20 @@ public struct BookScreen: View {
                     TsuyomiStatusBadge("继续", tone: .positive)
                 }
             }
-            .padding(.vertical, 4)
             /// Without this the row is only tappable where the text is: a `Spacer` and the padding
             /// around it carry no hit area of their own.
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        /// A directory is a list to run an eye down. The rows carry their own leading inset and a
+        /// tight vertical one, so a long list stays compact instead of a screenful holding four.
+        .listRowInsets(
+            EdgeInsets(
+                top: 10,
+                leading: TsuyomiTheme.Metrics.gutter,
+                bottom: 10,
+                trailing: TsuyomiTheme.Metrics.gutter
+            )
+        )
     }
 }

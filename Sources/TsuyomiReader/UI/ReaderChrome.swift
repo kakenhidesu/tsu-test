@@ -12,35 +12,32 @@ public struct ReaderChromeActions {
     public let onNextChapter: (() -> Void)?
     public let onOpenDirectory: () -> Void
     public let onOpenSettings: () -> Void
-    public let onScrubBegin: () -> Void
-    public let onScrub: (Double) -> Void
-    public let onScrubEnd: () -> Void
 
     public init(
         onBack: @escaping () -> Void,
         onPreviousChapter: (() -> Void)?,
         onNextChapter: (() -> Void)?,
         onOpenDirectory: @escaping () -> Void,
-        onOpenSettings: @escaping () -> Void,
-        onScrubBegin: @escaping () -> Void,
-        onScrub: @escaping (Double) -> Void,
-        onScrubEnd: @escaping () -> Void
+        onOpenSettings: @escaping () -> Void
     ) {
         self.onBack = onBack
         self.onPreviousChapter = onPreviousChapter
         self.onNextChapter = onNextChapter
         self.onOpenDirectory = onOpenDirectory
         self.onOpenSettings = onOpenSettings
-        self.onScrubBegin = onScrubBegin
-        self.onScrub = onScrub
-        self.onScrubEnd = onScrubEnd
     }
+}
+
+/// How much of the screen the chrome owns. The page is inset by this much so the running head and the
+/// page number sit beside the text rather than on top of it.
+public enum ReaderChromeMetrics {
+    public static let headerHeight: CGFloat = 34
+    public static let footerHeight: CGFloat = 34
 }
 
 /// Almost nothing, which is the point. Reading, the page carries only the chapter it belongs to and
 /// the page number. A tap in the middle brings back the two controls there are — close, and a menu —
-/// and the page number gains its total. The progress slider drives a preview session: dragging shows
-/// a frozen preview, and only releasing performs the one semantic navigation.
+/// and the page number gains its total.
 public struct ReaderChrome: View {
     private let chapterTitle: String
     private let pageIndex: Int
@@ -48,8 +45,7 @@ public struct ReaderChrome: View {
     private let isVisible: Bool
     private let progressVisible: Bool
     private let actions: ReaderChromeActions
-    @State private var scrubValue: Double = 0
-    @State private var isScrubbing = false
+    @State private var isMenuOpen = false
 
     public init(
         chapterTitle: String,
@@ -68,14 +64,26 @@ public struct ReaderChrome: View {
     }
 
     public var body: some View {
-        VStack(spacing: 0) {
-            header
-            Spacer(minLength: 0)
-            footer
+        ZStack {
+            if isMenuOpen {
+                Color.black.opacity(0.001)
+                    .contentShape(Rectangle())
+                    .onTapGesture { isMenuOpen = false }
+                    .accessibilityHidden(true)
+            }
+            VStack(spacing: 0) {
+                header
+                Spacer(minLength: 0)
+                if isMenuOpen { panel }
+                footer
+            }
+            .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
         }
-        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-        .padding(.vertical, TsuyomiTheme.Metrics.tightGutter)
         .animation(.default, value: isVisible)
+        .animation(.default, value: isMenuOpen)
+        .onChange(of: isVisible) { visible in
+            if !visible { isMenuOpen = false }
+        }
     }
 
     /// The chapter title sits where it does in a printed book — a running head — and stays there
@@ -90,25 +98,26 @@ public struct ReaderChrome: View {
             if isVisible {
                 HStack {
                     Spacer()
-                    CircularChromeButton(symbol: "xmark", label: "关闭", action: actions.onBack)
+                    Button(action: actions.onBack) { CircularChromeLabel(symbol: "xmark") }
+                        .accessibilityLabel("关闭")
                 }
             }
         }
+        .frame(height: ReaderChromeMetrics.headerHeight)
     }
 
     private var footer: some View {
-        VStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-            if isVisible, pageCount > 1 { scrubber }
-            ZStack {
-                if isVisible || progressVisible { pageIndicator }
-                if isVisible {
-                    HStack {
-                        Spacer()
-                        menu
-                    }
+        ZStack {
+            if isVisible || progressVisible { pageIndicator }
+            if isVisible {
+                HStack {
+                    Spacer()
+                    Button { isMenuOpen.toggle() } label: { CircularChromeLabel(symbol: "ellipsis") }
+                        .accessibilityLabel("更多")
                 }
             }
         }
+        .frame(height: ReaderChromeMetrics.footerHeight)
     }
 
     private var pageIndicator: some View {
@@ -119,53 +128,76 @@ public struct ReaderChrome: View {
             .accessibilityLabel("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
     }
 
-    private var menu: some View {
-        Menu {
-            Button {
-                actions.onOpenDirectory()
-            } label: {
-                Label("目录", systemImage: "list.bullet")
+    /// Rows, not a system menu: a menu cannot carry the progress that belongs beside 目录, and it
+    /// dismisses itself on the way to a sheet, which reads as the panel flickering away.
+    private var panel: some View {
+        VStack(alignment: .trailing, spacing: TsuyomiTheme.Metrics.tightGutter) {
+            VStack(spacing: 0) {
+                panelRow(title: "目录", detail: "\(percentRead)%", symbol: "list.bullet") {
+                    isMenuOpen = false
+                    actions.onOpenDirectory()
+                }
+                Divider()
+                panelRow(title: "主题与设置", detail: "大小", symbol: "textformat.size") {
+                    isMenuOpen = false
+                    actions.onOpenSettings()
+                }
             }
-            Button {
-                actions.onOpenSettings()
-            } label: {
-                Label("主题与设置", systemImage: "textformat.size")
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+            HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+                if let previous = actions.onPreviousChapter {
+                    Button {
+                        isMenuOpen = false
+                        previous()
+                    } label: {
+                        CircularChromeLabel(symbol: "backward.end")
+                    }
+                    .accessibilityLabel("上一章")
+                }
+                if let next = actions.onNextChapter {
+                    Button {
+                        isMenuOpen = false
+                        next()
+                    } label: {
+                        CircularChromeLabel(symbol: "forward.end")
+                    }
+                    .accessibilityLabel("下一章")
+                }
             }
-            if let previous = actions.onPreviousChapter {
-                Button { previous() } label: { Label("上一章", systemImage: "backward.end") }
-            }
-            if let next = actions.onNextChapter {
-                Button { next() } label: { Label("下一章", systemImage: "forward.end") }
-            }
-        } label: {
-            CircularChromeLabel(symbol: "ellipsis")
         }
-        .accessibilityLabel("更多")
+        .frame(maxWidth: 320, alignment: .trailing)
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
     }
 
-    private var scrubber: some View {
-        Slider(
-            value: Binding(
-                get: { isScrubbing ? scrubValue : Double(pageIndex) },
-                set: { value in
-                    scrubValue = value
-                    actions.onScrub(value)
-                }
-            ),
-            in: 0...Double(max(pageCount - 1, 1)),
-            step: 1,
-            onEditingChanged: { editing in
-                isScrubbing = editing
-                if editing {
-                    scrubValue = Double(pageIndex)
-                    actions.onScrubBegin()
-                } else {
-                    actions.onScrubEnd()
-                }
+    private func panelRow(
+        title: LocalizedStringKey,
+        detail: String,
+        symbol: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+                Text(title)
+                    .font(TsuyomiTheme.Typography.body)
+                    .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                Text(detail)
+                    .font(TsuyomiTheme.Typography.supporting)
+                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                Spacer()
+                Image(systemName: symbol)
+                    .foregroundStyle(TsuyomiTheme.Palette.primaryText)
             }
-        )
-        .accessibilityLabel("阅读进度")
-        .accessibilityValue("第 \(Int(isScrubbing ? scrubValue : Double(pageIndex)) + 1) 页，共 \(pageCount) 页")
+            .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            .frame(height: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var percentRead: Int {
+        guard pageCount > 1 else { return 100 }
+        return Int((Double(pageIndex + 1) / Double(pageCount) * 100).rounded())
     }
 }
 
@@ -177,24 +209,11 @@ struct CircularChromeLabel: View {
     var body: some View {
         Image(systemName: symbol)
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
             .frame(
                 width: TsuyomiTheme.Metrics.minimumTouchTarget,
                 height: TsuyomiTheme.Metrics.minimumTouchTarget
             )
-            .background(.thinMaterial, in: Circle())
-    }
-}
-
-struct CircularChromeButton: View {
-    let symbol: String
-    let label: LocalizedStringKey
-    let action: () -> Void
-
-    var body: some View {
-        Button(action: action) {
-            CircularChromeLabel(symbol: symbol)
-        }
-        .accessibilityLabel(label)
+            .background(.regularMaterial, in: Circle())
     }
 }

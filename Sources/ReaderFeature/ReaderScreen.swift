@@ -38,6 +38,10 @@ public struct ReaderScreen: View {
                         onTurn: { model.turned(toPage: $0) },
                         onPageDrawn: { model.pageDrawn($0) }
                     )
+                    /// The page stops where the chrome starts. Text drawn under the running head is
+                    /// unreadable whether or not the controls are up, because the head is always up.
+                    .padding(.top, ReaderChromeMetrics.headerHeight)
+                    .padding(.bottom, ReaderChromeMetrics.footerHeight)
                     ReaderChrome(
                         chapterTitle: content.chapterTitle,
                         pageIndex: model.visiblePageIndex,
@@ -49,8 +53,8 @@ public struct ReaderScreen: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .onAppear { model.resize(proxy.size) }
-            .onChange(of: proxy.size) { size in model.resize(size) }
+            .onAppear { model.resize(readingSize(proxy.size)) }
+            .onChange(of: proxy.size) { size in model.resize(readingSize(size)) }
         }
         .background(theme.background)
         .navigationBarHidden(true)
@@ -84,6 +88,15 @@ public struct ReaderScreen: View {
         }
     }
 
+    /// Pagination is measured against the box the text actually gets, which is the screen less the
+    /// chrome. Measuring the whole screen would plan more lines onto a page than fit on it.
+    private func readingSize(_ size: CGSize) -> CGSize {
+        CGSize(
+            width: size.width,
+            height: max(size.height - ReaderChromeMetrics.headerHeight - ReaderChromeMetrics.footerHeight, 1)
+        )
+    }
+
     private func actions(_ content: ReaderContent) -> ReaderChromeActions {
         ReaderChromeActions(
             onBack: {
@@ -95,10 +108,7 @@ public struct ReaderScreen: View {
             onPreviousChapter: content.hasPrevious ? { Task { await model.openAdjacent(-1) } } : nil,
             onNextChapter: content.hasNext ? { Task { await model.openAdjacent(1) } } : nil,
             onOpenDirectory: { model.isDirectoryPresented = true },
-            onOpenSettings: { model.isSettingsPresented = true },
-            onScrubBegin: { model.beginScrub() },
-            onScrub: { model.scrub($0) },
-            onScrubEnd: { model.endScrub() }
+            onOpenSettings: { model.isSettingsPresented = true }
         )
     }
 
