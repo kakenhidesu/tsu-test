@@ -55,8 +55,10 @@ public struct BookScreen: View {
     private func masthead(_ content: BookDetailState) -> some View {
         VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
             HStack(alignment: .top, spacing: TsuyomiTheme.Metrics.gutter) {
+                /// Both dimensions, not just the width: left to find its own height the placeholder
+                /// grows to whatever the title inside it needs, and the row grows with it.
                 CoverImage(coverState(content.detail.summary))
-                    .frame(width: 110)
+                    .frame(width: 110, height: 110 / TsuyomiTheme.Metrics.coverAspectRatio)
                     .clipShape(RoundedRectangle(cornerRadius: TsuyomiTheme.Metrics.cornerRadius))
                 VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
                     Text(content.detail.summary.title)
@@ -76,8 +78,8 @@ public struct BookScreen: View {
                             TsuyomiStatusBadge("离线缓存", tone: .warning)
                         }
                     }
-                    Spacer(minLength: 0)
                     shelfActions(content)
+                    Spacer(minLength: 0)
                 }
             }
             if let description = content.detail.description {
@@ -148,9 +150,12 @@ public struct BookScreen: View {
                 } label: {
                     Text(content.resumeChapterId == nil ? "开始阅读" : "继续阅读")
                         .font(TsuyomiTheme.Typography.body.weight(.semibold))
-                        .frame(maxWidth: .infinity, minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                        .frame(maxWidth: .infinity)
                 }
+                /// The large control size already gives a proper button height; adding a minimum on
+                /// top of it stacks with the style's own padding and produces a slab.
                 .buttonStyle(.borderedProminent)
+                .controlSize(.large)
             }
         }
     }
@@ -173,6 +178,10 @@ public struct BookScreen: View {
                 .font(TsuyomiTheme.Typography.supporting)
                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 .lineLimit(isSummaryExpanded ? nil : 3)
+                /// Lifting the line limit is not enough on its own: inside a row that is being handed
+                /// a height, the text still truncates to fit it. This makes it ask for the height it
+                /// needs, which is what "展开" is supposed to mean.
+                .fixedSize(horizontal: false, vertical: true)
                 .animation(.default, value: isSummaryExpanded)
             Button(isSummaryExpanded ? "收起" : "展开") { isSummaryExpanded.toggle() }
                 .font(TsuyomiTheme.Typography.caption)
