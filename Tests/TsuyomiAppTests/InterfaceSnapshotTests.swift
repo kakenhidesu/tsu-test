@@ -7,6 +7,7 @@ import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiReader
 import TsuyomiUI
+import UIKit
 import XCTest
 
 /// Renders screens to PNG so their layout can be looked at without a device.
@@ -81,6 +82,10 @@ final class InterfaceSnapshotTests: XCTestCase {
         }
     }
 
+    /// Drawn from a real window rather than with `ImageRenderer`. That renderer only knows how to draw
+    /// what SwiftUI itself lays out: anything backed by UIKit — a `List`, a `Menu` — comes out as a
+    /// "not supported" placeholder, which is how the first run produced a book screen that was one
+    /// yellow sign, and two appearances of it byte for byte identical.
     private func capture(
         _ name: String,
         scheme: ColorScheme,
@@ -88,18 +93,30 @@ final class InterfaceSnapshotTests: XCTestCase {
         height: CGFloat = 852,
         @ViewBuilder content: () -> some View
     ) {
-        // A solid ground under everything: the panels are drawn on materials, which composite against
-        // whatever is behind them and render as nothing at all over an empty canvas.
-        let renderer = ImageRenderer(
-            content: ZStack {
+        let size = CGSize(width: width, height: height)
+        // A solid ground under everything: these panels are drawn on materials, which composite with
+        // whatever is behind them and come out as nothing at all over an empty canvas.
+        let controller = UIHostingController(
+            rootView: ZStack {
                 (scheme == .dark ? Color.black : Color.white).ignoresSafeArea()
                 content()
             }
-            .frame(width: width, height: height)
-            .environment(\.colorScheme, scheme)
         )
-        renderer.scale = 2
-        guard let image = renderer.uiImage, let data = image.pngData() else {
+        controller.overrideUserInterfaceStyle = scheme == .dark ? .dark : .light
+        let window = UIWindow(frame: CGRect(origin: .zero, size: size))
+        window.overrideUserInterfaceStyle = controller.overrideUserInterfaceStyle
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        controller.view.frame = window.bounds
+        controller.view.setNeedsLayout()
+        controller.view.layoutIfNeeded()
+        // SwiftUI commits its layout on the next run-loop pass, so a snapshot taken in the same turn
+        // catches the view before it has one.
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        let image = UIGraphicsImageRenderer(size: size).image { _ in
+            controller.view.drawHierarchy(in: CGRect(origin: .zero, size: size), afterScreenUpdates: true)
+        }
+        guard let data = image.pngData() else {
             return XCTFail("\(name) produced no image")
         }
         XCTAssertGreaterThan(data.count, 1_000, "\(name) rendered blank")
