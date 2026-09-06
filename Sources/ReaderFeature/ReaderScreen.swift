@@ -108,7 +108,10 @@ public struct ReaderScreen: View {
             onPreviousChapter: content.hasPrevious ? { Task { await model.openAdjacent(-1) } } : nil,
             onNextChapter: content.hasNext ? { Task { await model.openAdjacent(1) } } : nil,
             onOpenDirectory: { model.isDirectoryPresented = true },
-            onOpenSettings: { model.isSettingsPresented = true }
+            onOpenSettings: { model.isSettingsPresented = true },
+            onScrubBegin: { model.beginScrub() },
+            onScrub: { model.scrub($0) },
+            onScrubEnd: { model.endScrub() }
         )
     }
 

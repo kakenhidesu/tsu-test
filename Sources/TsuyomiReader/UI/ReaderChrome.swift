@@ -12,19 +12,30 @@ public struct ReaderChromeActions {
     public let onNextChapter: (() -> Void)?
     public let onOpenDirectory: () -> Void
     public let onOpenSettings: () -> Void
+    public let onScrubBegin: () -> Void
+    /// Takes a fraction of the chapter, 0 through 1 — not a page index. Passing an index is what made
+    /// the old slider look broken: every drag past the first pixel resolved past the last page.
+    public let onScrub: (Double) -> Void
+    public let onScrubEnd: () -> Void
 
     public init(
         onBack: @escaping () -> Void,
         onPreviousChapter: (() -> Void)?,
         onNextChapter: (() -> Void)?,
         onOpenDirectory: @escaping () -> Void,
-        onOpenSettings: @escaping () -> Void
+        onOpenSettings: @escaping () -> Void,
+        onScrubBegin: @escaping () -> Void,
+        onScrub: @escaping (Double) -> Void,
+        onScrubEnd: @escaping () -> Void
     ) {
         self.onBack = onBack
         self.onPreviousChapter = onPreviousChapter
         self.onNextChapter = onNextChapter
         self.onOpenDirectory = onOpenDirectory
         self.onOpenSettings = onOpenSettings
+        self.onScrubBegin = onScrubBegin
+        self.onScrub = onScrub
+        self.onScrubEnd = onScrubEnd
     }
 }
 
@@ -75,6 +86,17 @@ public struct ReaderChrome: View {
                 header
                 Spacer(minLength: 0)
                 if isMenuOpen { panel }
+                if isVisible, pageCount > 1 {
+                    ReaderScrubber(
+                        pageIndex: pageIndex,
+                        pageCount: pageCount,
+                        chapterTitle: chapterTitle,
+                        onBegin: actions.onScrubBegin,
+                        onScrub: actions.onScrub,
+                        onEnd: actions.onScrubEnd
+                    )
+                    .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
+                }
                 footer
             }
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
@@ -215,5 +237,102 @@ struct CircularChromeLabel: View {
                 height: TsuyomiTheme.Metrics.minimumTouchTarget
             )
             .background(.regularMaterial, in: Circle())
+    }
+}
+
+/// The bar the reader drags to move through a chapter, and the only entry point to the preview
+/// session: dragging shows a frozen preview of where it would land, and releasing performs the one
+/// semantic navigation. While the finger is down a bubble names the chapter and the page, because a
+/// bar that moves under a covered thumb says nothing about where it has got to.
+struct ReaderScrubber: View {
+    let pageIndex: Int
+    let pageCount: Int
+    let chapterTitle: String
+    let onBegin: () -> Void
+    let onScrub: (Double) -> Void
+    let onEnd: () -> Void
+
+    private static let trackHeight: CGFloat = 44
+    private static let thumbWidth: CGFloat = 4
+
+    @State private var isDragging = false
+
+    var body: some View {
+        VStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+            if isDragging { bubble }
+            track
+        }
+        .animation(.default, value: isDragging)
+    }
+
+    private var bubble: some View {
+        VStack(spacing: 2) {
+            Text(chapterTitle)
+                .font(TsuyomiTheme.Typography.sectionTitle)
+                .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                .lineLimit(1)
+            Text("第 \(pageIndex + 1) 页")
+                .font(TsuyomiTheme.Typography.supporting)
+                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+        }
+        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+        .padding(.vertical, TsuyomiTheme.Metrics.tightGutter)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var track: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(TsuyomiTheme.Palette.primaryText.opacity(0.12))
+                    .frame(width: max(proxy.size.width * fraction, 0))
+                Capsule()
+                    .fill(TsuyomiTheme.Palette.primaryText)
+                    .frame(width: Self.thumbWidth, height: Self.trackHeight - 20)
+                    .offset(x: thumbOffset(in: proxy.size.width))
+            }
+            .contentShape(Rectangle())
+            .gesture(
+                DragGesture(minimumDistance: 0)
+                    .onChanged { value in
+                        if !isDragging {
+                            isDragging = true
+                            onBegin()
+                        }
+                        onScrub(clamped(value.location.x / max(proxy.size.width, 1)))
+                    }
+                    .onEnded { _ in
+                        isDragging = false
+                        onEnd()
+                    }
+            )
+        }
+        .frame(height: Self.trackHeight)
+        .accessibilityElement()
+        .accessibilityLabel("阅读进度")
+        .accessibilityValue("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
+        .accessibilityAdjustableAction { direction in
+            let step = 1.0 / Double(max(pageCount - 1, 1))
+            onBegin()
+            onScrub(clamped(fraction + (direction == .increment ? step : -step)))
+            onEnd()
+        }
+    }
+
+    private var fraction: Double {
+        guard pageCount > 1 else { return 0 }
+        return clamped(Double(pageIndex) / Double(pageCount - 1))
+    }
+
+    /// The thumb stays inside the track at both ends rather than hanging half off it.
+    private func thumbOffset(in width: CGFloat) -> CGFloat {
+        let travel = max(width - Self.thumbWidth - 12, 0)
+        return 6 + travel * fraction
+    }
+
+    private func clamped(_ value: Double) -> Double {
+        min(max(value, 0), 1)
     }
 }
