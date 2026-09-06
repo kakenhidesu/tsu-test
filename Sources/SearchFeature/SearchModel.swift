@@ -88,7 +88,10 @@ public final class SearchModel: ObservableObject {
             await fallBackOffline(term: term, page: page, current: current)
         } catch {
             guard current == generation else { return }
-            state = .failed(code: SafeErrorCode.of(error), detail: "搜索没有完成。")
+            state = .failed(
+                code: SafeErrorCode.of(error),
+                detail: SourceFailureGuidance.detail(for: error, fallback: "搜索没有完成。")
+            )
         }
         if current == generation { isBusy = false }
     }

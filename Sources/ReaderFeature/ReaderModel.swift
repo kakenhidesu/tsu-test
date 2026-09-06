@@ -100,7 +100,10 @@ public final class ReaderModel: ObservableObject {
             textLayout = try ReaderTextLayout(document: document, settings: settings)
             try relayout()
         } catch {
-            state = .failed(code: SafeErrorCode.of(error), detail: "无法载入这一章。")
+            state = .failed(
+                code: SafeErrorCode.of(error),
+                detail: SourceFailureGuidance.detail(for: error, fallback: "无法载入这一章。")
+            )
         }
     }
 

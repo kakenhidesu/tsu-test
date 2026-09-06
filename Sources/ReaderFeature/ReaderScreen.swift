@@ -16,9 +16,12 @@ public struct ReaderScreen: View {
         self.onLeave = onLeave
     }
 
+    /// The viewport is measured outside the state branch. Pagination is what produces the content
+    /// state, and it cannot run until the page size is known, so measuring only once content exists
+    /// leaves the reader loading forever.
     public var body: some View {
-        StateView(model.state, retry: { Task { await model.open() } }) { content in
-            GeometryReader { proxy in
+        GeometryReader { proxy in
+            StateView(model.state, retry: { Task { await model.open() } }) { content in
                 ZStack {
                     ReaderSurface(
                         layout: content.layout,
@@ -39,11 +42,16 @@ public struct ReaderScreen: View {
                         actions: actions(content)
                     )
                 }
-                .onAppear { model.resize(proxy.size) }
-                .onChange(of: proxy.size) { size in model.resize(size) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .onAppear { model.resize(proxy.size) }
+            .onChange(of: proxy.size) { size in model.resize(size) }
         }
         .background(model.settings.theme.background)
+        /// A reader theme is the reader's own choice, not the system's. Everything drawn over it
+        /// resolves semantic colours, so the subtree is told which appearance it is sitting on;
+        /// otherwise a dark system appearance writes near-white text onto a paper background.
+        .environment(\.colorScheme, model.settings.theme.colorScheme)
         .navigationBarHidden(true)
         .statusBarHidden(model.settings.immersive && !model.isChromeVisible)
         .persistentSystemOverlays(model.settings.immersive ? .hidden : .automatic)

@@ -11,6 +11,14 @@ public enum SourceRestorationTarget: String, Hashable, Sendable {
     case reader
 }
 
+/// The shelf tab's own stack. A book reached from the shelf is not part of a source flow — there is
+/// no place in a source to return to and nothing to restore — but a chapter opened from it still has
+/// to be pushed here, or it lands in a stack this tab never shows.
+public enum LibraryRoute: Hashable, Sendable {
+    case detail(BookIdentity)
+    case reader(BookIdentity, String)
+}
+
 public enum Route: Hashable, Sendable {
     case browse
     case sourceHome(SourceId)

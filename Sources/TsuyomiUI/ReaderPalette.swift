@@ -31,6 +31,16 @@ public extension ReaderTheme {
     var background: Color { Color(uiColor: backgroundColor) }
     var foreground: Color { Color(uiColor: foregroundColor) }
 
+    /// The appearance this theme actually presents, which the system appearance has no say in: a
+    /// reader on paper is a light surface even at night, and anything drawn over it that resolves a
+    /// semantic colour has to resolve it against this.
+    var colorScheme: ColorScheme {
+        switch self {
+        case .paper, .warmGray, .inkGreen: return .light
+        case .nightInk, .black: return .dark
+        }
+    }
+
     var label: LocalizedStringKey {
         switch self {
         case .paper: return "纸色"

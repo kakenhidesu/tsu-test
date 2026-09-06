@@ -60,7 +60,10 @@ public final class RemoteLibraryModel: ObservableObject {
         } catch let failure as SourceException {
             state = .failed(code: failure.code.rawValue, detail: "无法读取网站收藏。")
         } catch {
-            state = .failed(code: SafeErrorCode.of(error), detail: "无法读取网站收藏。")
+            state = .failed(
+                code: SafeErrorCode.of(error),
+                detail: SourceFailureGuidance.detail(for: error, fallback: "无法读取网站收藏。")
+            )
         }
     }
 

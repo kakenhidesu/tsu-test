@@ -83,19 +83,22 @@ struct RemoteLibraryHost: View {
     }
 }
 
+/// Opened from two different stacks — the browse flow and the shelf — so where a chapter goes is the
+/// host stack's business, not this view's. Pushing onto the browse flow from here put the reader into
+/// a stack the shelf never shows, which read as tapping a chapter doing nothing at all.
 struct BookHost: View {
     private let coverState: (SourceBookSummary) -> CoverUiState
-    @ObservedObject var flow: SourceFlowController
+    private let openChapter: (SourceChapter) -> Void
     @StateObject private var model: BookModel
 
     init(
         container: AppContainer,
-        flow: SourceFlowController,
         identity: BookIdentity,
-        coverState: @escaping (SourceBookSummary) -> CoverUiState
+        coverState: @escaping (SourceBookSummary) -> CoverUiState,
+        openChapter: @escaping (BookIdentity, SourceChapter) -> Void
     ) {
-        self.flow = flow
         self.coverState = coverState
+        self.openChapter = { chapter in openChapter(identity, chapter) }
         _model = StateObject(
             wrappedValue: BookModel(
                 identity: identity,
@@ -107,23 +110,21 @@ struct BookHost: View {
     }
 
     var body: some View {
-        BookScreen(
-            model: model,
-            coverState: coverState,
-            openChapter: { chapter in
-                flow.remember(chapter: chapter)
-                Task { await flow.push(.reader(model.identity, chapter.chapterId)) }
-            }
-        )
+        BookScreen(model: model, coverState: coverState, openChapter: openChapter)
     }
 }
 
 struct ReaderHost: View {
-    @ObservedObject var flow: SourceFlowController
+    private let onLeave: () -> Void
     @StateObject private var model: ReaderModel
 
-    init(container: AppContainer, flow: SourceFlowController, identity: BookIdentity, chapterId: String) {
-        self.flow = flow
+    init(
+        container: AppContainer,
+        identity: BookIdentity,
+        chapterId: String,
+        onLeave: @escaping () -> Void
+    ) {
+        self.onLeave = onLeave
         _model = StateObject(
             wrappedValue: ReaderModel(
                 identity: identity,
@@ -137,7 +138,7 @@ struct ReaderHost: View {
     }
 
     var body: some View {
-        ReaderScreen(model: model) { Task { await flow.pop() } }
+        ReaderScreen(model: model, onLeave: onLeave)
             .userActivity(ReadingActivity.type, isActive: model.chapter != nil) { activity in
                 guard let chapter = model.chapter else { return }
                 activity.title = model.bookTitle

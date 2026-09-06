@@ -34,16 +34,21 @@ public enum RootTab: String, Hashable, CaseIterable {
 /// and the model that serves it are created together and die together.
 public struct AppRootView: View {
     @ObservedObject private var container: AppContainer
+    /// Observed here in its own right: preferences publish on themselves, not on the container, so
+    /// reading the appearance through `container` left the root out of the update and the choice only
+    /// appeared when something else happened to redraw it — switching tabs, typically.
+    @ObservedObject private var preferences: AppPreferences
     @ObservedObject private var flow: SourceFlowController
     @StateObject private var browse: BrowseModel
     @StateObject private var library: LibraryModel
     @StateObject private var libraryCovers: LibraryCoverProvider
     @StateObject private var market: MarketHolder
     @State private var tab: RootTab = .library
-    @State private var libraryPath: [BookIdentity] = []
+    @State private var libraryPath: [LibraryRoute] = []
 
     public init(container: AppContainer, flow: SourceFlowController) {
         self.container = container
+        self.preferences = container.preferences
         self.flow = flow
         _browse = StateObject(
             wrappedValue: BrowseModel(
@@ -81,7 +86,7 @@ public struct AppRootView: View {
                 .tabItem { Label(RootTab.more.title, systemImage: RootTab.more.symbol) }
                 .tag(RootTab.more)
         }
-        .preferredColorScheme(container.preferences.colorScheme.colorScheme)
+        .preferredColorScheme(preferences.colorScheme.colorScheme)
         .onChange(of: tab) { selected in
             guard selected != .browse else { return }
             Task { await flow.popToRoot() }
@@ -104,20 +109,32 @@ public struct AppRootView: View {
         }
     }
 
+    /// The shelf keeps its own stack. It deliberately does not use `Route`: the browse flow restores
+    /// itself from a snapshot and remembers where a source was left, none of which a book opened from
+    /// the shelf takes part in — but a chapter opened here still has to land in this stack.
     private var libraryTab: some View {
         NavigationStack(path: $libraryPath) {
             LibraryScreen(
                 model: library,
                 coverState: { libraryCovers.cover($0) },
-                openBook: { libraryPath.append($0) }
+                openBook: { libraryPath.append(.detail($0)) }
             )
-            .navigationDestination(for: BookIdentity.self) { identity in
-                BookHost(
-                    container: container,
-                    flow: flow,
-                    identity: identity,
-                    coverState: { libraryCovers.cover($0) }
-                )
+            .navigationDestination(for: LibraryRoute.self) { route in
+                switch route {
+                case .detail(let identity):
+                    BookHost(
+                        container: container,
+                        identity: identity,
+                        coverState: { libraryCovers.cover($0) },
+                        openChapter: { identity, chapter in
+                            libraryPath.append(.reader(identity, chapter.chapterId))
+                        }
+                    )
+                case .reader(let identity, let chapterId):
+                    ReaderHost(container: container, identity: identity, chapterId: chapterId) {
+                        if !libraryPath.isEmpty { libraryPath.removeLast() }
+                    }
+                }
             }
         }
     }
@@ -164,9 +181,19 @@ public struct AppRootView: View {
         case .remoteLibrary(let sourceId):
             RemoteLibraryHost(container: container, flow: flow, sourceId: sourceId)
         case .detail(let identity):
-            BookHost(container: container, flow: flow, identity: identity, coverState: { flow.cover($0) })
+            BookHost(
+                container: container,
+                identity: identity,
+                coverState: { flow.cover($0) },
+                openChapter: { identity, chapter in
+                    flow.remember(chapter: chapter)
+                    Task { await flow.push(.reader(identity, chapter.chapterId)) }
+                }
+            )
         case .reader(let identity, let chapterId):
-            ReaderHost(container: container, flow: flow, identity: identity, chapterId: chapterId)
+            ReaderHost(container: container, identity: identity, chapterId: chapterId) {
+                Task { await flow.pop() }
+            }
         case .verification:
             VerificationHost(container: container, flow: flow) {
                 Task {

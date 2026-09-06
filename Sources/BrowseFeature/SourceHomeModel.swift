@@ -48,10 +48,11 @@ public final class SourceHomeModel: ObservableObject {
             state = .content(
                 SourceHomeState(page: page, pendingFilters: pendingFilters, loadedCursors: cursors)
             )
-        } catch let failure as SourceException {
-            state = .failed(code: failure.code.rawValue, detail: detail(for: failure.code))
         } catch {
-            state = .failed(code: SafeErrorCode.of(error), detail: "无法载入来源首页。")
+            state = .failed(
+                code: SafeErrorCode.of(error),
+                detail: SourceFailureGuidance.detail(for: error, fallback: "无法载入来源首页。")
+            )
         }
     }
 
@@ -77,12 +78,4 @@ public final class SourceHomeModel: ObservableObject {
 
     public var nextCursor: String? { loaded?.nextCursor }
 
-    private func detail(for code: SourceErrorCode) -> LocalizedStringKey {
-        switch code {
-        case .sessionRequired: return "需要先在受控浏览器中登录。"
-        case .verificationRequired: return "站点要求人工验证，请在受控浏览器中完成。"
-        case .networkOffline: return "当前离线，只显示已缓存的内容。"
-        default: return "来源返回的页面无法解析。"
-        }
-    }
 }

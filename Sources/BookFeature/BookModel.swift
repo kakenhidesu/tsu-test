@@ -68,7 +68,10 @@ public final class BookModel: ObservableObject {
         } catch let failure as SourceException where failure.code == .networkOffline && !offlineOnly {
             await load(offlineOnly: true)
         } catch {
-            state = .failed(code: SafeErrorCode.of(error), detail: "无法载入这本书的信息。")
+            state = .failed(
+                code: SafeErrorCode.of(error),
+                detail: SourceFailureGuidance.detail(for: error, fallback: "无法载入这本书的信息。")
+            )
         }
     }
 
