@@ -57,6 +57,7 @@ public struct ReaderChrome: View {
     private let progressVisible: Bool
     private let actions: ReaderChromeActions
     @State private var isMenuOpen = false
+    @State private var isScrubbing = false
 
     public init(
         chapterTitle: String,
@@ -86,17 +87,6 @@ public struct ReaderChrome: View {
                 header
                 Spacer(minLength: 0)
                 if isMenuOpen { panel }
-                if isVisible, pageCount > 1 {
-                    ReaderScrubber(
-                        pageIndex: pageIndex,
-                        pageCount: pageCount,
-                        chapterTitle: chapterTitle,
-                        onBegin: actions.onScrubBegin,
-                        onScrub: actions.onScrub,
-                        onEnd: actions.onScrubEnd
-                    )
-                    .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
-                }
                 footer
             }
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
@@ -150,15 +140,13 @@ public struct ReaderChrome: View {
             .accessibilityLabel("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
     }
 
-    /// Rows, not a system menu: a menu cannot carry the progress that belongs beside 目录, and it
-    /// dismisses itself on the way to a sheet, which reads as the panel flickering away.
+    /// Rows, not a system menu: the 目录 row is also the scrubber, which a menu cannot hold, and a
+    /// menu dismisses itself on the way to a sheet, which reads as the panel flickering away.
     private var panel: some View {
         VStack(alignment: .trailing, spacing: TsuyomiTheme.Metrics.tightGutter) {
+            if isScrubbing { bubble }
             VStack(spacing: 0) {
-                panelRow(title: "目录", detail: "\(percentRead)%", symbol: "list.bullet") {
-                    isMenuOpen = false
-                    actions.onOpenDirectory()
-                }
+                directoryRow
                 Divider()
                 panelRow(title: "主题与设置", detail: "大小", symbol: "textformat.size") {
                     isMenuOpen = false
@@ -191,6 +179,99 @@ public struct ReaderChrome: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
     }
+
+    /// The 目录 row is the scrubber. It reads as a row until a finger drags along it, and then it is a
+    /// track: the same bar, which is why the progress belongs on it. Dragging drives the preview
+    /// session — a frozen preview follows the finger — and releasing performs the one navigation. A
+    /// tap that does not travel opens the directory instead.
+    private var directoryRow: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                if isScrubbing {
+                    Rectangle()
+                        .fill(TsuyomiTheme.Palette.primaryText.opacity(0.14))
+                        .frame(width: max(proxy.size.width * fraction, 0))
+                    Capsule()
+                        .fill(TsuyomiTheme.Palette.primaryText)
+                        .frame(width: 4, height: 26)
+                        .offset(x: thumbOffset(in: proxy.size.width))
+                } else {
+                    HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+                        Text("目录")
+                            .font(TsuyomiTheme.Typography.body)
+                            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                        Text("\(percentRead)%")
+                            .font(TsuyomiTheme.Typography.supporting)
+                            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                        Spacer()
+                        Image(systemName: "list.bullet")
+                            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                    }
+                    .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                isMenuOpen = false
+                actions.onOpenDirectory()
+            }
+            .gesture(
+                DragGesture(minimumDistance: 8)
+                    .onChanged { value in
+                        if !isScrubbing {
+                            isScrubbing = true
+                            actions.onScrubBegin()
+                        }
+                        actions.onScrub(clamped(value.location.x / max(proxy.size.width, 1)))
+                    }
+                    .onEnded { _ in
+                        isScrubbing = false
+                        actions.onScrubEnd()
+                    }
+            )
+        }
+        .frame(height: 52)
+        .accessibilityElement()
+        .accessibilityLabel("目录与阅读进度")
+        .accessibilityValue("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
+        .accessibilityAdjustableAction { direction in
+            let step = 1.0 / Double(max(pageCount - 1, 1))
+            actions.onScrubBegin()
+            actions.onScrub(clamped(fraction + (direction == .increment ? step : -step)))
+            actions.onScrubEnd()
+        }
+    }
+
+    /// A bar moving under a covered thumb says nothing about where it has got to, so while the finger
+    /// is down the chapter and the page it would land on are named above the panel.
+    private var bubble: some View {
+        VStack(spacing: 2) {
+            Text(chapterTitle)
+                .font(TsuyomiTheme.Typography.sectionTitle)
+                .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                .lineLimit(1)
+            Text("第 \(pageIndex + 1) 页")
+                .font(TsuyomiTheme.Typography.supporting)
+                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+        }
+        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+        .padding(.vertical, TsuyomiTheme.Metrics.tightGutter)
+        .frame(maxWidth: .infinity)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var fraction: Double {
+        guard pageCount > 1 else { return 0 }
+        return clamped(Double(pageIndex) / Double(pageCount - 1))
+    }
+
+    /// The thumb stays inside the track at both ends rather than hanging half off it.
+    private func thumbOffset(in width: CGFloat) -> CGFloat {
+        6 + max(width - 16, 0) * fraction
+    }
+
+    private func clamped(_ value: Double) -> Double { min(max(value, 0), 1) }
 
     private func panelRow(
         title: LocalizedStringKey,
@@ -238,101 +319,3 @@ struct CircularChromeLabel: View {
             )
             .background(.regularMaterial, in: Circle())
     }
-}
-
-/// The bar the reader drags to move through a chapter, and the only entry point to the preview
-/// session: dragging shows a frozen preview of where it would land, and releasing performs the one
-/// semantic navigation. While the finger is down a bubble names the chapter and the page, because a
-/// bar that moves under a covered thumb says nothing about where it has got to.
-struct ReaderScrubber: View {
-    let pageIndex: Int
-    let pageCount: Int
-    let chapterTitle: String
-    let onBegin: () -> Void
-    let onScrub: (Double) -> Void
-    let onEnd: () -> Void
-
-    private static let trackHeight: CGFloat = 44
-    private static let thumbWidth: CGFloat = 4
-
-    @State private var isDragging = false
-
-    var body: some View {
-        VStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-            if isDragging { bubble }
-            track
-        }
-        .animation(.default, value: isDragging)
-    }
-
-    private var bubble: some View {
-        VStack(spacing: 2) {
-            Text(chapterTitle)
-                .font(TsuyomiTheme.Typography.sectionTitle)
-                .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                .lineLimit(1)
-            Text("第 \(pageIndex + 1) 页")
-                .font(TsuyomiTheme.Typography.supporting)
-                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-        }
-        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-        .padding(.vertical, TsuyomiTheme.Metrics.tightGutter)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    private var track: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(.regularMaterial)
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(TsuyomiTheme.Palette.primaryText.opacity(0.12))
-                    .frame(width: max(proxy.size.width * fraction, 0))
-                Capsule()
-                    .fill(TsuyomiTheme.Palette.primaryText)
-                    .frame(width: Self.thumbWidth, height: Self.trackHeight - 20)
-                    .offset(x: thumbOffset(in: proxy.size.width))
-            }
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0)
-                    .onChanged { value in
-                        if !isDragging {
-                            isDragging = true
-                            onBegin()
-                        }
-                        onScrub(clamped(value.location.x / max(proxy.size.width, 1)))
-                    }
-                    .onEnded { _ in
-                        isDragging = false
-                        onEnd()
-                    }
-            )
-        }
-        .frame(height: Self.trackHeight)
-        .accessibilityElement()
-        .accessibilityLabel("阅读进度")
-        .accessibilityValue("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
-        .accessibilityAdjustableAction { direction in
-            let step = 1.0 / Double(max(pageCount - 1, 1))
-            onBegin()
-            onScrub(clamped(fraction + (direction == .increment ? step : -step)))
-            onEnd()
-        }
-    }
-
-    private var fraction: Double {
-        guard pageCount > 1 else { return 0 }
-        return clamped(Double(pageIndex) / Double(pageCount - 1))
-    }
-
-    /// The thumb stays inside the track at both ends rather than hanging half off it.
-    private func thumbOffset(in width: CGFloat) -> CGFloat {
-        let travel = max(width - Self.thumbWidth - 12, 0)
-        return 6 + travel * fraction
-    }
-
-    private func clamped(_ value: Double) -> Double {
-        min(max(value, 0), 1)
-    }
-}

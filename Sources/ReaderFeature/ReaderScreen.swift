@@ -10,13 +10,21 @@ public struct ReaderScreen: View {
     @ObservedObject private var model: ReaderModel
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.colorScheme) private var colorScheme
+    /// The page's colour is the app's appearance, so the reader's own panel edits that setting rather
+    /// than a reader-local copy of it.
+    @Binding private var appearance: ColorSchemePreference
     private let onLeave: () -> Void
 
     /// The page is light or dark because the app is. There is no reader-only colour choice.
     private var theme: ReaderTheme { ReaderTheme.reading(under: colorScheme) }
 
-    public init(model: ReaderModel, onLeave: @escaping () -> Void) {
+    public init(
+        model: ReaderModel,
+        appearance: Binding<ColorSchemePreference>,
+        onLeave: @escaping () -> Void
+    ) {
         self.model = model
+        self._appearance = appearance
         self.onLeave = onLeave
     }
 
@@ -81,7 +89,12 @@ public struct ReaderScreen: View {
             )
         ) {
             if model.isSettingsPresented {
-                ReaderSettingsSheet(settings: $model.settings) { model.apply($0) }
+                ReaderSettingsSheet(
+                    settings: $model.settings,
+                    appearance: $appearance,
+                    onChange: { model.apply($0) },
+                    onClose: { model.isSettingsPresented = false }
+                )
             } else {
                 directory
             }

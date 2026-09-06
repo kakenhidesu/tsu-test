@@ -116,6 +116,7 @@ struct BookHost: View {
 
 struct ReaderHost: View {
     private let onLeave: () -> Void
+    @ObservedObject private var preferences: AppPreferences
     @StateObject private var model: ReaderModel
 
     init(
@@ -125,6 +126,7 @@ struct ReaderHost: View {
         onLeave: @escaping () -> Void
     ) {
         self.onLeave = onLeave
+        self.preferences = container.preferences
         _model = StateObject(
             wrappedValue: ReaderModel(
                 identity: identity,
@@ -139,7 +141,14 @@ struct ReaderHost: View {
     }
 
     var body: some View {
-        ReaderScreen(model: model, onLeave: onLeave)
+        ReaderScreen(
+            model: model,
+            appearance: Binding(
+                get: { preferences.colorScheme },
+                set: { preferences.setColorScheme($0) }
+            ),
+            onLeave: onLeave
+        )
             .userActivity(ReadingActivity.type, isActive: model.chapter != nil) { activity in
                 guard let chapter = model.chapter else { return }
                 activity.title = model.bookTitle
