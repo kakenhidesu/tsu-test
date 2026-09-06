@@ -65,9 +65,13 @@ public struct SourceHomeScreen: View {
             }
         }
         .navigationTitle(title)
+        /// Opening a source's home page is the request; it does not need a second one. Filters are
+        /// still applied explicitly, and 重新载入 is for when a load failed or the reader wants a
+        /// fresh one.
+        .task { await model.load() }
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button("载入首页") {
+                Button("重新载入") {
                     Task { await model.load() }
                 }
                 .disabled(model.isBusy)

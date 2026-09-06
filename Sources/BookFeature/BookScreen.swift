@@ -78,9 +78,12 @@ public struct BookScreen: View {
                             TsuyomiStatusBadge("离线缓存", tone: .warning)
                         }
                     }
-                    shelfActions(content)
+                    /// The column is exactly as tall as the cover and its actions sit on that bottom
+                    /// edge, which is the line the reference aligns everything to.
                     Spacer(minLength: 0)
+                    shelfActions(content)
                 }
+                .frame(height: 110 / TsuyomiTheme.Metrics.coverAspectRatio, alignment: .topLeading)
             }
             if let description = content.detail.description {
                 summary(description)
@@ -124,17 +127,18 @@ public struct BookScreen: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
+            /// The tile is 36pt and the touch target is the full 44: the reference draws a small
+            /// square, and shrinking the target with it would put the button under the minimum.
             Image(systemName: symbol)
-                .font(.system(size: 17, weight: .semibold))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(isOn ? TsuyomiTheme.Palette.accent : TsuyomiTheme.Palette.secondaryText)
+                .frame(width: 36, height: 36)
+                .background(TsuyomiTheme.Palette.raisedSurface, in: RoundedRectangle(cornerRadius: 8))
                 .frame(
                     width: TsuyomiTheme.Metrics.minimumTouchTarget,
                     height: TsuyomiTheme.Metrics.minimumTouchTarget
                 )
-                .background(
-                    TsuyomiTheme.Palette.raisedSurface,
-                    in: RoundedRectangle(cornerRadius: TsuyomiTheme.Metrics.tightGutter)
-                )
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel(label)
@@ -148,14 +152,22 @@ public struct BookScreen: View {
                 Button {
                     openChapter(chapter)
                 } label: {
+                    /// The height is drawn here rather than left to a button style: a style adds its
+                    /// own padding around whatever it is given, so asking for a height through one
+                    /// gets that height plus the padding, which is how this became a slab twice.
                     Text(content.resumeChapterId == nil ? "开始阅读" : "继续阅读")
                         .font(TsuyomiTheme.Typography.body.weight(.semibold))
-                        .frame(maxWidth: .infinity)
+                        .foregroundStyle(Color.white)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: TsuyomiTheme.Metrics.minimumTouchTarget
+                        )
+                        .background(
+                            TsuyomiTheme.Palette.accent,
+                            in: RoundedRectangle(cornerRadius: TsuyomiTheme.Metrics.cornerRadius)
+                        )
                 }
-                /// The large control size already gives a proper button height; adding a minimum on
-                /// top of it stacks with the style's own padding and produces a slab.
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
+                .buttonStyle(.plain)
             }
         }
     }
@@ -182,7 +194,6 @@ public struct BookScreen: View {
                 /// a height, the text still truncates to fit it. This makes it ask for the height it
                 /// needs, which is what "展开" is supposed to mean.
                 .fixedSize(horizontal: false, vertical: true)
-                .animation(.default, value: isSummaryExpanded)
             Button(isSummaryExpanded ? "收起" : "展开") { isSummaryExpanded.toggle() }
                 .font(TsuyomiTheme.Typography.caption)
         }

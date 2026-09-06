@@ -87,6 +87,10 @@ public struct AppRootView: View {
                 .tag(RootTab.more)
         }
         .preferredColorScheme(preferences.colorScheme.colorScheme)
+        /// Trust is read once, at the root. A book opened straight from the shelf on a cold launch
+        /// reaches the registry before any tab has had a chance to load it, and an unverifiable
+        /// package reads as INSTALLED_PACKAGE_INVALID.
+        .task { await container.loadTrust() }
         .onChange(of: tab) { selected in
             guard selected != .browse else { return }
             Task { await flow.popToRoot() }

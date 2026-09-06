@@ -16,7 +16,7 @@ public struct ReaderChromeActions {
     /// Takes a fraction of the chapter, 0 through 1 — not a page index. Passing an index is what made
     /// the old slider look broken: every drag past the first pixel resolved past the last page.
     public let onScrub: (Double) -> Void
-    public let onScrubEnd: () -> Void
+    public let onScrubEnd: (Double) -> Void
 
     public init(
         onBack: @escaping () -> Void,
@@ -26,7 +26,7 @@ public struct ReaderChromeActions {
         onOpenSettings: @escaping () -> Void,
         onScrubBegin: @escaping () -> Void,
         onScrub: @escaping (Double) -> Void,
-        onScrubEnd: @escaping () -> Void
+        onScrubEnd: @escaping (Double) -> Void
     ) {
         self.onBack = onBack
         self.onPreviousChapter = onPreviousChapter
@@ -58,6 +58,7 @@ public struct ReaderChrome: View {
     private let actions: ReaderChromeActions
     @State private var isMenuOpen = false
     @State private var isScrubbing = false
+    @State private var scrubFraction: Double?
 
     public init(
         chapterTitle: String,
@@ -223,11 +224,13 @@ public struct ReaderChrome: View {
                             isScrubbing = true
                             actions.onScrubBegin()
                         }
-                        actions.onScrub(clamped(value.location.x / max(proxy.size.width, 1)))
+                        scrubFraction = clamped(value.location.x / max(proxy.size.width, 1))
+                        actions.onScrub(scrubFraction ?? 0)
                     }
                     .onEnded { _ in
                         isScrubbing = false
-                        actions.onScrubEnd()
+                        actions.onScrubEnd(scrubFraction ?? 0)
+                        scrubFraction = nil
                     }
             )
         }
@@ -237,9 +240,10 @@ public struct ReaderChrome: View {
         .accessibilityValue("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
         .accessibilityAdjustableAction { direction in
             let step = 1.0 / Double(max(pageCount - 1, 1))
+            let target = clamped(fraction + (direction == .increment ? step : -step))
             actions.onScrubBegin()
-            actions.onScrub(clamped(fraction + (direction == .increment ? step : -step)))
-            actions.onScrubEnd()
+            actions.onScrub(target)
+            actions.onScrubEnd(target)
         }
     }
 
@@ -251,7 +255,7 @@ public struct ReaderChrome: View {
                 .font(TsuyomiTheme.Typography.sectionTitle)
                 .foregroundStyle(TsuyomiTheme.Palette.primaryText)
                 .lineLimit(1)
-            Text("第 \(pageIndex + 1) 页")
+            Text("第 \(scrubTargetPage + 1) 页")
                 .font(TsuyomiTheme.Typography.supporting)
                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
         }
@@ -261,9 +265,17 @@ public struct ReaderChrome: View {
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
     }
 
+    /// Where the bar is, which while a finger is down is where the finger is. Reading it back from
+    /// the page instead would leave the bar wherever the preview managed to reach, which is not what
+    /// the reader is pointing at.
     private var fraction: Double {
+        if let scrubFraction { return scrubFraction }
         guard pageCount > 1 else { return 0 }
         return clamped(Double(pageIndex) / Double(pageCount - 1))
+    }
+
+    private var scrubTargetPage: Int {
+        min(max(Int((fraction * Double(max(pageCount - 1, 0))).rounded()), 0), max(pageCount - 1, 0))
     }
 
     /// The thumb stays inside the track at both ends rather than hanging half off it.

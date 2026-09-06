@@ -197,13 +197,19 @@ public final class ReaderModel: ObservableObject {
         try? preview.offer(pageIndex: page)
     }
 
-    public func endScrub() {
-        guard let epochs = currentEpochs() else {
-            preview.cancel()
+    /// Releasing the bar navigates. The preview decides where when it can — it committed against a
+    /// page that was actually painted — but a preview that never engaged must not swallow the
+    /// gesture: the reader let go somewhere, and that is where they meant to be. The fraction is
+    /// re-resolved against the current plan here, so a stale preview still cannot place it.
+    public func endScrub(at fraction: Double) {
+        defer { preview.cancel() }
+        guard let textLayout, !textLayout.pages.isEmpty else { return }
+        if let epochs = currentEpochs(), let committed = preview.release(epochs: epochs) {
+            move(toPage: committed)
             return
         }
-        guard let page = preview.release(epochs: epochs) else { return }
-        move(toPage: page)
+        let last = textLayout.pages.count - 1
+        move(toPage: min(max(Int((fraction * Double(last)).rounded()), 0), last))
     }
 
     public func pageDrawn(_ index: Int) {

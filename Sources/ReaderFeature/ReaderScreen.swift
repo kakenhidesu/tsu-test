@@ -9,14 +9,13 @@ import TsuyomiUI
 public struct ReaderScreen: View {
     @ObservedObject private var model: ReaderModel
     @Environment(\.scenePhase) private var scenePhase
-    @Environment(\.colorScheme) private var colorScheme
-    /// The page's colour is the app's appearance, so the reader's own panel edits that setting rather
-    /// than a reader-local copy of it.
+    /// The app's appearance, which the reader's own panel offers beside the page themes exactly as
+    /// the reference does — the themes colour the page, this decides everything around it.
     @Binding private var appearance: ColorSchemePreference
     private let onLeave: () -> Void
 
-    /// The page is light or dark because the app is. There is no reader-only colour choice.
-    private var theme: ReaderTheme { ReaderTheme.reading(under: colorScheme) }
+    /// The page carries the reader's chosen theme.
+    private var theme: ReaderTheme { model.settings.theme }
 
     public init(
         model: ReaderModel,
@@ -65,6 +64,9 @@ public struct ReaderScreen: View {
             .onChange(of: proxy.size) { size in model.resize(readingSize(size)) }
         }
         .background(theme.background)
+        /// The theme is the reader's choice, not the system's. Everything drawn over the page resolves
+        /// semantic colours, so the subtree is told which appearance it is actually sitting on.
+        .environment(\.colorScheme, theme.isDark ? .dark : .light)
         .navigationBarHidden(true)
         /// Reading is the whole screen. A tab bar under the text is one more thing to hit by accident
         /// while turning a page, and it says the reader is a pane inside a tab when it is not.
@@ -124,7 +126,7 @@ public struct ReaderScreen: View {
             onOpenSettings: { model.isSettingsPresented = true },
             onScrubBegin: { model.beginScrub() },
             onScrub: { model.scrub($0) },
-            onScrubEnd: { model.endScrub() }
+            onScrubEnd: { model.endScrub(at: $0) }
         )
     }
 

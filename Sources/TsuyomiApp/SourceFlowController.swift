@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
+import Combine
 import Foundation
 import TsuyomiCore
 import TsuyomiProtocol
@@ -12,6 +13,7 @@ import TsuyomiSource
 public final class SourceFlowController: ObservableObject {
     @Published public var path: [Route] = []
     @Published public private(set) var covers: SourceCoverProvider?
+    private var coverUpdates: AnyCancellable?
 
     private let container: AppContainer
     private var openSource: InstalledSource?
@@ -132,10 +134,17 @@ public final class SourceFlowController: ObservableObject {
             roots: container.roots,
             fetcher: client
         )
+        // A nested observable publishes on itself, not on its owner: without forwarding, a cover that
+        // finishes downloading changes nothing any screen is watching, and the images only appear
+        // once something else happens to redraw — leaving a source and coming back, typically.
+        coverUpdates = covers?.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }
     }
 
     private func closeSource() async {
         covers?.cancelAll()
+        coverUpdates = nil
         covers = nil
         guard let source = openSource else { return }
         openSource = nil

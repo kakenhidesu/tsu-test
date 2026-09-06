@@ -63,6 +63,7 @@ public final class AppPreferences: ObservableObject {
         defaults.set(settings.horizontalMargin, forKey: Key.readerHorizontalMargin)
         defaults.set(settings.paragraphSpacing, forKey: Key.readerParagraphSpacing)
         defaults.set(settings.flow.rawValue, forKey: Key.readerFlow)
+        defaults.set(settings.theme.rawValue, forKey: Key.readerTheme)
         defaults.set(settings.pageTransition.rawValue, forKey: Key.readerPageTransition)
         defaults.set(settings.lockPortrait, forKey: Key.readerLockPortrait)
         defaults.set(settings.progressVisible, forKey: Key.readerProgressVisible)
@@ -75,7 +76,7 @@ public final class AppPreferences: ObservableObject {
             flow: reader.flow == .scroll ? "scroll" : "paged",
             fontScale: reader.fontSize / 18.0,
             lineHeight: reader.lineHeight,
-            theme: ReaderTheme.reading(under: colorScheme).rawValue
+            theme: reader.theme.rawValue
         )
     }
 
@@ -95,12 +96,10 @@ public final class AppPreferences: ObservableObject {
             if let lineHeight = preferences.lineHeight, (0.8...3.0).contains(lineHeight) {
                 updated.lineHeight = lineHeight.clamped(to: ReaderSettings.lineHeightRange)
             }
-            setReader(updated)
-            // The page's colour is the app's appearance, so an imported theme lands there rather than
-            // on a reader-only setting that nothing would read.
             if let theme = preferences.theme, let parsed = ReaderTheme(rawValue: theme) {
-                setColorScheme(parsed.isDark ? .dark : .light)
+                updated.theme = parsed
             }
+            setReader(updated)
         }
         lastAppliedImportDigest = digest
         defaults.set(digest, forKey: Key.lastAppliedImportDigest)
@@ -116,6 +115,7 @@ public final class AppPreferences: ObservableObject {
             paragraphSpacing: defaults.object(forKey: Key.readerParagraphSpacing) as? Double
                 ?? stored.paragraphSpacing,
             flow: defaults.string(forKey: Key.readerFlow).flatMap(ReaderPresentation.init(rawValue:)) ?? stored.flow,
+            theme: defaults.string(forKey: Key.readerTheme).flatMap(ReaderTheme.init(rawValue:)) ?? stored.theme,
             pageTransition: defaults.string(forKey: Key.readerPageTransition)
                 .flatMap(ReaderPageTransition.init(rawValue:)) ?? stored.pageTransition,
             lockPortrait: defaults.object(forKey: Key.readerLockPortrait) as? Bool ?? stored.lockPortrait,
@@ -134,6 +134,7 @@ public final class AppPreferences: ObservableObject {
         static let readerHorizontalMargin = "reader_horizontal_margin"
         static let readerParagraphSpacing = "reader_paragraph_spacing"
         static let readerFlow = "reader_flow"
+        static let readerTheme = "reader_theme"
         static let readerPageTransition = "reader_page_transition"
         static let readerLockPortrait = "reader_lock_portrait"
         static let readerProgressVisible = "reader_progress_visible"

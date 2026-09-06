@@ -46,6 +46,7 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
     public var horizontalMargin: Double
     public var paragraphSpacing: Double
     public var flow: ReaderPresentation
+    public var theme: ReaderTheme
     public var pageTransition: ReaderPageTransition
     public var lockPortrait: Bool
     public var progressVisible: Bool
@@ -57,6 +58,7 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
         horizontalMargin: Double = 24,
         paragraphSpacing: Double = 12,
         flow: ReaderPresentation = .paged,
+        theme: ReaderTheme = .paper,
         pageTransition: ReaderPageTransition = .slide,
         lockPortrait: Bool = false,
         progressVisible: Bool = true,
@@ -67,6 +69,7 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
         self.horizontalMargin = horizontalMargin.clamped(to: Self.horizontalMarginRange)
         self.paragraphSpacing = paragraphSpacing.clamped(to: Self.paragraphSpacingRange)
         self.flow = flow
+        self.theme = theme
         self.pageTransition = pageTransition
         self.lockPortrait = lockPortrait
         self.progressVisible = progressVisible
@@ -110,9 +113,4 @@ extension Double {
 public extension ReaderTheme {
     var isDark: Bool { self == .nightInk || self == .black }
 
-    /// The page under an app appearance. `system` reads as light here because this is the value a
-    /// transfer file carries, and a file cannot say "whatever that device was set to".
-    static func reading(under appearance: ColorSchemePreference) -> ReaderTheme {
-        appearance == .dark ? .nightInk : .paper
-    }
 }

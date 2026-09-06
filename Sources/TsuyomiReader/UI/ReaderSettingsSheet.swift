@@ -31,15 +31,17 @@ public struct ReaderSettingsSheet: View {
         VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
             heading
             controls
+            themes
             Spacer(minLength: 0)
         }
         .padding(TsuyomiTheme.Metrics.gutter)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .presentationDetents([.height(220), .large])
-        .presentationContentInteraction(.scrolls)
+        /// One height, and no second detent to drag it to: this panel is a fixed set of controls over
+        /// a page, and a reader who pulls it to full screen has lost the page they were setting.
+        .presentationDetents([.height(400)])
         .sheet(isPresented: $isShowingOptions) {
             NavigationStack {
-                ReaderSettingsForm(settings: $settings, onChange: onChange)
+                ReaderSettingsForm(settings: $settings, onChange: onChange, hiding: .offeredInTheReader)
                     .navigationTitle("选项")
                     .navigationBarTitleDisplayMode(.inline)
                     .toolbar {
@@ -93,6 +95,50 @@ public struct ReaderSettingsSheet: View {
             flowMenu
             transitionMenu
             appearanceMenu
+        }
+    }
+
+    /// The themes, as the pages they make: each tile is drawn in its own colours and says its name, so
+    /// the choice is the thing itself rather than a word for it.
+    private var themes: some View {
+        LazyVGrid(
+            columns: Array(repeating: GridItem(.flexible(), spacing: TsuyomiTheme.Metrics.tightGutter), count: 3),
+            spacing: TsuyomiTheme.Metrics.tightGutter
+        ) {
+            ForEach(ReaderTheme.allCases, id: \.self) { theme in
+                Button {
+                    var updated = settings
+                    updated.theme = theme
+                    settings = updated
+                    onChange(updated)
+                } label: {
+                    VStack(spacing: 2) {
+                        HStack(alignment: .firstTextBaseline, spacing: 1) {
+                            Text("大").font(.system(size: 22, weight: .bold))
+                            Text("小").font(.system(size: 14))
+                        }
+                        .foregroundStyle(theme.foreground)
+                        Text(theme.label)
+                            .font(TsuyomiTheme.Typography.badge)
+                            .foregroundStyle(theme.foreground.opacity(0.7))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 72)
+                    .background(theme.background, in: RoundedRectangle(cornerRadius: 12))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 12)
+                            .strokeBorder(
+                                settings.theme == theme
+                                    ? TsuyomiTheme.Palette.primaryText
+                                    : Color.clear,
+                                lineWidth: 2
+                            )
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(theme.label)
+                .accessibilityAddTraits(settings.theme == theme ? [.isSelected] : [])
+            }
         }
     }
 
