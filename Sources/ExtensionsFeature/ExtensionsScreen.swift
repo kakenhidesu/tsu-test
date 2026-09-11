@@ -180,7 +180,7 @@ public struct ExtensionsScreen: View {
                         Text(descriptor.repositoryId)
                             .font(TsuyomiTheme.Typography.body)
                             .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                        Text(descriptor.base.canonical)
+                        Text(descriptor.indexUrl.absoluteString)
                             .font(TsuyomiTheme.Typography.caption)
                             .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                     }
