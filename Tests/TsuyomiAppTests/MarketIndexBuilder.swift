@@ -14,7 +14,7 @@ enum MarketIndexBuilder {
         let publisher: HxpTestArchive.Publisher
         let legacyMigration: LegacyMigration?
 
-        init(_ archive: Data, publisher: HxpTestArchive.Publisher = .fixture, legacyMigration: LegacyMigration? = nil) {
+        init(_ archive: Data, publisher: HxpTestArchive.Publisher = HxpTestArchive.fixture, legacyMigration: LegacyMigration? = nil) {
             self.archive = archive
             self.publisher = publisher
             self.legacyMigration = legacyMigration
