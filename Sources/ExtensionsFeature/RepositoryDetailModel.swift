@@ -24,9 +24,12 @@ public struct RepositoryPackageRow: Sendable, Identifiable {
 public struct RepositoryDetailContent: Sendable {
     public let index: RepositoryIndex
     public let rows: [RepositoryPackageRow]
+    /// Publishers the catalog lists whose key is not trusted under the same bytes. Their packages
+    /// cannot be installed until the reader trusts them here, one key at a time.
+    public let untrustedPublishers: [RepositoryPublisher]
 }
 
-/// One repository. It reads its cached index on open and only talks to the network when the reader
+/// One repository. It reads its cached catalog on open and only talks to the network when the reader
 /// refreshes, so browsing the market never becomes background traffic.
 @MainActor
 public final class RepositoryDetailModel: ObservableObject {
@@ -67,31 +70,57 @@ public final class RepositoryDetailModel: ObservableObject {
 
     public func loadCached() async {
         guard let cached = await repositories.cached(descriptor.repositoryId) else {
-            state = .empty(title: "还没有索引", detail: "点击刷新从仓库读取一次索引。")
+            state = .empty(title: "还没有目录", detail: "点击刷新从仓库读取一次目录。")
             return
         }
         do {
-            let index = try RepositoryIndexCodec.decode(
-                indexBytes: cached.index,
-                signature: cached.signature,
-                now: clock(),
-                expectedPublicKey: descriptor.publisherPublicKey
-            )
+            let index = try RepositoryIndexCodec.decode(cached, rootPublicKey: descriptor.rootPublicKey, now: clock())
             await publish(index)
         } catch {
-            state = .empty(title: "缓存的索引已失效", detail: "刷新以重新读取。")
+            state = .empty(title: "缓存的目录已失效", detail: "刷新以重新读取。")
         }
     }
 
+    /// A refreshed catalog replaces the cached one only if it is at least as new: the sequence is
+    /// root-signed, so a mirror cannot serve an older catalog to hide a revocation or an update.
     public func refresh() async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         failureCode = nil
         do {
-            let index = try await client.refresh(descriptor)
-            try await lifecycle.applyRevocations(index.revocations, now: clock())
-            await publish(index)
+            let fetched = try await client.refresh(descriptor)
+            if let cached = await repositories.cached(descriptor.repositoryId),
+               let previous = RepositoryIndexCodec.sequence(ofCached: cached),
+               fetched.index.sequence < previous {
+                throw RepositoryError.indexRollback
+            }
+            try await repositories.cache(descriptor.repositoryId, indexBytes: fetched.bytes)
+            try await lifecycle.applyRevocations(fetched.index.revocations)
+            await publish(fetched.index)
+        } catch {
+            failureCode = SafeErrorCode.of(error)
+        }
+    }
+
+    /// Trusting a listed publisher is the same act as approving a repository, made one key at a time
+    /// for keys the catalog added after the repository was approved.
+    public func trustPublisher(_ publisher: RepositoryPublisher) async {
+        guard !isBusy, case .content(let content) = state else { return }
+        isBusy = true
+        defer { isBusy = false }
+        failureCode = nil
+        do {
+            try await trust.approve(
+                TrustedPublisher(
+                    keyId: publisher.keyId,
+                    publicKey: publisher.publicKey,
+                    trust: .userAdded,
+                    repositoryId: descriptor.repositoryId,
+                    approvedAt: clock()
+                )
+            )
+            await publish(content.index)
         } catch {
             failureCode = SafeErrorCode.of(error)
         }
@@ -105,11 +134,8 @@ public final class RepositoryDetailModel: ObservableObject {
         defer { isBusy = false }
         failureCode = nil
         do {
-            let archive = try await client.download(package, from: descriptor)
-            pendingInstall = try await lifecycle.prepare(
-                archiveBytes: archive,
-                declaring: package
-            )
+            let archive = try await client.download(package)
+            pendingInstall = try await lifecycle.prepare(archiveBytes: archive, declaring: package)
         } catch {
             failureCode = SafeErrorCode.of(error)
         }
@@ -147,7 +173,8 @@ public final class RepositoryDetailModel: ObservableObject {
         let rows = index.packages.map { package in
             RepositoryPackageRow(package: package, status: status(package, installed: versions[package.id.value]))
         }
-        state = .content(RepositoryDetailContent(index: index, rows: rows))
+        let untrusted = index.publishers.filter { trust.resolve(keyId: $0.keyId)?.publicKey != $0.publicKey }
+        state = .content(RepositoryDetailContent(index: index, rows: rows, untrustedPublishers: untrusted))
     }
 
     private func status(_ package: RepositoryPackage, installed: SemanticVersion?) -> PackageStatus {

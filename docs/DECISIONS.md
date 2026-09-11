@@ -164,3 +164,14 @@
 - 字号圆点只在按下加减后短暂出现，位置常驻预留：圆点回答的是"在这条刻度的哪里、还能走多远"，只有在调整时才被问；常显则成了噪声，而不预留位置又会让整行在出现/消失时跳动。
 - 主题磁贴用两行 `HStack` 而不是 `LazyVGrid`：惰性容器按自己的节奏实例化子视图，在一个正在做入场动画的面板里就表现为"磁贴先出现、卡片后落下"。六块磁贴不值得延迟。
 - 书籍页封面行用 `minHeight` 撑在 HStack 上，而不是给右列一个固定 `height`：`frame(height:alignment:)` 只是把子视图**摆放**在那个高度的框里，并不拉伸它，里面的 `Spacer` 因此无处可推——这正是两个图标钮一直浮在行中间的原因。
+- 仓库索引改为 `tsuyomi-repository` **v1**（`tsuyomi-extensions` 线上发布的格式），替换 v0：单文件信封 `{format, version:1, keyId, signed, signature}`，签名消息为 `"tsuyomi-repository-v1"` 加 NUL 再接 RFC 8785(`signed`)；包用绝对 HTTPS `downloadUrl`，不再有相对路径与 `index.sig`。v1 目录不带根公钥，因此添加第三方仓库要同时输入目录地址与维护者公布的根公钥（Base64）；v0 的 `repositories.json` 记录字段不同，加载时被丢弃（发布前没有真实 v0 仓库）。
+- 内置官方仓库现已实现（`OfficialRepository.swift`）：只含目录地址、根密钥 ID/公钥、官方发布者 ID/公钥，全部取自 `tsuyomi-extensions` 的 `official-distribution` 环境变量。首次启动时预添加仓库并以 `trust = builtInOfficial` 预填发布者记录，成功后在偏好里记 `official_repository_seeded`；之后用户移除仓库或发布者不会在下次启动被撤销。不做启动自动刷新。
+- v1 的信任模型：根密钥为用户（或应用内置）批准的锚点，目录列出的 `publishers[]` 由根签名担保，批准仓库时一并写入信任存储（`userAdded`，带 `repositoryId`）。目录之后新增或用户已移除的发布者在仓库详情页的"尚未信任的发布者"一节里逐个再确认；同一 `keyId` 换了字节仍按"新发布者"拒绝合并，须先在发布者页移除旧记录。
+- 刷新时目录 `sequence` 不得低于已缓存目录的 `sequence`（`INDEX_ROLLBACK`）：序号由根签名，镜像无法用旧目录隐藏撤销或更新；缓存只写入已验签的字节，因此读缓存序号时不再二次验签（`RepositoryIndexCodec.sequence(ofCached:)`）。批准仓库与每次刷新都把目录字节写入缓存（此前只读不写）。
+- v1 `revocations.packageDigests` 指归档文件的 SHA-256（目录里的 `sha256`，也是下载后比对的摘要），不再是 manifest 的 `integrity.contentDigest`；`HxpArchiveVerifier`、`PublisherTrustStore` 与市场包状态统一按归档摘要判定撤销。`publisherFingerprints` 按公钥 SHA-256 撤销，命中即移除该密钥并永久拒绝再批准。
+- 目录里的 `legacyMigration {fromPublisherFingerprint, fromPackageSha256}` 是唯一能批准发布者变更的东西：只有当前已装包的归档摘要与发布者指纹都与之一致时，`ExtensionInstaller.prepare` 才视轮换为已授权；候选包自己说什么都不算。
+- 宿主 API 版本升到 `1.2.0`：官方 Wenku8 包声明 `[1.2.0, 2.0.0)`；1.2.0 新增的是由宿主发起的签名 `update-check-v2`，扩展可调用的宿主接口没有变化。本宿主解析并展示该能力（`capabilities.updateCheck`，审批页记为 `update-check:<origin><path>`），但不发起更新检查（4C 更新协调中心不在范围）。
+- 能力解析对齐 Android 打包器的准入规则以便同一份 manifest 两端同判：`add` 允许 GET/POST，`remove`/`move` 必须 POST，`read`/`targets` 必须 GET；`remoteBookId` 只在写操作各出现一次，`targetId` 只在 `move` 出现一次，`cursor` 只在 `read` 且名为 `cursor`；`updateCheck` 为 version 2、GET、参数 1..16 且恰一个 `remoteBookId`。`targets`/`remove`/`move` 的 policy 出现时按上述规则校验、缺席时容忍：本宿主从不发起这些操作，而验收 fixture 早于它们。
+- 目录不再携带能力预览，`INDEX_MANIFEST_MISMATCH` 只比对 id、版本、发布者 keyId、hostApi 区间与归档摘要；包详情页改为展示目录元数据（语言、许可证、源码地址与修订、发布者），能力清单只在下载校验后的安装审批页出现。
+- `fetchStaticResource` 跟随最多 5 跳仅限 HTTPS 的重定向：GitHub Release 附件从 `github.com` 302 到 `objects.githubusercontent.com`，字节仍由目录里的 `sha256` 与包签名约束。
+- 删除 `tools/repository/build-index.mjs`：v0 生成器已无消费者，v1 目录由 `tsuyomi-extensions` 的 `generate-catalog.mjs` 生成并由其发布流程签名。

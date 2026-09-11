@@ -27,7 +27,8 @@ public struct ExtensionsScreen: View {
     @State private var segment: ExtensionsSegment = .installed
     @State private var isAdding = false
     @State private var isImporting = false
-    @State private var base = ""
+    @State private var indexUrl = ""
+    @State private var rootPublicKey = ""
 
     public init(
         model: ExtensionsModel,
@@ -96,17 +97,25 @@ public struct ExtensionsScreen: View {
             }
         }
         .alert("添加仓库", isPresented: $isAdding) {
-            TextField("https://example.org/tsuyomi", text: $base)
+            TextField("目录地址（https://…/index-v1.json）", text: $indexUrl)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            Button("取消", role: .cancel) { base = "" }
-            Button("读取索引") {
-                let typed = base
-                base = ""
-                Task { await model.probeRepository(base: typed) }
+            TextField("根公钥（Base64）", text: $rootPublicKey)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("取消", role: .cancel) {
+                indexUrl = ""
+                rootPublicKey = ""
+            }
+            Button("读取目录") {
+                let typedUrl = indexUrl
+                let typedKey = rootPublicKey
+                indexUrl = ""
+                rootPublicKey = ""
+                Task { await model.probeRepository(indexUrl: typedUrl, rootPublicKey: typedKey) }
             }
         } message: {
-            Text("仓库是一个 HTTPS 基址，其下托管 index.json 与 index.sig。")
+            Text("目录是仓库维护者签名发布的 JSON 文件；根公钥由维护者另行公布，目录里不带它。")
         }
         .sheet(
             isPresented: Binding(
@@ -245,66 +254,6 @@ struct ArchivePicker: UIViewControllerRepresentable {
                 return
             }
             presenting.dismiss(animated: true) { deliver(url) }
-        }
-    }
-}
-
-/// Approving a repository is approving its publisher. The fingerprint and the risk of running third
-/// party code in this process are both stated here, because this is the last screen before trust.
-struct RepositoryApprovalSheet: View {
-    let pending: PendingRepositoryApproval
-    @ObservedObject var model: ExtensionsModel
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        NavigationStack {
-            Form {
-                Section("仓库") {
-                    LabeledContent("标识", value: pending.index.repositoryId)
-                    LabeledContent("名称", value: pending.index.displayName)
-                    Text(pending.index.summary)
-                        .font(TsuyomiTheme.Typography.caption)
-                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                    LabeledContent("包数量", value: "\(pending.index.packages.count)")
-                }
-                Section("发布者") {
-                    LabeledContent("Key ID", value: pending.index.publisher.keyId)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("公钥指纹")
-                            .font(TsuyomiTheme.Typography.caption)
-                            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                        Text(pending.index.publisher.fingerprint)
-                            .font(.system(.footnote, design: .monospaced))
-                    }
-                    if pending.isNewPublisherKey {
-                        TsuyomiStatusBadge("新的发布者密钥", tone: .warning)
-                    }
-                }
-                Section {
-                    Text("扩展在应用进程内运行，QuickJS 不是进程级沙箱；信任这个发布者等同于信任它的代码。")
-                        .font(TsuyomiTheme.Typography.caption)
-                        .foregroundStyle(TsuyomiTheme.Palette.danger)
-                }
-            }
-            .navigationTitle("确认发布者")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("取消") {
-                        model.discardApproval()
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("信任并添加") {
-                        Task {
-                            await model.approvePendingRepository()
-                            dismiss()
-                        }
-                    }
-                    .disabled(model.isBusy)
-                }
-            }
         }
     }
 }

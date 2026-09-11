@@ -10,9 +10,9 @@ import TsuyomiProtocol
 import TsuyomiSource
 import XCTest
 
-/// The M5 journey against a fake HTTPS host: add a repository, confirm the publisher, install, see a
-/// higher version appear, update, then have the index revoke the package and watch the installed
-/// source go dormant. No test reaches a real site.
+/// The M5 journey against a fake HTTPS host: add a repository, confirm its root key and publisher,
+/// install, see a higher version appear, update, then have the catalog revoke the package and watch
+/// the installed source go dormant. No test reaches a real site.
 final class MarketJourneyTests: XCTestCase {
     private var directory: URL!
 
@@ -30,29 +30,28 @@ final class MarketJourneyTests: XCTestCase {
     func testAddInstallUpdateThenRevoke() async throws {
         let world = try await MarketWorld(directory: directory)
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
-        world.host.publish(index: try world.index(packages: [original]), packages: ["v1": original])
+        world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
 
-        await world.model.probeRepository(base: "https://repo.example.org/tsuyomi")
+        await world.probe()
         let pending = try XCTUnwrap(world.model.pendingApproval)
         XCTAssertEqual(pending.index.repositoryId, "org.example.repo")
-        XCTAssertTrue(pending.isNewPublisherKey)
-        XCTAssertFalse(pending.index.publisher.fingerprint.isEmpty)
+        XCTAssertEqual(pending.newPublisherKeyIds, [Phase2TestPublisher.keyId])
+        XCTAssertFalse(pending.descriptor.rootKey.fingerprint.isEmpty)
 
         await world.model.approvePendingRepository()
         XCTAssertNil(world.model.pendingApproval)
         XCTAssertEqual(world.trust.trusted.map(\.keyId), [Phase2TestPublisher.keyId])
 
-        let added = await world.repositories.all()
-        let descriptor = try XCTUnwrap(added.first)
-        let detail = world.detail(descriptor)
-        await detail.refresh()
-        guard case .content(let listing) = detail.state else {
-            return XCTFail("index did not load: \(detail.state)")
+        let detail = try await world.detail()
+        await detail.loadCached()
+        guard case .content(let cached) = detail.state else {
+            return XCTFail("an approved catalog must be readable from cache: \(detail.state)")
         }
-        XCTAssertEqual(listing.rows.count, 1)
-        XCTAssertEqual(listing.rows[0].status, .available)
+        XCTAssertEqual(cached.rows.count, 1)
+        XCTAssertEqual(cached.rows[0].status, .available)
+        XCTAssertTrue(cached.untrustedPublishers.isEmpty)
 
-        await detail.prepare(listing.rows[0].package)
+        await detail.prepare(cached.rows[0].package)
         XCTAssertNil(detail.failureCode)
         let prepared = try XCTUnwrap(detail.pendingInstall)
         XCTAssertNil(prepared.active)
@@ -63,10 +62,11 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
 
         let bumped = try HxpTestArchive.repackaged(original, version: "99.0.0")
-        world.host.publish(index: try world.index(packages: [bumped]), packages: ["v1": bumped])
+        world.host.publish(index: try world.index([.init(bumped)], sequence: 2), package: bumped)
         await detail.refresh()
+        XCTAssertNil(detail.failureCode)
         guard case .content(let updated) = detail.state else {
-            return XCTFail("refreshed index did not load: \(detail.state)")
+            return XCTFail("refreshed catalog did not load: \(detail.state)")
         }
         guard case .updatable = updated.rows[0].status else {
             return XCTFail("a higher version must read as updatable, got \(updated.rows[0].status)")
@@ -78,13 +78,15 @@ final class MarketJourneyTests: XCTestCase {
         let afterUpdate = try await world.registry.installedSources()
         XCTAssertEqual(afterUpdate.map(\.version.original), ["99.0.0"])
 
-        // A revocation names the manifest content digest, so re-zipping the same payload cannot dodge it.
-        let digest = try MarketIndexBuilder.contentDigest(of: bumped)
+        // A revocation names the archive digest the catalog listed, the same digest the download is
+        // checked against.
+        let digest = Sha256.hex(bumped)
         world.host.publish(
-            index: try world.index(packages: [bumped], revokingPackageDigest: digest),
-            packages: ["v1": bumped]
+            index: try world.index([.init(bumped)], sequence: 3, revokedPackageDigests: [digest]),
+            package: bumped
         )
         await detail.refresh()
+        XCTAssertNil(detail.failureCode)
         XCTAssertTrue(world.trust.isRevokedPackage(digest))
         let availability = try await world.remoteLibrary.sourceAvailability("org.tsuyomi.wenku8")
         XCTAssertEqual(availability?.available, false)
@@ -92,27 +94,93 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertTrue(stillListed.isEmpty, "a revoked package must stop verifying")
     }
 
+    /// The sequence is root-signed, so a mirror serving yesterday's catalog cannot roll back a
+    /// revocation or an update.
+    @MainActor
+    func testAnOlderCatalogIsRefused() async throws {
+        let world = try await MarketWorld(directory: directory)
+        let original = try JourneyFixtures.data("wenku8-fixture.hxp")
+        world.host.publish(index: try world.index([.init(original)], sequence: 2), package: original)
+        await world.probe()
+        await world.model.approvePendingRepository()
+        let detail = try await world.detail()
+        world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
+        await detail.refresh()
+        XCTAssertEqual(detail.failureCode, RepositoryError.indexRollback.rawValue)
+    }
+
     @MainActor
     func testRemovingARepositoryKeepsTheInstalledExtension() async throws {
         let world = try await MarketWorld(directory: directory)
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
-        world.host.publish(index: try world.index(packages: [original]), packages: ["v1": original])
-        await world.model.probeRepository(base: "https://repo.example.org/tsuyomi")
+        world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
+        await world.probe()
         await world.model.approvePendingRepository()
-        let added = await world.repositories.all()
-        let descriptor = try XCTUnwrap(added.first)
-        let detail = world.detail(descriptor)
+        let detail = try await world.detail()
         await detail.refresh()
-        guard case .content(let listing) = detail.state else { return XCTFail("no index") }
+        guard case .content(let listing) = detail.state else { return XCTFail("no catalog") }
         await detail.prepare(listing.rows[0].package)
         await detail.approvePendingInstall()
 
-        await world.model.removeRepository(descriptor.repositoryId)
+        await world.model.removeRepository(detail.descriptor.repositoryId)
         let remaining = await world.repositories.all()
         XCTAssertTrue(remaining.isEmpty)
         let installed = try await world.registry.installedSources()
         XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
         XCTAssertEqual(world.trust.trusted.map(\.keyId), [Phase2TestPublisher.keyId])
+    }
+
+    /// A publisher change is refused until the catalog carries a root-signed migration naming the
+    /// exact installed package and publisher, and a newly listed publisher is trusted one key at a
+    /// time on the repository's own screen.
+    @MainActor
+    func testARootSignedMigrationApprovesAPublisherChange() async throws {
+        let world = try await MarketWorld(directory: directory)
+        let original = try JourneyFixtures.data("wenku8-fixture.hxp")
+        world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
+        await world.probe()
+        await world.model.approvePendingRepository()
+        let detail = try await world.detail()
+        await detail.loadCached()
+        guard case .content(let listing) = detail.state else { return XCTFail("no catalog") }
+        await detail.prepare(listing.rows[0].package)
+        await detail.approvePendingInstall()
+
+        let successor = HxpTestArchive.successor
+        let bumped = try HxpTestArchive.repackaged(original, version: "99.0.0", publisher: successor)
+        world.host.publish(
+            index: try world.index([.init(bumped, publisher: successor)], sequence: 2),
+            package: bumped
+        )
+        await detail.refresh()
+        guard case .content(let unsigned) = detail.state else { return XCTFail("no catalog") }
+        XCTAssertEqual(unsigned.untrustedPublishers.map(\.keyId), [successor.keyId])
+        await detail.prepare(unsigned.rows[0].package)
+        XCTAssertEqual(detail.failureCode, HxpVerificationError.unknownPublisher.rawValue)
+
+        await detail.trustPublisher(try XCTUnwrap(unsigned.untrustedPublishers.first))
+        guard case .content(let trusted) = detail.state else { return XCTFail("no catalog") }
+        XCTAssertTrue(trusted.untrustedPublishers.isEmpty)
+        await detail.prepare(trusted.rows[0].package)
+        XCTAssertEqual(detail.failureCode, ExtensionInstallError.keyRotationNotAuthorized.rawValue)
+
+        let migration = LegacyMigration(
+            fromPublisherFingerprint: try HxpTestArchive.fixture.fingerprint(),
+            fromPackageSha256: Sha256.hex(original)
+        )
+        world.host.publish(
+            index: try world.index([.init(bumped, publisher: successor, legacyMigration: migration)], sequence: 3),
+            package: bumped
+        )
+        await detail.refresh()
+        guard case .content(let migrated) = detail.state else { return XCTFail("no catalog") }
+        await detail.prepare(migrated.rows[0].package)
+        XCTAssertNil(detail.failureCode)
+        XCTAssertNotEqual(try XCTUnwrap(detail.pendingInstall).policyOutcome, .rejectedKeyRotation)
+        await detail.approvePendingInstall()
+        let installed = try await world.registry.installedSources()
+        XCTAssertEqual(installed.map(\.version.original), ["99.0.0"])
+        XCTAssertEqual(installed.map(\.publisherFingerprint), [try successor.fingerprint()])
     }
 
     /// A picked archive is consumed once, and a verified import stays reported until the review is
@@ -154,31 +222,28 @@ final class MarketJourneyTests: XCTestCase {
     }
 }
 
-/// Serves exactly the three paths a repository exposes. Anything else is a 404, so a stray request
+/// Serves exactly the two paths a repository exposes. Anything else is a 404, so a stray request
 /// fails the test rather than silently succeeding.
 final class FakeRepositoryHost: HostHttpTransport {
     private struct Payload: Sendable {
         var index = Data()
-        var signature = Data()
-        var packages: [String: Data] = [:]
+        var package = Data()
     }
 
     private let state = OSAllocatedUnfairLock(initialState: Payload())
 
-    func publish(index: (bytes: Data, signature: Data), packages: [String: Data]) {
+    func publish(index: Data, package: Data) {
         state.withLock { current in
-            current.index = index.bytes
-            current.signature = index.signature
-            current.packages = packages
+            current.index = index
+            current.package = package
         }
     }
 
     func execute(_ request: HostHttpRequest) async throws -> HostHttpResponse {
         let path = request.url.path
         let body: Data? = state.withLock { current in
-            if path.hasSuffix("/index.json") { return current.index }
-            if path.hasSuffix("/index.sig") { return current.signature }
-            if path.hasSuffix(".hxp") { return current.packages["v1"] }
+            if path.hasSuffix("/index-v1.json") { return current.index }
+            if path.hasSuffix(".hxp") { return current.package }
             return nil
         }
         guard let body else {
@@ -195,6 +260,8 @@ final class FakeRepositoryHost: HostHttpTransport {
 
 @MainActor
 private struct MarketWorld {
+    static let indexUrl = "https://repo.example.org/tsuyomi/index-v1.json"
+
     let host = FakeRepositoryHost()
     let model: ExtensionsModel
     let registry: SourceRegistry
@@ -245,8 +312,16 @@ private struct MarketWorld {
         )
     }
 
-    func detail(_ descriptor: RepositoryDescriptor) -> RepositoryDetailModel {
-        RepositoryDetailModel(
+    func probe() async {
+        await model.probeRepository(
+            indexUrl: MarketWorld.indexUrl,
+            rootPublicKey: (try? MarketIndexBuilder.rootPublicKeyBase64()) ?? ""
+        )
+    }
+
+    func detail() async throws -> RepositoryDetailModel {
+        let descriptor = try XCTUnwrap(await repositories.all().first)
+        return RepositoryDetailModel(
             descriptor: descriptor,
             registry: registry,
             repositories: repositories,
@@ -257,7 +332,11 @@ private struct MarketWorld {
         )
     }
 
-    func index(packages: [Data], revokingPackageDigest digest: String? = nil) throws -> (bytes: Data, signature: Data) {
-        try MarketIndexBuilder.build(packages: packages, revokingPackageDigest: digest)
+    func index(
+        _ listings: [MarketIndexBuilder.Listing],
+        sequence: Int,
+        revokedPackageDigests: [String] = []
+    ) throws -> Data {
+        try MarketIndexBuilder.build(listings, sequence: sequence, revokedPackageDigests: revokedPackageDigests)
     }
 }

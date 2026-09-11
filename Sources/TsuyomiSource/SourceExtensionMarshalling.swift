@@ -259,6 +259,10 @@ extension HxpRemoteOperationPolicy {
             case .fixed(let name, let value): fixed[name] = value
             case .remoteBookId(let name): remoteBookIdParameter = name
             case .cursor(let name): cursorParameter = name
+            case .targetId:
+                throw SourceExtensionMarshalling.failure(
+                    .malformedSourceResponse, "remote-policy", "target-id-outside-move"
+                )
             }
         }
         return try RemoteOperationRequestPolicy(

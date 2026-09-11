@@ -97,10 +97,14 @@ public final class PublisherTrustStore: PublisherKeyResolver {
         try await persist()
     }
 
-    public func revoke(keyId: String) async throws {
+    /// A catalog revokes a key by fingerprint. Every publisher stored under that key is dropped, and
+    /// the fingerprint stays on the list so the key cannot simply be approved again.
+    public func revoke(fingerprint: String) async throws {
         state.withLock { current in
-            guard let removed = current.publishers.removeValue(forKey: keyId) else { return }
-            current.revokedFingerprints.insert(Sha256.hex(removed.publicKey))
+            current.revokedFingerprints.insert(fingerprint)
+            for (keyId, publisher) in current.publishers where Sha256.hex(publisher.publicKey) == fingerprint {
+                current.publishers.removeValue(forKey: keyId)
+            }
         }
         try await persist()
     }
@@ -127,8 +131,8 @@ public final class PublisherTrustStore: PublisherKeyResolver {
         state.withLock { $0.revokedFingerprints.contains(fingerprint) }
     }
 
-    public func isRevokedPackage(_ contentDigest: String) -> Bool {
-        state.withLock { $0.revokedPackages.contains(contentDigest) }
+    public func isRevokedPackage(_ packageSha256: String) -> Bool {
+        state.withLock { $0.revokedPackages.contains(packageSha256) }
     }
 
     private func persist() async throws {

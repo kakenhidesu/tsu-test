@@ -9,15 +9,14 @@ public enum RepositoryError: String, Error, Equatable, Sendable, CaseIterable {
     case invalidIndex = "INVALID_INDEX"
     case unsupportedFormat = "UNSUPPORTED_FORMAT"
     case invalidSignature = "INVALID_SIGNATURE"
+    case invalidRootKey = "INVALID_ROOT_KEY"
     case indexExpired = "INDEX_EXPIRED"
+    case indexRollback = "INDEX_ROLLBACK"
     case insecureTransport = "INSECURE_TRANSPORT"
-    case unsafePackagePath = "UNSAFE_PACKAGE_PATH"
+    case unsafePackageUrl = "UNSAFE_PACKAGE_URL"
     case packageTooLarge = "PACKAGE_TOO_LARGE"
     case packageDigestMismatch = "PACKAGE_DIGEST_MISMATCH"
     case indexManifestMismatch = "INDEX_MANIFEST_MISMATCH"
-    case publisherNotTrusted = "PUBLISHER_NOT_TRUSTED"
-    case publisherRevoked = "PUBLISHER_REVOKED"
-    case packageRevoked = "PACKAGE_REVOKED"
     case hostApiIncompatible = "HOST_API_INCOMPATIBLE"
     case downgradeRejected = "DOWNGRADE_REJECTED"
 }
@@ -40,6 +39,13 @@ public struct RepositoryPublisher: Hashable, Sendable {
     }
 }
 
+/// A root-signed statement that this package replaces one signed by an earlier publisher key. It is
+/// the only thing that lets a package change publisher without the user re-approving the source.
+public struct LegacyMigration: Hashable, Sendable {
+    public let fromPublisherFingerprint: String
+    public let fromPackageSha256: String
+}
+
 public struct RepositoryPackage: Hashable, Sendable {
     public let id: SourceId
     public let version: SemanticVersion
@@ -47,235 +53,254 @@ public struct RepositoryPackage: Hashable, Sendable {
     public let hostApiMaxExclusive: SemanticVersion
     public let displayName: String
     public let summary: String
-    public let capabilities: HxpCapabilities
-    public let file: String
+    public let language: String
+    public let license: String
+    public let sourceUrl: URL
+    public let sourceRevision: String
+    public let downloadUrl: URL
     public let sha256: String
     public let sizeBytes: Int
+    public let publisherKeyId: String
+    public let legacyMigration: LegacyMigration?
 
     public func acceptsHostApi(_ version: SemanticVersion) -> Bool {
         version >= hostApiMinInclusive && version < hostApiMaxExclusive
     }
 }
 
-public enum RevocationTarget: Hashable, Sendable {
-    case keyId(String)
-    case packageDigest(String)
-}
+public struct RepositoryRevocations: Hashable, Sendable {
+    public let publisherFingerprints: Set<String>
+    public let packageDigests: Set<String>
 
-public struct RepositoryRevocation: Hashable, Sendable {
-    public let target: RevocationTarget
-    public let reasonCode: String
-    public let issuedAt: Date
-    public let expiresAt: Date
-    public let signature: Data
+    public init(publisherFingerprints: Set<String>, packageDigests: Set<String>) {
+        self.publisherFingerprints = publisherFingerprints
+        self.packageDigests = packageDigests
+    }
 }
 
 public struct RepositoryIndex: Hashable, Sendable {
     public let repositoryId: String
-    public let displayName: String
-    public let summary: String
-    public let publisher: RepositoryPublisher
+    public let sequence: Int
+    public let rootKeyId: String
     public let issuedAt: Date
     public let expiresAt: Date
+    public let publishers: [RepositoryPublisher]
     public let packages: [RepositoryPackage]
-    public let revocations: [RepositoryRevocation]
+    public let revocations: RepositoryRevocations
 }
 
-/// `tsuyomi-repository` v0. Every field here is information the host is already required to check by
-/// `hxp-package-v1` §Trust §Updates; the index only saves a download, it never grants anything.
+/// `tsuyomi-repository` v1, the catalog `tsuyomi-extensions` publishes. The envelope is signed by a
+/// root key the host already holds; the catalog carries the publisher keys packages are signed with,
+/// so the root vouches for publishers and the index itself never grants anything.
 public enum RepositoryIndexCodec {
     public static let maximumIndexBytes = 1024 * 1024
     public static let maximumPackages = 512
-    public static let maximumRevocations = 512
-    static let signaturePrefix = Data("tsuyomi-repository-v0\u{0}".utf8)
-    static let revocationPrefix = Data("tsuyomi-revocation-v0\u{0}".utf8)
+    public static let maximumPublishers = 32
+    static let maximumLifetime: TimeInterval = 30 * 24 * 60 * 60
+    static let signaturePrefix = Data("tsuyomi-repository-v1\u{0}".utf8)
 
-    private static let reasonCodes: Set<String> = ["compromised", "malicious", "superseded", "other"]
-
-    public static func decode(
-        indexBytes: Data,
-        signature: Data,
-        now: Date,
-        expectedPublicKey: Data? = nil
-    ) throws -> RepositoryIndex {
-        guard indexBytes.count <= maximumIndexBytes else { throw RepositoryError.indexTooLarge }
-        guard let root = try? JSONDecoder().decode(JSONValue.self, from: indexBytes).objectValue else {
+    public static func decode(_ bytes: Data, rootPublicKey: Data, now: Date) throws -> RepositoryIndex {
+        guard bytes.count <= maximumIndexBytes else { throw RepositoryError.indexTooLarge }
+        guard let root = try? JSONValue.decode(bytes).objectValue,
+              hasKeys(root, ["format", "version", "keyId", "signed", "signature"]) else {
             throw RepositoryError.invalidIndex
         }
-        guard root.string("format") == "tsuyomi-repository", root.int("version") == 0 else {
+        guard root.string("format") == "tsuyomi-repository", root.int("version") == 1 else {
             throw RepositoryError.unsupportedFormat
         }
-        let publisher = try publisher(root)
-        if let expectedPublicKey, expectedPublicKey != publisher.publicKey {
-            throw RepositoryError.publisherNotTrusted
-        }
-        try verify(
-            message: signaturePrefix + (try canonical(root)),
-            signature: signature,
-            publicKey: publisher.publicKey
-        )
-        guard let repositoryId = root.string("repositoryId"), Grammar.isStrictSourceId(repositoryId) else {
+        guard let rootKeyId = root.string("keyId"), isKeyId(rootKeyId),
+              let signature = root.string("signature").flatMap(base64),
+              let signed = root.object("signed") else {
             throw RepositoryError.invalidIndex
         }
-        let display = try display(root.object("display"))
-        guard let issuedAt = root.instant("issuedAt"), let expiresAt = root.instant("expiresAt"),
-              issuedAt < expiresAt else {
+        guard signature.count == 64,
+              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: rootPublicKey),
+              let canonical = try? Rfc8785.canonicalize(.object(signed)),
+              key.isValidSignature(signature, for: signaturePrefix + canonical) else {
+            throw RepositoryError.invalidSignature
+        }
+        guard hasKeys(signed, ["repositoryId", "sequence", "issuedAt", "expiresAt", "publishers", "packages", "revocations"]),
+              let repositoryId = signed.string("repositoryId"), Grammar.isStrictSourceId(repositoryId),
+              let sequence = signed.int("sequence"), sequence > 0,
+              let issuedAt = signed.instant("issuedAt"), let expiresAt = signed.instant("expiresAt"),
+              issuedAt < expiresAt, expiresAt.timeIntervalSince(issuedAt) <= maximumLifetime else {
             throw RepositoryError.invalidIndex
         }
         guard now < expiresAt else { throw RepositoryError.indexExpired }
+        let publishers = try publishers(signed)
         return RepositoryIndex(
             repositoryId: repositoryId,
-            displayName: display.name,
-            summary: display.summary,
-            publisher: publisher,
+            sequence: sequence,
+            rootKeyId: rootKeyId,
             issuedAt: issuedAt,
             expiresAt: expiresAt,
-            packages: try packages(root),
-            revocations: try revocations(root, publisher: publisher)
+            publishers: publishers,
+            packages: try packages(signed, publisherKeyIds: Set(publishers.map(\.keyId))),
+            revocations: try revocations(signed)
         )
     }
 
-    private static func publisher(_ root: [String: JSONValue]) throws -> RepositoryPublisher {
-        guard let object = root.object("publisher"),
-              let keyId = object.string("keyId"), Grammar.hasCodePoints(keyId, in: 1...128),
-              let hex = object.string("publicKey"), hex.count == 64,
-              let publicKey = Data(hex: hex) else {
-            throw RepositoryError.invalidIndex
-        }
-        return RepositoryPublisher(keyId: keyId, publicKey: publicKey)
+    /// The sequence of a catalog this host already verified and cached. It is read without a second
+    /// verification because only verified bytes are ever written to the cache; it exists so a refresh
+    /// can refuse a catalog older than the one it replaces even after the cached one has expired.
+    public static func sequence(ofCached bytes: Data) -> Int? {
+        (try? JSONValue.decode(bytes).objectValue)?.object("signed")?.int("sequence")
     }
 
-    private static func display(_ object: [String: JSONValue]?) throws -> (name: String, summary: String) {
-        guard let object,
-              let name = object.string("name"), Grammar.hasCodePoints(name, in: 1...120),
-              let summary = object.string("summary"), Grammar.hasCodePoints(summary, in: 1...120) else {
+    private static func publishers(_ signed: [String: JSONValue]) throws -> [RepositoryPublisher] {
+        guard let rows = signed.array("publishers"), rows.count <= maximumPublishers else {
             throw RepositoryError.invalidIndex
         }
-        return (name, summary)
+        var publishers: [RepositoryPublisher] = []
+        var keyIds = Set<String>()
+        var fingerprints = Set<String>()
+        for row in rows {
+            guard let object = row.objectValue,
+                  hasKeys(object, ["keyId", "publicKey"], optional: ["fingerprint"]),
+                  let keyId = object.string("keyId"), isKeyId(keyId),
+                  let publicKey = object.string("publicKey").flatMap(base64), publicKey.count == 32 else {
+                throw RepositoryError.invalidIndex
+            }
+            let fingerprint = Sha256.hex(publicKey)
+            if let declared = object.string("fingerprint"), declared != fingerprint {
+                throw RepositoryError.invalidIndex
+            }
+            guard keyIds.insert(keyId).inserted, fingerprints.insert(fingerprint).inserted else {
+                throw RepositoryError.invalidIndex
+            }
+            publishers.append(RepositoryPublisher(keyId: keyId, publicKey: publicKey))
+        }
+        return publishers
     }
 
-    private static func packages(_ root: [String: JSONValue]) throws -> [RepositoryPackage] {
-        guard let rows = root.array("packages"), rows.count <= maximumPackages else {
+    private static func packages(
+        _ signed: [String: JSONValue],
+        publisherKeyIds: Set<String>
+    ) throws -> [RepositoryPackage] {
+        guard let rows = signed.array("packages"), rows.count <= maximumPackages else {
             throw RepositoryError.invalidIndex
         }
         var packages: [RepositoryPackage] = []
         var seen = Set<String>()
         for row in rows {
             guard let object = row.objectValue,
+                  hasKeys(
+                      object,
+                      [
+                          "id", "name", "version", "summary", "language", "license", "sourceUrl",
+                          "sourceRevision", "downloadUrl", "size", "sha256", "hostApi", "publisherKeyId"
+                      ],
+                      optional: ["legacyMigration"]
+                  ),
                   let rawId = object.string("id"), let id = try? SourceId(rawId),
-                  let rawVersion = object.string("version"),
-                  let version = try? SemanticVersion(rawVersion),
-                  let hostApi = object.object("hostApi"),
-                  let rawMinimum = hostApi.string("minInclusive"),
-                  let minimum = try? SemanticVersion(rawMinimum),
-                  let rawMaximum = hostApi.string("maxExclusive"),
-                  let maximum = try? SemanticVersion(rawMaximum),
-                  minimum < maximum,
-                  let capabilities = object.object("capabilities"),
-                  let parsed = try? HxpCapabilityParser.parse(capabilities),
-                  let file = object.string("file"),
+                  let name = object.string("name"), Grammar.hasCodePoints(name, in: 1...128),
+                  let version = object.string("version").flatMap({ try? SemanticVersion($0) }),
+                  let summary = object.string("summary"), Grammar.hasCodePoints(summary, in: 1...1024),
+                  let language = object.string("language"), Grammar.hasCodePoints(language, in: 1...64),
+                  let license = object.string("license"), Grammar.hasCodePoints(license, in: 1...128),
+                  let sourceUrl = object.string("sourceUrl"),
+                  let sourceRevision = object.string("sourceRevision"), isCommit(sourceRevision),
+                  let downloadUrl = object.string("downloadUrl"),
+                  let size = object.int("size"), size > 0,
                   let digest = object.string("sha256"), Grammar.isSha256(digest),
-                  let size = object.int("sizeBytes"), size > 0 else {
+                  let hostApi = object.object("hostApi"), hasKeys(hostApi, ["minInclusive", "maxExclusive"]),
+                  let minimum = hostApi.string("minInclusive").flatMap({ try? SemanticVersion($0) }),
+                  let maximum = hostApi.string("maxExclusive").flatMap({ try? SemanticVersion($0) }),
+                  minimum < maximum,
+                  let publisherKeyId = object.string("publisherKeyId"), publisherKeyIds.contains(publisherKeyId),
+                  seen.insert(rawId).inserted else {
                 throw RepositoryError.invalidIndex
             }
-            guard seen.insert("\(rawId)\u{0}\(rawVersion)").inserted else {
-                throw RepositoryError.invalidIndex
-            }
-            try requireSafeRelativePath(file)
             guard size <= HxpArchiveLimits().maximumArchiveBytes else { throw RepositoryError.packageTooLarge }
-            let display = try display(object.object("display"))
             packages.append(
                 RepositoryPackage(
                     id: id,
                     version: version,
                     hostApiMinInclusive: minimum,
                     hostApiMaxExclusive: maximum,
-                    displayName: display.name,
-                    summary: display.summary,
-                    capabilities: parsed,
-                    file: file,
+                    displayName: name,
+                    summary: summary,
+                    language: language,
+                    license: license,
+                    sourceUrl: try requireHttpsUrl(sourceUrl),
+                    sourceRevision: sourceRevision,
+                    downloadUrl: try requireHttpsUrl(downloadUrl),
                     sha256: digest,
-                    sizeBytes: size
+                    sizeBytes: size,
+                    publisherKeyId: publisherKeyId,
+                    legacyMigration: try legacyMigration(object["legacyMigration"])
                 )
             )
         }
         return packages
     }
 
-    /// A revocation is only honoured when the repository's own publisher signed it, so a mirror
-    /// cannot inject a revocation for someone else's key.
-    private static func revocations(
-        _ root: [String: JSONValue],
-        publisher: RepositoryPublisher
-    ) throws -> [RepositoryRevocation] {
-        guard let rows = root.array("revocations"), rows.count <= maximumRevocations else {
+    private static func legacyMigration(_ value: JSONValue?) throws -> LegacyMigration? {
+        guard let value else { return nil }
+        guard let object = value.objectValue,
+              hasKeys(object, ["fromPublisherFingerprint", "fromPackageSha256"]),
+              let publisher = object.string("fromPublisherFingerprint"), Grammar.isSha256(publisher),
+              let package = object.string("fromPackageSha256"), Grammar.isSha256(package) else {
             throw RepositoryError.invalidIndex
         }
-        var revocations: [RepositoryRevocation] = []
-        for row in rows {
-            guard var object = row.objectValue,
-                  let hex = object.string("signature"), hex.count == 128,
-                  let signature = Data(hex: hex),
-                  let reasonCode = object.string("reasonCode"), reasonCodes.contains(reasonCode),
-                  let issuedAt = object.instant("issuedAt"),
-                  let expiresAt = object.instant("expiresAt"), issuedAt < expiresAt,
-                  let target = object.object("target") else {
-                throw RepositoryError.invalidIndex
-            }
-            let resolved: RevocationTarget
-            if let keyId = target.string("keyId"), Grammar.hasCodePoints(keyId, in: 1...128) {
-                resolved = .keyId(keyId)
-            } else if let digest = target.string("packageDigest"), Grammar.isSha256(digest) {
-                resolved = .packageDigest(digest)
-            } else {
-                throw RepositoryError.invalidIndex
-            }
-            object.removeValue(forKey: "signature")
-            try verify(
-                message: revocationPrefix + (try canonical(object)),
-                signature: signature,
-                publicKey: publisher.publicKey
-            )
-            revocations.append(
-                RepositoryRevocation(
-                    target: resolved,
-                    reasonCode: reasonCode,
-                    issuedAt: issuedAt,
-                    expiresAt: expiresAt,
-                    signature: signature
-                )
-            )
-        }
-        return revocations
+        return LegacyMigration(fromPublisherFingerprint: publisher, fromPackageSha256: package)
     }
 
-    /// Package paths are joined onto the repository base, so anything that could climb out of it or
-    /// point at another host is rejected before a request is built.
-    static func requireSafeRelativePath(_ path: String) throws {
-        guard !path.isEmpty, path.utf16.count <= 512,
-              !path.hasPrefix("/"), !path.contains("//"), !path.contains(".."),
-              !path.contains(":"), !path.contains("\\"), !path.contains("?"), !path.contains("#"),
-              path.allSatisfy({ $0.isASCII && !$0.isWhitespace }) else {
-            throw RepositoryError.unsafePackagePath
+    private static func revocations(_ signed: [String: JSONValue]) throws -> RepositoryRevocations {
+        guard let object = signed.object("revocations"),
+              hasKeys(object, ["publisherFingerprints", "packageDigests"]) else {
+            throw RepositoryError.invalidIndex
         }
+        return RepositoryRevocations(
+            publisherFingerprints: try digests(object, "publisherFingerprints", limit: maximumPublishers),
+            packageDigests: try digests(object, "packageDigests", limit: maximumPackages)
+        )
+    }
+
+    private static func digests(_ object: [String: JSONValue], _ name: String, limit: Int) throws -> Set<String> {
+        guard let rows = object.array(name), rows.count <= limit else { throw RepositoryError.invalidIndex }
+        var digests = Set<String>()
+        for row in rows {
+            guard let digest = row.stringValue, Grammar.isSha256(digest), digests.insert(digest).inserted else {
+                throw RepositoryError.invalidIndex
+            }
+        }
+        return digests
+    }
+
+    /// A catalog URL is fetched as written and a package URL is downloaded as written, so both are
+    /// held to the same shape: HTTPS, a host, no credentials, no fragment, printable ASCII only.
+    static func requireHttpsUrl(_ text: String) throws -> URL {
+        guard text.utf8.count <= 4_096,
+              text.allSatisfy({ $0.isASCII && !$0.isWhitespace && $0 != "\\" && $0 != "#" }),
+              let components = URLComponents(string: text),
+              components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              let url = components.url else {
+            throw RepositoryError.unsafePackageUrl
+        }
+        return url
+    }
+
+    static func isKeyId(_ value: String) -> Bool {
+        Grammar.isToken(value, limit: 128) && (8...128).contains(value.unicodeScalars.count)
+    }
+
+    static func base64(_ text: String) -> Data? {
+        guard let bytes = Data(base64Encoded: text), bytes.base64EncodedString() == text else { return nil }
+        return bytes
     }
 
     static func hex(_ bytes: Data) -> String {
         bytes.map { String(format: "%02x", $0) }.joined()
     }
 
-    private static func canonical(_ object: [String: JSONValue]) throws -> Data {
-        guard let bytes = try? Rfc8785.canonicalize(.object(object)) else {
-            throw RepositoryError.invalidIndex
-        }
-        return bytes
+    private static func isCommit(_ value: String) -> Bool {
+        value.count == 40 && value.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) }
     }
 
-    private static func verify(message: Data, signature: Data, publicKey: Data) throws {
-        guard signature.count == 64,
-              let key = try? Curve25519.Signing.PublicKey(rawRepresentation: publicKey),
-              key.isValidSignature(signature, for: message) else {
-            throw RepositoryError.invalidSignature
-        }
+    private static func hasKeys(_ object: [String: JSONValue], _ required: Set<String>, optional: Set<String> = []) -> Bool {
+        required.isSubset(of: object.keys) && object.keys.allSatisfy { required.contains($0) || optional.contains($0) }
     }
 }

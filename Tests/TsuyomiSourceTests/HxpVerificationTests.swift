@@ -105,7 +105,7 @@ final class HxpVerificationTests: XCTestCase {
         }
 
         let packageKeys = try fixtureKeys()
-        packageKeys.revokePackage(verified.manifest.contentDigest)
+        packageKeys.revokePackage(verified.packageSha256)
         XCTAssertThrowsError(try verifier(packageKeys).verify(archiveBytes: archive)) { error in
             XCTAssertEqual(error as? HxpVerificationError, .revokedPackage)
         }

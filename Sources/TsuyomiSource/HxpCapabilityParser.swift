@@ -4,14 +4,17 @@ import Foundation
 import TsuyomiProtocol
 
 /// Capability parsing is where a manifest stops being data and becomes a grant, so every cross-field
-/// rule is enforced here: cookies and web login may only name origins the network capability already
-/// grants, and a remote-write surface exists only when the matching policy is signed for it.
+/// rule is enforced here: cookies, web login and update checks may only name origins the network
+/// capability already grants, and a remote-library surface exists only when the matching policy is
+/// signed for it. Admission follows the Android host's rules even for operations this host never
+/// performs (remove, move, targets, update checks): a package is accepted or refused on the same
+/// grounds everywhere, and an unperformed operation grants nothing.
 enum HxpCapabilityParser {
     static func parse(_ value: [String: JSONValue]) throws -> HxpCapabilities {
         try HxpManifestParser.requireKeys(
             value,
             required: ["network", "cookies", "webLogin", "remoteLibrary", "storage"],
-            optional: ["home"]
+            optional: ["home", "updateCheck"]
         )
         let network = try HxpManifestParser.object(value, "network")
         try HxpManifestParser.requireKeys(
@@ -55,6 +58,12 @@ enum HxpCapabilityParser {
             throw HxpVerificationError.invalidManifest
         }
 
+        var updateCheck: HxpUpdateCheckCapability?
+        if let raw = value["updateCheck"] {
+            guard let object = raw.objectValue else { throw HxpVerificationError.invalidManifest }
+            updateCheck = try parseUpdateCheck(object, networkOrigins)
+        }
+
         let remoteLibrary = try HxpManifestParser.object(value, "remoteLibrary")
         try HxpManifestParser.requireKeys(
             remoteLibrary,
@@ -79,11 +88,42 @@ enum HxpCapabilityParser {
             cookies: HxpCookieCapability(sourceScoped: cookieMode == "sourceScoped", origins: cookieOrigins),
             webLogin: HxpWebLoginCapability(enabled: webLoginEnabled, origins: webLoginOrigins),
             home: HxpHomeCapability(enabled: homeEnabled),
+            updateCheck: updateCheck,
             remoteLibrary: HxpRemoteLibraryCapability(read: read, writeOperations: writes, policies: policies),
             storageQuotaBytes: try HxpManifestParser.integer(storage, "quotaBytes", 0, 10_485_760)
         )
     }
 
+    private static func parseUpdateCheck(
+        _ value: [String: JSONValue],
+        _ networkOrigins: Set<HttpsOrigin>
+    ) throws -> HxpUpdateCheckCapability {
+        try HxpManifestParser.requireKeys(
+            value,
+            required: ["version", "origin", "method", "path", "parameters"],
+            optional: ["referrerPath"]
+        )
+        guard value.int("version") == 2,
+              try HxpManifestParser.text(value, "method") == NetworkMethod.get.rawValue else {
+            throw HxpVerificationError.capabilityPolicyViolation
+        }
+        let surface = try parseSurface(value, networkOrigins)
+        let parameters = try parseParameters(value, allowed: [.remoteBookId])
+        guard (1...16).contains(parameters.count),
+              parameters.filter({ if case .remoteBookId = $0 { return true } else { return false } }).count == 1 else {
+            throw HxpVerificationError.capabilityPolicyViolation
+        }
+        return HxpUpdateCheckCapability(
+            origin: surface.origin,
+            path: surface.path,
+            referrerPath: surface.referrerPath,
+            parameters: parameters
+        )
+    }
+
+    /// A policy may exist only for an operation that is granted, and the operations this host performs
+    /// (`read`, `add`) must have one. The rest (`targets`, `remove`, `move`) are validated when present
+    /// and tolerated when absent: this host never issues them, and the acceptance fixtures predate them.
     private static func parsePolicies(
         _ remoteLibrary: [String: JSONValue],
         networkOrigins: Set<HttpsOrigin>,
@@ -91,22 +131,26 @@ enum HxpCapabilityParser {
         writes: Set<String>
     ) throws -> [RemoteOperation: HxpRemoteOperationPolicy] {
         var required = Set<String>()
-        if read { required.insert("read") }
+        var allowed = Set<String>()
+        if read {
+            required.insert("read")
+            allowed.insert("targets")
+        }
         if writes.contains("add") { required.insert("add") }
+        allowed.formUnion(writes.intersection(["remove", "move"]))
+        allowed.formUnion(required)
         guard let raw = remoteLibrary["policies"] else {
             if required.isEmpty { return [:] }
             throw HxpVerificationError.capabilityPolicyViolation
         }
-        guard let object = raw.objectValue, Set(object.keys) == required else {
+        guard let object = raw.objectValue, required.isSubset(of: object.keys),
+              Set(object.keys).isSubset(of: allowed) else {
             throw HxpVerificationError.capabilityPolicyViolation
         }
         var policies: [RemoteOperation: HxpRemoteOperationPolicy] = [:]
         for (name, value) in object {
-            let operation: RemoteOperation
-            switch name {
-            case "read": operation = .read
-            case "add": operation = .add
-            default: throw HxpVerificationError.capabilityPolicyViolation
+            guard let operation = RemoteOperation(rawValue: name) else {
+                throw HxpVerificationError.capabilityPolicyViolation
             }
             guard let policyObject = value.objectValue else { throw HxpVerificationError.invalidManifest }
             policies[operation] = try parsePolicy(operation, policyObject, networkOrigins)
@@ -124,54 +168,38 @@ enum HxpCapabilityParser {
             required: ["origin", "method", "path", "parameters"],
             optional: ["referrerPath", "redirects"]
         )
-        guard let origin = try? HttpsOrigin(try HxpManifestParser.text(value, "origin")) else {
-            throw HxpVerificationError.invalidManifest
-        }
-        guard networkOrigins.contains(origin) else { throw HxpVerificationError.capabilityPolicyViolation }
+        let surface = try parseSurface(value, networkOrigins)
         guard let method = NetworkMethod(rawValue: try HxpManifestParser.text(value, "method")) else {
             throw HxpVerificationError.invalidManifest
         }
-        let expectedMethod: NetworkMethod = operation == .read ? .get : .post
-        guard method == expectedMethod else { throw HxpVerificationError.capabilityPolicyViolation }
-        let path = try HxpManifestParser.text(value, "path")
-        guard HxpManifestParser.isPolicyPath(path) else { throw HxpVerificationError.invalidManifest }
-        let referrerPath = value.string("referrerPath")
-        if let referrerPath, !HxpManifestParser.isPolicyPath(referrerPath) {
-            throw HxpVerificationError.invalidManifest
+        let allowedMethods: Set<NetworkMethod>
+        switch operation {
+        case .read, .targets: allowedMethods = [.get]
+        case .add: allowedMethods = [.get, .post]
+        case .remove, .move: allowedMethods = [.post]
         }
+        guard allowedMethods.contains(method) else { throw HxpVerificationError.capabilityPolicyViolation }
 
-        var parameters: [HxpRemoteParameter] = []
-        let rawParameters = try HxpManifestParser.object(value, "parameters")
-        for name in CanonicalOrder.sorted(rawParameters.keys) {
-            guard name.contains(where: { !$0.isWhitespace }), Grammar.codePointCount(name) <= 256,
-                  let rule = rawParameters[name]?.objectValue else {
-                throw HxpVerificationError.invalidManifest
-            }
-            switch rule.string("kind") {
-            case "fixed":
-                try HxpManifestParser.requireKeys(rule, required: ["kind", "value"])
-                parameters.append(
-                    .fixed(name: name, value: try HxpManifestParser.bounded(
-                        try HxpManifestParser.text(rule, "value"), 0, 8_192
-                    ))
-                )
-            case "remoteBookId":
-                try HxpManifestParser.requireKeys(rule, required: ["kind"])
-                guard operation == .add else { throw HxpVerificationError.capabilityPolicyViolation }
-                parameters.append(.remoteBookId(name: name))
-            case "cursor":
-                try HxpManifestParser.requireKeys(rule, required: ["kind"])
+        let parameters = try parseParameters(value, allowed: [.remoteBookId, .cursor, .targetId])
+        var bookIds = 0
+        var cursors = 0
+        var targetIds = 0
+        for parameter in parameters {
+            switch parameter {
+            case .fixed: break
+            case .remoteBookId: bookIds += 1
+            case .cursor(let name):
                 guard operation == .read, name == "cursor" else {
                     throw HxpVerificationError.capabilityPolicyViolation
                 }
-                parameters.append(.cursor(name: name))
-            default:
-                throw HxpVerificationError.invalidManifest
+                cursors += 1
+            case .targetId: targetIds += 1
             }
         }
-        let remoteBookIdCount = parameters.filter { if case .remoteBookId = $0 { return true } else { return false } }
-        let cursorCount = parameters.filter { if case .cursor = $0 { return true } else { return false } }
-        guard remoteBookIdCount.count == (operation == .add ? 1 : 0), cursorCount.count <= 1 else {
+        let writes: Set<RemoteOperation> = [.add, .remove, .move]
+        guard bookIds == (writes.contains(operation) ? 1 : 0),
+              targetIds == (operation == .move ? 1 : 0),
+              cursors <= 1 else {
             throw HxpVerificationError.capabilityPolicyViolation
         }
 
@@ -188,10 +216,10 @@ enum HxpCapabilityParser {
         }
         return HxpRemoteOperationPolicy(
             operation: operation,
-            origin: origin,
+            origin: surface.origin,
             method: method,
-            path: path,
-            referrerPath: referrerPath,
+            path: surface.path,
+            referrerPath: surface.referrerPath,
             parameters: parameters,
             redirects: redirects
         )
@@ -206,40 +234,77 @@ enum HxpCapabilityParser {
             required: ["origin", "method", "path", "parameters"],
             optional: ["referrerPath"]
         )
+        let surface = try parseSurface(value, networkOrigins)
+        guard try HxpManifestParser.text(value, "method") == NetworkMethod.get.rawValue else {
+            throw HxpVerificationError.capabilityPolicyViolation
+        }
+        var parameters: [String: String] = [:]
+        for parameter in try parseParameters(value, allowed: []) {
+            if case .fixed(let name, let fixed) = parameter { parameters[name] = fixed }
+        }
+        return HxpRemoteRedirectTarget(
+            origin: surface.origin,
+            method: .get,
+            path: surface.path,
+            referrerPath: surface.referrerPath,
+            parameters: parameters
+        )
+    }
+
+    private static func parseSurface(
+        _ value: [String: JSONValue],
+        _ networkOrigins: Set<HttpsOrigin>
+    ) throws -> (origin: HttpsOrigin, path: String, referrerPath: String?) {
         guard let origin = try? HttpsOrigin(try HxpManifestParser.text(value, "origin")) else {
             throw HxpVerificationError.invalidManifest
         }
         guard networkOrigins.contains(origin) else { throw HxpVerificationError.capabilityPolicyViolation }
-        guard try HxpManifestParser.text(value, "method") == NetworkMethod.get.rawValue else {
-            throw HxpVerificationError.capabilityPolicyViolation
-        }
         let path = try HxpManifestParser.text(value, "path")
         guard HxpManifestParser.isPolicyPath(path) else { throw HxpVerificationError.invalidManifest }
         let referrerPath = value.string("referrerPath")
         if let referrerPath, !HxpManifestParser.isPolicyPath(referrerPath) {
             throw HxpVerificationError.invalidManifest
         }
-        var parameters: [String: String] = [:]
+        return (origin, path, referrerPath)
+    }
+
+    private enum ParameterKind: String {
+        case remoteBookId
+        case cursor
+        case targetId
+    }
+
+    /// `fixed` is always admissible; every other kind is admissible only where the caller says so.
+    private static func parseParameters(
+        _ value: [String: JSONValue],
+        allowed: Set<ParameterKind>
+    ) throws -> [HxpRemoteParameter] {
+        var parameters: [HxpRemoteParameter] = []
         let rawParameters = try HxpManifestParser.object(value, "parameters")
-        for (name, rule) in rawParameters {
+        guard rawParameters.count <= 64 else { throw HxpVerificationError.invalidManifest }
+        for name in CanonicalOrder.sorted(rawParameters.keys) {
             guard name.contains(where: { !$0.isWhitespace }), Grammar.codePointCount(name) <= 256,
-                  let ruleObject = rule.objectValue else {
+                  let rule = rawParameters[name]?.objectValue, let kind = rule.string("kind") else {
                 throw HxpVerificationError.invalidManifest
             }
-            try HxpManifestParser.requireKeys(ruleObject, required: ["kind", "value"])
-            guard ruleObject.string("kind") == "fixed" else {
-                throw HxpVerificationError.capabilityPolicyViolation
+            if kind == "fixed" {
+                try HxpManifestParser.requireKeys(rule, required: ["kind", "value"])
+                parameters.append(
+                    .fixed(name: name, value: try HxpManifestParser.bounded(
+                        try HxpManifestParser.text(rule, "value"), 0, 8_192
+                    ))
+                )
+                continue
             }
-            parameters[name] = try HxpManifestParser.bounded(
-                try HxpManifestParser.text(ruleObject, "value"), 0, 8_192
-            )
+            guard let parsed = ParameterKind(rawValue: kind) else { throw HxpVerificationError.invalidManifest }
+            try HxpManifestParser.requireKeys(rule, required: ["kind"])
+            guard allowed.contains(parsed) else { throw HxpVerificationError.capabilityPolicyViolation }
+            switch parsed {
+            case .remoteBookId: parameters.append(.remoteBookId(name: name))
+            case .cursor: parameters.append(.cursor(name: name))
+            case .targetId: parameters.append(.targetId(name: name))
+            }
         }
-        return HxpRemoteRedirectTarget(
-            origin: origin,
-            method: .get,
-            path: path,
-            referrerPath: referrerPath,
-            parameters: parameters
-        )
+        return parameters
     }
 }

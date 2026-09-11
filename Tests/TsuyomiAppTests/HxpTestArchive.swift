@@ -6,13 +6,28 @@ import TsuyomiProtocol
 import XCTest
 @testable import TsuyomiSource
 
-/// Rebuilds the acceptance fixture archive with a different version and re-signs it with the public
-/// fixture seed. The market's update path cannot be exercised without a second, higher version, and
-/// nothing signed with this seed can load in a release build.
+/// Rebuilds the acceptance fixture archive with a different version and publisher and re-signs it.
+/// The market's update path cannot be exercised without a second, higher version, and a publisher
+/// change cannot be exercised without a second key; nothing signed here can load in a release build.
 enum HxpTestArchive {
-    static let seed = Data((1...32).map(UInt8.init))
+    struct Publisher {
+        let keyId: String
+        let seed: Data
 
-    static func repackaged(_ original: Data, version: String) throws -> Data {
+        func publicKey() throws -> Data {
+            try Curve25519.Signing.PrivateKey(rawRepresentation: seed).publicKey.rawRepresentation
+        }
+
+        func fingerprint() throws -> String {
+            Sha256.hex(try publicKey())
+        }
+    }
+
+    static let seed = Data((1...32).map(UInt8.init))
+    static let fixture = Publisher(keyId: Phase2TestPublisher.keyId, seed: seed)
+    static let successor = Publisher(keyId: "tsuyomi-test-successor", seed: Data((65...96).map(UInt8.init)))
+
+    static func repackaged(_ original: Data, version: String, publisher: Publisher = fixture) throws -> Data {
         let limits = HxpArchiveLimits()
         let reader = try ZipReader(
             original,
@@ -26,10 +41,13 @@ enum HxpTestArchive {
             )
         }
         guard let manifestBytes = entries.first(where: { $0.name == "manifest.json" })?.bytes,
-              var manifest = try JSONDecoder().decode(JSONValue.self, from: manifestBytes).objectValue else {
+              var manifest = try JSONDecoder().decode(JSONValue.self, from: manifestBytes).objectValue,
+              var signing = manifest.object("signing") else {
             throw HxpVerificationError.invalidManifest
         }
         manifest["version"] = .string(version)
+        signing["keyId"] = .string(publisher.keyId)
+        manifest["signing"] = .object(signing)
         let canonicalManifest = try Rfc8785.canonicalize(.object(manifest))
         // The digest covers the file list, not the version, so bumping the version leaves it intact.
         guard let contentDigest = manifest.object("integrity")?.string("contentDigest") else {
@@ -39,7 +57,7 @@ enum HxpTestArchive {
         message.append(canonicalManifest)
         message.append(0)
         message.append(Data(contentDigest.utf8))
-        let signature = try Curve25519.Signing.PrivateKey(rawRepresentation: seed).signature(for: message)
+        let signature = try Curve25519.Signing.PrivateKey(rawRepresentation: publisher.seed).signature(for: message)
 
         var rebuilt: [(name: String, bytes: Data)] = []
         for entry in entries {

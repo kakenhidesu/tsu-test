@@ -33,28 +33,47 @@ public actor HostNetworkGateway {
         try await cookieJar.seed(grant, origin: origin, rawCookie: rawCookie)
     }
 
-    /// Fetches one static host-owned file — an extension repository's index, signature or archive.
+    /// Fetches one static host-owned file — an extension repository's catalog or a package archive.
     /// It carries no cookies and belongs to no source grant, so a repository can never read or set a
-    /// source's session, and request construction stays inside this actor.
+    /// source's session, and request construction stays inside this actor. Redirects are followed
+    /// only to HTTPS: release assets are served from a different host than the one linked, and the
+    /// bytes are still bound by the digest the caller checks afterwards.
     public func fetchStaticResource(url: URL, maximumBytes: Int) async throws -> Data {
-        guard url.scheme?.lowercased() == "https", maximumBytes > 0 else {
-            throw HostNetworkException(.invalidRequest)
-        }
-        let response = try await execute(
-            HostHttpRequest(
-                url: url,
-                method: .get,
-                headers: ["Accept": "application/octet-stream"],
-                decode: .auto,
-                body: nil,
-                referrer: nil,
-                timeoutMs: 20_000,
-                maximumResponseBytes: maximumBytes
+        guard maximumBytes > 0 else { throw HostNetworkException(.invalidRequest) }
+        var current = url
+        for redirectCount in 0...HostResponseDecoding.maximumRedirects {
+            guard current.scheme?.lowercased() == "https", current.user == nil, current.password == nil else {
+                throw HostNetworkException(.invalidRequest)
+            }
+            let response = try await execute(
+                HostHttpRequest(
+                    url: current,
+                    method: .get,
+                    headers: ["Accept": "application/octet-stream"],
+                    decode: .auto,
+                    body: nil,
+                    referrer: nil,
+                    timeoutMs: 30_000,
+                    maximumResponseBytes: maximumBytes
+                )
             )
-        )
-        guard response.status == 200 else { throw HostNetworkException(.transport) }
-        guard response.bytes.count <= maximumBytes else { throw HostNetworkException(.responseLimit) }
-        return response.bytes
+            guard response.finalUrl == current else { throw HostNetworkException(.redirectDisallowed) }
+            if (300...399).contains(response.status) {
+                guard redirectCount < HostResponseDecoding.maximumRedirects else {
+                    throw HostNetworkException(.redirectLimit)
+                }
+                guard let location = header(response.headers, "location"),
+                      let resolved = URL(string: location, relativeTo: current)?.absoluteURL else {
+                    throw HostNetworkException(.redirectDisallowed)
+                }
+                current = resolved
+                continue
+            }
+            guard response.status == 200 else { throw HostNetworkException(.transport) }
+            guard response.bytes.count <= maximumBytes else { throw HostNetworkException(.responseLimit) }
+            return response.bytes
+        }
+        throw HostNetworkException(.redirectLimit)
     }
 
     /// Fetches one display image through the same source/version cookie and verified-identity

@@ -4,9 +4,9 @@ import SwiftUI
 import TsuyomiSource
 import TsuyomiUI
 
-/// What a package would be allowed to do, read from the index before anything is downloaded. This is
-/// a preview only: the grant is decided by the manifest inside the archive, and a disagreement
-/// between the two stops the install.
+/// What the catalog says about a package before anything is downloaded. The catalog carries no
+/// capability preview: the grant is decided by the manifest inside the archive, which the review
+/// screen shows in full once the bytes have been verified.
 public struct PackageScreen: View {
     let package: RepositoryPackage
     @ObservedObject var model: RepositoryDetailModel
@@ -25,47 +25,19 @@ public struct PackageScreen: View {
                         value: "\(package.hostApiMinInclusive.original) ≤ x < \(package.hostApiMaxExclusive.original)"
                     )
                     LabeledContent("大小", value: PackageScreen.size(package.sizeBytes))
+                    LabeledContent("语言", value: package.language)
+                    LabeledContent("许可证", value: package.license)
                 }
-                Section("网络") {
-                    if package.capabilities.network.origins.isEmpty {
-                        Text("不访问网络")
-                    } else {
-                        ForEach(package.capabilities.network.origins.map(\.canonical).sorted(), id: \.self) { origin in
-                            Text(origin).font(.system(.footnote, design: .monospaced))
-                        }
-                    }
-                    LabeledContent("并发请求", value: "\(package.capabilities.network.maximumConcurrentRequests)")
-                    LabeledContent("单次响应上限", value: PackageScreen.size(package.capabilities.network.maximumResponseBytes))
+                Section("来源") {
+                    LabeledContent("发布者", value: package.publisherKeyId)
+                    Text(package.sourceUrl.absoluteString)
+                        .font(.system(.footnote, design: .monospaced))
+                    LabeledContent("源码修订", value: String(package.sourceRevision.prefix(12)))
                 }
-                Section("Cookie") {
-                    if package.capabilities.cookies.sourceScoped {
-                        ForEach(package.capabilities.cookies.origins.map(\.canonical).sorted(), id: \.self) { origin in
-                            Text(origin).font(.system(.footnote, design: .monospaced))
-                        }
-                    } else {
-                        Text("不使用 Cookie")
-                    }
-                }
-                Section("网站登录") {
-                    if package.capabilities.webLogin.enabled {
-                        ForEach(package.capabilities.webLogin.origins.map(\.canonical).sorted(), id: \.self) { origin in
-                            Text(origin).font(.system(.footnote, design: .monospaced))
-                        }
-                    } else {
-                        Text("不需要登录")
-                    }
-                }
-                Section("网站收藏") {
-                    Text(package.capabilities.remoteLibrary.read ? "可读取网站收藏" : "不读取网站收藏")
-                    if package.capabilities.remoteLibrary.writeOperations.isEmpty {
-                        Text("不写入网站收藏")
-                    } else {
-                        Text("可写入：\(package.capabilities.remoteLibrary.writeOperations.sorted().joined(separator: "、"))")
-                    }
-                }
-                Section("其他") {
-                    Text(package.capabilities.home.enabled ? "提供首页" : "不提供首页")
-                    LabeledContent("存储配额", value: PackageScreen.size(package.capabilities.storageQuotaBytes))
+                Section {
+                    Text("能力清单在下载并校验后的安装审批页里逐项显示；同意安装前不会授予任何能力。")
+                        .font(TsuyomiTheme.Typography.caption)
+                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 }
                 Section {
                     Button(action) {

@@ -3,8 +3,8 @@
 import Foundation
 import TsuyomiProtocol
 
-/// The checks that decide whether a package listed in an index may become the archive this host
-/// installs. They are one function because the index is only a hint: the manifest inside the
+/// The checks that decide whether a package listed in a catalog may become the archive this host
+/// installs. They are one function because the catalog is only a hint: the manifest inside the
 /// downloaded archive is what actually grants anything, and every way the two can disagree has to be
 /// refused in the same place.
 public enum RepositoryInstallPolicy {
@@ -19,10 +19,8 @@ public enum RepositoryInstallPolicy {
               Sha256.hex(archiveBytes) == listed.sha256 else {
             throw RepositoryError.packageDigestMismatch
         }
-        guard manifest.sourceId == listed.id, manifest.version == listed.version else {
-            throw RepositoryError.indexManifestMismatch
-        }
-        guard manifest.capabilities == listed.capabilities else {
+        guard manifest.sourceId == listed.id, manifest.version == listed.version,
+              manifest.publisherKeyId == listed.publisherKeyId else {
             throw RepositoryError.indexManifestMismatch
         }
         guard manifest.hostApiMinInclusive == listed.hostApiMinInclusive,

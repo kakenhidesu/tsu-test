@@ -65,11 +65,12 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 
 | 项 | 结果 |
 |---|---|
-| 六条拒绝输入 | `RepositoryIndexTests` 全绿：HTTP 基址、过期索引、错误签名、`sha256` 不匹配、能力与 manifest 不一致、版本回滚；另加不安全包路径（绝对路径 / `..` / 跨主机 / 空格）|
-| 索引格式 | `tsuyomi-repository` v0，Ed25519 detached 验签（`"tsuyomi-repository-v0"` 加 NUL 再接 RFC 8785 规范化）；撤销条目必须由该仓库自己的发布者密钥签名 |
-| 五个屏幕 | `extensions`、`extensionRepository`、`extensionPackage`、`extensionInstallReview`、`publisherKeys` 全部可达（来源列表顶栏进入）|
-| 工具 | `tools/repository/build-index.mjs`，Node 标准库，规范化函数复制自 `tsuyomi-extensions/tools/build-fixture.mjs` 并注明来源 |
-| 端到端 | `MarketJourneyTests`：假 HTTPS 主机（只服务 index.json/index.sig/*.hxp，其余 404）→ 添加仓库并确认发布者 → 安装 → 索引升到 99.0.0 → 状态变可更新 → 更新 → 索引带撤销条目 → 已装包停止验签、来源置为不可用；另一条断言移除仓库后已装扩展与发布者信任都还在 |
+| 拒绝输入 | `RepositoryIndexTests` 全绿：HTTP 目录地址 / 带 query 的地址 / 非 32 字节根公钥、过期目录、超过 30 天有效期、错误签名或错误根公钥、HTTP 下载地址（另加带凭据 / 片段 / 空格的 URL）、未列出的发布者、`sha256` 不匹配、发布者与 manifest 不一致、版本回滚 |
+| 目录格式 | `tsuyomi-repository` v1（与 `tsuyomi-extensions` 线上一致）：根密钥 Ed25519 签名（`"tsuyomi-repository-v1"` 加 NUL 再接 RFC 8785(`signed`)），目录列出发布者公钥，撤销按发布者指纹与归档 SHA-256，刷新拒绝更低的 `sequence` |
+| 内置官方仓库 | `OfficialRepository`：`OfficialRepositoryTests` 用内置根公钥验签已发布的目录快照（`Fixtures/official-index-v1-sequence-1.json`），换一把密钥即失败；`OfficialRepositorySeedTests` 断言首次启动预添加仓库与 `builtInOfficial` 发布者，且移除后下次启动不再回填 |
+| 官方包准入 | `CapabilityAdmissionTests`：官方 Wenku8 0.2.31 的能力声明（`updateCheck`、`targets`/`remove`/`move` policy、GET 的 `add`）被接受；非 GET 或越界 origin 的 `updateCheck`、无 `targetId` 的 `move`、GET 的 `remove`、未授予操作的 policy 全部拒绝 |
+| 五个屏幕 | `extensions`、`extensionRepository`、`extensionPackage`、`extensionInstallReview`、`publisherKeys` 全部可达（来源列表顶栏进入）；添加仓库需同时输入目录地址与根公钥，仓库详情页可逐个信任目录新增的发布者 |
+| 端到端 | `MarketJourneyTests`：假 HTTPS 主机（只服务 index-v1.json/*.hxp，其余 404）→ 添加仓库并确认根密钥与发布者 → 从缓存读到目录 → 安装 → 目录升到 99.0.0 → 状态变可更新 → 更新 → 目录带撤销 → 已装包停止验签、来源置为不可用；更低 `sequence` 的目录被拒（`INDEX_ROLLBACK`）；换发布者的包先因未信任被拒、信任后因未授权轮换被拒、目录带 `legacyMigration` 后才可更新；另一条断言移除仓库后已装扩展与发布者信任都还在 |
 
 ## M6 设置与打磨 — 进行中
 

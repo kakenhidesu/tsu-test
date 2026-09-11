@@ -33,6 +33,16 @@ public final class AppPreferences: ObservableObject {
         self.lastAppliedImportDigest = defaults.string(forKey: Key.lastAppliedImportDigest)
     }
 
+    /// Set once the built-in repository and its publisher have been written, so that removing either
+    /// afterwards is a decision that survives the next launch.
+    public var officialRepositorySeeded: Bool {
+        defaults.bool(forKey: Key.officialRepositorySeeded)
+    }
+
+    public func markOfficialRepositorySeeded() {
+        defaults.set(true, forKey: Key.officialRepositorySeeded)
+    }
+
     public func setColorScheme(_ value: ColorSchemePreference) {
         colorScheme = value
         defaults.set(value.rawValue, forKey: Key.colorScheme)
@@ -143,5 +153,6 @@ public final class AppPreferences: ObservableObject {
         static let readerProgressVisible = "reader_progress_visible"
         static let readerKeepAwake = "reader_keep_awake"
         static let lastAppliedImportDigest = "last_applied_import_digest"
+        static let officialRepositorySeeded = "official_repository_seeded"
     }
 }

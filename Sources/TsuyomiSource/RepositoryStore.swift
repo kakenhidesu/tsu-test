@@ -4,7 +4,7 @@ import Foundation
 import TsuyomiCore
 import TsuyomiProtocol
 
-/// The repositories the user added, and the cached index for each. Removing a repository drops its
+/// The repositories the user added, and the cached catalog for each. Removing a repository drops its
 /// cache but never uninstalls an extension and never forgets a publisher: trust is managed on its
 /// own screen, and an installed source keeps working after its repository is gone.
 public actor RepositoryStore {
@@ -37,27 +37,21 @@ public actor RepositoryStore {
         await load()
         guard descriptors.removeValue(forKey: repositoryId) != nil else { return }
         _ = try? await files.delete(cachePath(repositoryId))
-        _ = try? await files.delete(signaturePath(repositoryId))
         try await persist()
     }
 
-    public func cache(_ repositoryId: String, indexBytes: Data, signature: Data) async throws {
+    /// Only bytes that already passed `RepositoryIndexCodec.decode` may be cached; the cached
+    /// sequence is later trusted without a second verification.
+    public func cache(_ repositoryId: String, indexBytes: Data) async throws {
         _ = try await files.write(cachePath(repositoryId), bytes: indexBytes)
-        _ = try await files.write(signaturePath(repositoryId), bytes: signature)
     }
 
-    public func cached(_ repositoryId: String) async -> (index: Data, signature: Data)? {
-        guard let index = try? await files.read(cachePath(repositoryId)),
-              let signature = try? await files.read(signaturePath(repositoryId)) else { return nil }
-        return (index, signature)
+    public func cached(_ repositoryId: String) async -> Data? {
+        try? await files.read(cachePath(repositoryId))
     }
 
     private func cachePath(_ repositoryId: String) -> String {
         "repositories/\(Sha256.hex(repositoryId)).json"
-    }
-
-    private func signaturePath(_ repositoryId: String) -> String {
-        "repositories/\(Sha256.hex(repositoryId)).sig"
     }
 
     private func load() async {
@@ -69,17 +63,15 @@ public actor RepositoryStore {
         for row in rows {
             guard let object = row.objectValue,
                   let repositoryId = object.string("repositoryId"),
-                  let base = object.string("base").flatMap({ try? HttpsOrigin($0) }),
-                  let path = object.string("path"),
-                  let keyId = object.string("publisherKeyId"),
-                  let publicKey = object.string("publisherPublicKey").flatMap(Data.init(hex:)),
+                  let indexUrl = object.string("indexUrl").flatMap({ try? ExtensionRepositoryClient.normalize(indexUrl: $0) }),
+                  let rootKeyId = object.string("rootKeyId"),
+                  let rootPublicKey = object.string("rootPublicKey").flatMap(Data.init(hex:)),
                   let addedAt = object.instant("addedAt") else { continue }
             descriptors[repositoryId] = RepositoryDescriptor(
                 repositoryId: repositoryId,
-                base: base,
-                path: path,
-                publisherKeyId: keyId,
-                publisherPublicKey: publicKey,
+                indexUrl: indexUrl,
+                rootKeyId: rootKeyId,
+                rootPublicKey: rootPublicKey,
                 addedAt: addedAt
             )
         }
@@ -93,10 +85,9 @@ public actor RepositoryStore {
                     .map { descriptor in
                         .object([
                             "repositoryId": .string(descriptor.repositoryId),
-                            "base": .string(descriptor.base.canonical),
-                            "path": .string(descriptor.path),
-                            "publisherKeyId": .string(descriptor.publisherKeyId),
-                            "publisherPublicKey": .string(RepositoryIndexCodec.hex(descriptor.publisherPublicKey)),
+                            "indexUrl": .string(descriptor.indexUrl.absoluteString),
+                            "rootKeyId": .string(descriptor.rootKeyId),
+                            "rootPublicKey": .string(RepositoryIndexCodec.hex(descriptor.rootPublicKey)),
                             "addedAt": .string(ProtocolTimestamp.format(descriptor.addedAt))
                         ])
                     }

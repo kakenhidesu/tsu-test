@@ -1,0 +1,118 @@
+{
+  "network": {
+    "origins": [
+      "https://www.wenku8.net",
+      "https://img.wenku8.com",
+      "https://pic.wenku8.com",
+      "https://pic.777743.xyz"
+    ],
+    "maxConcurrentRequests": 2,
+    "requestTimeoutMs": 15000,
+    "maxResponseBytes": 2097152
+  },
+  "cookies": {
+    "mode": "sourceScoped",
+    "origins": [
+      "https://www.wenku8.net"
+    ]
+  },
+  "webLogin": {
+    "enabled": true,
+    "origins": [
+      "https://www.wenku8.net"
+    ]
+  },
+  "home": {
+    "enabled": true
+  },
+  "updateCheck": {
+    "version": 2,
+    "origin": "https://www.wenku8.net",
+    "method": "GET",
+    "path": "/modules/article/reader.php",
+    "parameters": {
+      "aid": {
+        "kind": "remoteBookId"
+      }
+    }
+  },
+  "remoteLibrary": {
+    "read": true,
+    "writeOperations": [
+      "add",
+      "remove",
+      "move"
+    ],
+    "policies": {
+      "read": {
+        "origin": "https://www.wenku8.net",
+        "method": "GET",
+        "path": "/modules/article/bookcase.php",
+        "parameters": {
+          "action": {
+            "kind": "fixed",
+            "value": "list"
+          },
+          "cursor": {
+            "kind": "cursor"
+          }
+        }
+      },
+      "targets": {
+        "origin": "https://www.wenku8.net",
+        "method": "GET",
+        "path": "/modules/article/bookcase.php",
+        "parameters": {
+          "action": {
+            "kind": "fixed",
+            "value": "targets"
+          }
+        }
+      },
+      "add": {
+        "origin": "https://www.wenku8.net",
+        "method": "GET",
+        "path": "/modules/article/addbookcase.php",
+        "parameters": {
+          "bid": {
+            "kind": "remoteBookId"
+          }
+        }
+      },
+      "remove": {
+        "origin": "https://www.wenku8.net",
+        "method": "POST",
+        "path": "/modules/article/bookcase.php",
+        "parameters": {
+          "action": {
+            "kind": "fixed",
+            "value": "remove"
+          },
+          "aid": {
+            "kind": "remoteBookId"
+          }
+        }
+      },
+      "move": {
+        "origin": "https://www.wenku8.net",
+        "method": "POST",
+        "path": "/modules/article/bookcase.php",
+        "parameters": {
+          "action": {
+            "kind": "fixed",
+            "value": "move"
+          },
+          "aid": {
+            "kind": "remoteBookId"
+          },
+          "target": {
+            "kind": "targetId"
+          }
+        }
+      }
+    }
+  },
+  "storage": {
+    "quotaBytes": 1048576
+  }
+}

@@ -25,10 +25,16 @@ public struct RepositoryDetailScreen: View {
                         .foregroundStyle(TsuyomiTheme.Palette.danger)
                 }
                 Section {
-                    Text(content.index.summary)
-                        .font(TsuyomiTheme.Typography.caption)
-                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                    LabeledContent("索引有效期至", value: ProtocolTimestampText.short(content.index.expiresAt))
+                    LabeledContent("目录序号", value: "\(content.index.sequence)")
+                    LabeledContent("根密钥", value: content.index.rootKeyId)
+                    LabeledContent("目录有效期至", value: ProtocolTimestampText.short(content.index.expiresAt))
+                }
+                if !content.untrustedPublishers.isEmpty {
+                    Section("尚未信任的发布者") {
+                        ForEach(content.untrustedPublishers, id: \.keyId) { publisher in
+                            publisherRow(publisher)
+                        }
+                    }
                 }
                 Section("扩展包") {
                     ForEach(content.rows) { row in
@@ -56,7 +62,7 @@ public struct RepositoryDetailScreen: View {
             Button("移除", role: .destructive) { onRemoved() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("只会删除它的缓存索引。已安装的扩展继续可用，发布者信任也保留，可在发布者页单独管理。")
+            Text("只会删除它的缓存目录。已安装的扩展继续可用，发布者信任也保留，可在发布者页单独管理。")
         }
         .sheet(
             isPresented: Binding(
@@ -80,6 +86,20 @@ public struct RepositoryDetailScreen: View {
             }
         }
         .task { await model.loadCached() }
+    }
+
+    /// A listed publisher the reader has not trusted yet. Its packages stay listed but cannot be
+    /// installed until this row is accepted, which is the same act as approving the repository.
+    private func publisherRow(_ publisher: RepositoryPublisher) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(publisher.keyId)
+                .font(TsuyomiTheme.Typography.body)
+            Text(publisher.fingerprint)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+            Button("信任这个发布者") { Task { await model.trustPublisher(publisher) } }
+                .disabled(model.isBusy)
+        }
     }
 
     private func packageRow(_ row: RepositoryPackageRow) -> some View {

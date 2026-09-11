@@ -71,12 +71,18 @@ public struct ExtensionInstaller: Sendable {
         self.store = store
     }
 
+    /// A publisher change is approved only by a root-signed migration that names the exact package
+    /// and publisher currently active; nothing the candidate says about itself can approve it.
     public func prepare(
         archiveBytes: Data,
-        rotationApproved: Bool = false
+        migration: LegacyMigration? = nil
     ) async throws -> PreparedExtensionInstall {
         let candidate = try verifier.verify(archiveBytes: archiveBytes)
         let active = try await readVerifiedActive(candidate.manifest.sourceId)
+        let rotationApproved = migration.map { migration in
+            active?.packageSha256 == migration.fromPackageSha256
+                && active?.publisherFingerprint == migration.fromPublisherFingerprint
+        } ?? false
         let outcome = ExtensionInstaller.evaluatePolicy(
             candidate: candidate.manifest,
             active: active?.manifest,
@@ -156,6 +162,9 @@ public struct ExtensionInstaller: Sendable {
         }
         if candidate.capabilities.home.enabled, previous?.home.enabled != true {
             added.insert("source-home:read")
+        }
+        if let updateCheck = candidate.capabilities.updateCheck, previous?.updateCheck != updateCheck {
+            added.insert("update-check:\(updateCheck.origin.canonical)\(updateCheck.path)")
         }
         if candidate.capabilities.remoteLibrary.read, previous?.remoteLibrary.read != true {
             added.insert("remote-library:read")

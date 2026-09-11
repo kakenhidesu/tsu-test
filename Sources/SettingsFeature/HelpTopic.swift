@@ -19,7 +19,8 @@ public struct HelpTopic: Identifiable, Hashable, Sendable {
         HelpTopic(
             id: "sources",
             question: "为什么书架里没有内容？",
-            answer: "应用本身不带任何来源。你需要先添加一个扩展仓库并安装来源扩展，才能搜索和阅读。"
+            answer: "应用不预装任何来源，只预置了官方扩展仓库。到「扩展」页刷新仓库并安装来源扩展，才能搜索和阅读；"
+                + "你也可以添加其他仓库。"
         ),
         HelpTopic(
             id: "trust",

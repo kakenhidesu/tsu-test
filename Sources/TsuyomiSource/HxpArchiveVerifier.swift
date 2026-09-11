@@ -86,7 +86,8 @@ public struct HxpArchiveVerifier: Sendable {
         guard !publisherKeys.isRevokedFingerprint(publisher.fingerprint) else {
             throw HxpVerificationError.revokedPublisher
         }
-        guard !publisherKeys.isRevokedPackage(manifest.contentDigest) else {
+        let packageSha256 = Sha256.hex(archiveBytes)
+        guard !publisherKeys.isRevokedPackage(packageSha256) else {
             throw HxpVerificationError.revokedPackage
         }
         var message = HxpArchiveVerifier.signaturePrefix
@@ -103,7 +104,7 @@ public struct HxpArchiveVerifier: Sendable {
 
         return VerifiedHxpPackage(
             manifest: manifest,
-            packageSha256: Sha256.hex(archiveBytes),
+            packageSha256: packageSha256,
             publisherFingerprint: publisher.fingerprint,
             archiveBytes: archiveBytes,
             entryModuleBytes: entries[manifest.entry] ?? Data()
@@ -163,8 +164,8 @@ public final class InMemoryPublisherKeyStore: PublisherKeyResolver {
         state.withLock { $0.revokedFingerprints.contains(fingerprint) }
     }
 
-    public func isRevokedPackage(_ contentDigest: String) -> Bool {
-        state.withLock { $0.revokedPackages.contains(contentDigest) }
+    public func isRevokedPackage(_ packageSha256: String) -> Bool {
+        state.withLock { $0.revokedPackages.contains(packageSha256) }
     }
 
     /// A key ID may never be rebound to a different public key: trust follows the fingerprint.
@@ -181,7 +182,7 @@ public final class InMemoryPublisherKeyStore: PublisherKeyResolver {
         state.withLock { _ = $0.revokedFingerprints.insert(fingerprint) }
     }
 
-    public func revokePackage(_ contentDigest: String) {
-        state.withLock { _ = $0.revokedPackages.insert(contentDigest) }
+    public func revokePackage(_ packageSha256: String) {
+        state.withLock { _ = $0.revokedPackages.insert(packageSha256) }
     }
 }

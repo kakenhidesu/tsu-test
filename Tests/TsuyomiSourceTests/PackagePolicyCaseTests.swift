@@ -117,6 +117,7 @@ final class PackagePolicyCaseTests: XCTestCase {
                 cookies: HxpCookieCapability(sourceScoped: false, origins: []),
                 webLogin: HxpWebLoginCapability(enabled: webLogin, origins: webLogin ? parsedOrigins : []),
                 home: HxpHomeCapability(enabled: home),
+                updateCheck: nil,
                 remoteLibrary: HxpRemoteLibraryCapability(read: false, writeOperations: writes, policies: [:]),
                 storageQuotaBytes: storageQuota
             ),

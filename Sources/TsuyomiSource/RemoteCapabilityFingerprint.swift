@@ -56,6 +56,7 @@ extension ExtensionInstaller {
         case .fixed: return "fixed"
         case .remoteBookId: return "remote-book-id"
         case .cursor: return "cursor"
+        case .targetId: return "target-id"
         }
     }
 

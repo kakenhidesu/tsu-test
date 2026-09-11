@@ -6,27 +6,27 @@ import TsuyomiProtocol
 
 public struct RepositoryDescriptor: Hashable, Sendable {
     public let repositoryId: String
-    public let base: HttpsOrigin
-    public let path: String
-    public let publisherKeyId: String
-    public let publisherPublicKey: Data
+    public let indexUrl: URL
+    public let rootKeyId: String
+    public let rootPublicKey: Data
     public let addedAt: Date
 
-    public init(
-        repositoryId: String,
-        base: HttpsOrigin,
-        path: String,
-        publisherKeyId: String,
-        publisherPublicKey: Data,
-        addedAt: Date
-    ) {
+    public init(repositoryId: String, indexUrl: URL, rootKeyId: String, rootPublicKey: Data, addedAt: Date) {
         self.repositoryId = repositoryId
-        self.base = base
-        self.path = path
-        self.publisherKeyId = publisherKeyId
-        self.publisherPublicKey = publisherPublicKey
+        self.indexUrl = indexUrl
+        self.rootKeyId = rootKeyId
+        self.rootPublicKey = rootPublicKey
         self.addedAt = addedAt
     }
+
+    public var rootKey: RepositoryPublisher {
+        RepositoryPublisher(keyId: rootKeyId, publicKey: rootPublicKey)
+    }
+}
+
+public struct FetchedRepositoryIndex: Sendable {
+    public let index: RepositoryIndex
+    public let bytes: Data
 }
 
 /// Fetches and verifies one repository. It performs no installation: a downloaded archive is handed
@@ -41,95 +41,71 @@ public struct ExtensionRepositoryClient: Sendable {
         self.clock = clock
     }
 
-    /// Reads an index from a base the user typed. Nothing is trusted yet: the caller shows the
-    /// publisher fingerprint and only then writes it to the trust store.
-    public func probe(base: String) async throws -> (descriptor: RepositoryDescriptor, index: RepositoryIndex) {
-        let normalized = try ExtensionRepositoryClient.normalize(base)
-        let index = try await read(origin: normalized.origin, path: normalized.path, expecting: nil)
+    /// Reads a catalog from a URL and root key the user typed. A v1 catalog does not carry its root
+    /// key, so the key is the trust decision: nothing is stored until the next screen is confirmed.
+    public func probe(
+        indexUrl: String,
+        rootPublicKey: String
+    ) async throws -> (descriptor: RepositoryDescriptor, fetched: FetchedRepositoryIndex) {
+        let url = try ExtensionRepositoryClient.normalize(indexUrl: indexUrl)
+        let key = try ExtensionRepositoryClient.rootKey(rootPublicKey)
+        let fetched = try await read(url, rootPublicKey: key)
         return (
             RepositoryDescriptor(
-                repositoryId: index.repositoryId,
-                base: normalized.origin,
-                path: normalized.path,
-                publisherKeyId: index.publisher.keyId,
-                publisherPublicKey: index.publisher.publicKey,
+                repositoryId: fetched.index.repositoryId,
+                indexUrl: url,
+                rootKeyId: fetched.index.rootKeyId,
+                rootPublicKey: key,
                 addedAt: clock()
             ),
-            index
+            fetched
         )
     }
 
-    /// Refreshing an added repository pins the publisher key the user approved, so a changed key is a
-    /// signature failure rather than a silent new publisher.
-    public func refresh(_ descriptor: RepositoryDescriptor) async throws -> RepositoryIndex {
-        try await read(
-            origin: descriptor.base,
-            path: descriptor.path,
-            expecting: descriptor.publisherPublicKey
-        )
+    /// Refreshing pins the root key and identity the user approved: a catalog signed by any other key,
+    /// or claiming another key id or repository, is a signature failure rather than a silent change.
+    public func refresh(_ descriptor: RepositoryDescriptor) async throws -> FetchedRepositoryIndex {
+        let fetched = try await read(descriptor.indexUrl, rootPublicKey: descriptor.rootPublicKey)
+        guard fetched.index.rootKeyId == descriptor.rootKeyId,
+              fetched.index.repositoryId == descriptor.repositoryId else {
+            throw RepositoryError.invalidSignature
+        }
+        return fetched
     }
 
-    public func download(
-        _ package: RepositoryPackage,
-        from descriptor: RepositoryDescriptor
-    ) async throws -> Data {
-        let url = try ExtensionRepositoryClient.join(descriptor.base, descriptor.path, package.file)
-        let bytes = try await get(url, maximumBytes: package.sizeBytes)
+    public func download(_ package: RepositoryPackage) async throws -> Data {
+        let bytes = try await gateway.fetchStaticResource(url: package.downloadUrl, maximumBytes: package.sizeBytes)
         guard bytes.count == package.sizeBytes else { throw RepositoryError.packageTooLarge }
         guard Sha256.hex(bytes) == package.sha256 else { throw RepositoryError.packageDigestMismatch }
         return bytes
     }
 
-    private func read(
-        origin: HttpsOrigin,
-        path: String,
-        expecting publicKey: Data?
-    ) async throws -> RepositoryIndex {
-        let indexBytes = try await get(
-            try ExtensionRepositoryClient.join(origin, path, "index.json"),
+    private func read(_ url: URL, rootPublicKey: Data) async throws -> FetchedRepositoryIndex {
+        let bytes = try await gateway.fetchStaticResource(
+            url: url,
             maximumBytes: RepositoryIndexCodec.maximumIndexBytes
         )
-        let signature = try await get(
-            try ExtensionRepositoryClient.join(origin, path, "index.sig"),
-            maximumBytes: 64
-        )
-        return try RepositoryIndexCodec.decode(
-            indexBytes: indexBytes,
-            signature: signature,
-            now: clock(),
-            expectedPublicKey: publicKey
+        return FetchedRepositoryIndex(
+            index: try RepositoryIndexCodec.decode(bytes, rootPublicKey: rootPublicKey, now: clock()),
+            bytes: bytes
         )
     }
 
-    private func get(_ url: URL, maximumBytes: Int) async throws -> Data {
-        try await gateway.fetchStaticResource(url: url, maximumBytes: maximumBytes)
-    }
-
-    /// A repository base is an HTTPS origin plus a directory path. Query strings, fragments and
-    /// credentials are refused so the stored base cannot carry anything but a location.
-    static func normalize(_ base: String) throws -> (origin: HttpsOrigin, path: String) {
-        guard let components = URLComponents(string: base),
-              components.query == nil, components.fragment == nil,
-              components.user == nil, components.password == nil,
-              let host = components.host, !host.isEmpty,
-              components.scheme?.lowercased() == "https" else {
+    /// A catalog address is a location and nothing else: a query string could carry a token, so it is
+    /// refused along with everything the package URL rule already refuses.
+    public static func normalize(indexUrl: String) throws -> URL {
+        guard let url = try? RepositoryIndexCodec.requireHttpsUrl(indexUrl),
+              url.query == nil, url.path.count > 1 else {
             throw RepositoryError.insecureTransport
         }
-        var path = components.path
-        while path.hasSuffix("/") { path.removeLast() }
-        while path.hasPrefix("/") { path.removeFirst() }
-        if !path.isEmpty { try RepositoryIndexCodec.requireSafeRelativePath(path) }
-        var originText = "https://\(host)"
-        if let port = components.port { originText += ":\(port)" }
-        return (try HttpsOrigin(originText), path)
+        return url
     }
 
-    static func join(_ origin: HttpsOrigin, _ path: String, _ file: String) throws -> URL {
-        try RepositoryIndexCodec.requireSafeRelativePath(file)
-        let joined = path.isEmpty ? file : "\(path)/\(file)"
-        guard let url = URL(string: "\(origin.canonical)/\(joined)") else {
-            throw RepositoryError.unsafePackagePath
+    public static func rootKey(_ base64: String) throws -> Data {
+        guard let key = RepositoryIndexCodec.base64(base64.trimmingCharacters(in: .whitespacesAndNewlines)),
+              key.count == 32 else {
+            throw RepositoryError.invalidRootKey
         }
-        return url
+        return key
     }
 }

@@ -113,19 +113,24 @@ public struct HxpHomeCapability: Hashable, Sendable {
 
 public enum RemoteOperation: String, Hashable, Sendable, CaseIterable {
     case read
+    case targets
     case add
+    case remove
+    case move
 }
 
 public enum HxpRemoteParameter: Hashable, Sendable {
     case fixed(name: String, value: String)
     case remoteBookId(name: String)
     case cursor(name: String)
+    case targetId(name: String)
 
     public var name: String {
         switch self {
         case .fixed(let name, _): return name
         case .remoteBookId(let name): return name
         case .cursor(let name): return name
+        case .targetId(let name): return name
         }
     }
 }
@@ -154,11 +159,21 @@ public struct HxpRemoteLibraryCapability: Hashable, Sendable {
     public let policies: [RemoteOperation: HxpRemoteOperationPolicy]
 }
 
+/// A signed, read-only GET the host may issue to ask whether a book changed (`update-check-v2`).
+/// The method is always GET, so only the request surface is kept.
+public struct HxpUpdateCheckCapability: Hashable, Sendable {
+    public let origin: HttpsOrigin
+    public let path: String
+    public let referrerPath: String?
+    public let parameters: [HxpRemoteParameter]
+}
+
 public struct HxpCapabilities: Hashable, Sendable {
     public let network: HxpNetworkCapability
     public let cookies: HxpCookieCapability
     public let webLogin: HxpWebLoginCapability
     public let home: HxpHomeCapability
+    public let updateCheck: HxpUpdateCheckCapability?
     public let remoteLibrary: HxpRemoteLibraryCapability
     public let storageQuotaBytes: Int
 }
@@ -187,6 +202,7 @@ public struct HxpManifest: Hashable, Sendable {
 
 public enum PublisherTrust: String, Sendable, CaseIterable, Codable {
     case builtInTest = "BUILT_IN_TEST"
+    case builtInOfficial = "BUILT_IN_OFFICIAL"
     case userAdded = "USER_ADDED"
 }
 
@@ -212,7 +228,7 @@ public struct PublisherKey: Hashable, Sendable {
 public protocol PublisherKeyResolver: Sendable {
     func resolve(keyId: String) -> PublisherKey?
     func isRevokedFingerprint(_ fingerprint: String) -> Bool
-    func isRevokedPackage(_ contentDigest: String) -> Bool
+    func isRevokedPackage(_ packageSha256: String) -> Bool
 }
 
 public enum HxpVerificationError: String, Error, Equatable, Sendable, CaseIterable {

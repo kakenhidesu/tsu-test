@@ -8,8 +8,11 @@ import TsuyomiUI
 
 public struct PendingRepositoryApproval: Sendable {
     public let descriptor: RepositoryDescriptor
-    public let index: RepositoryIndex
-    public let isNewPublisherKey: Bool
+    public let fetched: FetchedRepositoryIndex
+    /// Publishers the catalog lists that are not yet trusted under the same key bytes.
+    public let newPublisherKeyIds: Set<String>
+
+    public var index: RepositoryIndex { fetched.index }
 }
 
 public struct ExtensionsContent: Sendable {
@@ -17,7 +20,7 @@ public struct ExtensionsContent: Sendable {
     public let repositories: [RepositoryDescriptor]
 }
 
-/// The market's home. It never refreshes on its own: every index read here happens because the
+/// The market's home. It never refreshes on its own: every catalog read here happens because the
 /// reader asked for it.
 @MainActor
 public final class ExtensionsModel: ObservableObject {
@@ -60,7 +63,7 @@ public final class ExtensionsModel: ObservableObject {
             guard !installed.isEmpty || !added.isEmpty else {
                 state = .empty(
                     title: "还没有扩展来源",
-                    detail: "仓库是一个 HTTPS 基址，里面静态托管着签名索引与扩展包。添加一个仓库开始。"
+                    detail: "仓库是一个 HTTPS 地址上的签名目录，由仓库维护者公布的根公钥签名。添加一个仓库开始。"
                 )
                 return
             }
@@ -70,20 +73,19 @@ public final class ExtensionsModel: ObservableObject {
         }
     }
 
-    /// Reads an index the user typed a base for. Nothing is trusted until they confirm the publisher
-    /// fingerprint the next screen shows.
-    public func probeRepository(base: String) async {
+    /// Reads a catalog the user typed an address and root key for. Nothing is trusted until they
+    /// confirm the root and publisher fingerprints the next screen shows.
+    public func probeRepository(indexUrl: String, rootPublicKey: String) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         failureCode = nil
         do {
-            let probed = try await client.probe(base: base)
-            let known = trust.resolve(keyId: probed.index.publisher.keyId)
+            let probed = try await client.probe(indexUrl: indexUrl, rootPublicKey: rootPublicKey)
             pendingApproval = PendingRepositoryApproval(
                 descriptor: probed.descriptor,
-                index: probed.index,
-                isNewPublisherKey: known?.publicKey != probed.index.publisher.publicKey
+                fetched: probed.fetched,
+                newPublisherKeyIds: newPublisherKeyIds(probed.fetched.index)
             )
         } catch {
             failureCode = SafeErrorCode.of(error)
@@ -94,23 +96,27 @@ public final class ExtensionsModel: ObservableObject {
         pendingApproval = nil
     }
 
-    /// The one place a publisher becomes trusted. It records the exact key the user was shown.
+    /// The one place a repository's publishers become trusted. It records the exact keys the user was
+    /// shown; a key already trusted under the same bytes is left as it is.
     public func approvePendingRepository() async {
         guard let pending = pendingApproval, !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         do {
-            try await trust.approve(
-                TrustedPublisher(
-                    keyId: pending.index.publisher.keyId,
-                    publicKey: pending.index.publisher.publicKey,
-                    trust: .userAdded,
-                    repositoryId: pending.descriptor.repositoryId,
-                    approvedAt: clock()
+            for publisher in pending.index.publishers where pending.newPublisherKeyIds.contains(publisher.keyId) {
+                try await trust.approve(
+                    TrustedPublisher(
+                        keyId: publisher.keyId,
+                        publicKey: publisher.publicKey,
+                        trust: .userAdded,
+                        repositoryId: pending.descriptor.repositoryId,
+                        approvedAt: clock()
+                    )
                 )
-            )
+            }
             try await repositories.add(pending.descriptor)
-            try await lifecycle.applyRevocations(pending.index.revocations, now: clock())
+            try await repositories.cache(pending.descriptor.repositoryId, indexBytes: pending.fetched.bytes)
+            try await lifecycle.applyRevocations(pending.index.revocations)
             pendingApproval = nil
             await load()
         } catch {
@@ -202,10 +208,18 @@ public final class ExtensionsModel: ObservableObject {
         defer { isBusy = false }
         do {
             try await trust.forget(keyId: keyId)
-            try await lifecycle.applyRevocations([], now: clock())
+            try await lifecycle.closeUnverifiable()
             await load()
         } catch {
             failureCode = SafeErrorCode.of(error)
         }
+    }
+
+    private func newPublisherKeyIds(_ index: RepositoryIndex) -> Set<String> {
+        Set(
+            index.publishers
+                .filter { trust.resolve(keyId: $0.keyId)?.publicKey != $0.publicKey }
+                .map(\.keyId)
+        )
     }
 }

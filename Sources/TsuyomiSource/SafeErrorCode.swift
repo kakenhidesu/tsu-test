@@ -18,6 +18,7 @@ public enum SafeErrorCode {
         case let failure as SourceException:
             return "\(failure.code.rawValue) · \(failure.diagnostic.stage) · \(failure.diagnostic.safeCode)"
         case let failure as HxpVerificationError: return failure.rawValue
+        case let failure as RepositoryError: return failure.rawValue
         case let failure as ExtensionInstallError: return failure.rawValue
         case let failure as QuickJsRuntimeError: return failure.rawValue
         case let failure as HostNetworkException: return failure.error.rawValue

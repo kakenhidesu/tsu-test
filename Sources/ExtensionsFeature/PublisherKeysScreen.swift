@@ -14,6 +14,22 @@ public struct PublisherKeysScreen: View {
         self.model = model
     }
 
+    private func trustLabel(_ trust: PublisherTrust) -> LocalizedStringKey {
+        switch trust {
+        case .userAdded: return "用户添加"
+        case .builtInOfficial: return "内置官方"
+        case .builtInTest: return "内置测试"
+        }
+    }
+
+    private func trustTone(_ trust: PublisherTrust) -> TsuyomiStatusTone {
+        switch trust {
+        case .userAdded: return .neutral
+        case .builtInOfficial: return .positive
+        case .builtInTest: return .warning
+        }
+    }
+
     public var body: some View {
         List {
             if model.trustedPublishers.isEmpty {
@@ -29,10 +45,7 @@ public struct PublisherKeysScreen: View {
                             .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                         HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-                            TsuyomiStatusBadge(
-                                publisher.trust == .userAdded ? "用户添加" : "内置测试",
-                                tone: publisher.trust == .userAdded ? .neutral : .warning
-                            )
+                            TsuyomiStatusBadge(trustLabel(publisher.trust), tone: trustTone(publisher.trust))
                             if let repositoryId = publisher.repositoryId {
                                 Text(repositoryId)
                                     .font(TsuyomiTheme.Typography.caption)

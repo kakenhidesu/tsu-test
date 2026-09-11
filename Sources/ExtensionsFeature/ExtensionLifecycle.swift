@@ -34,16 +34,16 @@ public struct ExtensionLifecycle: Sendable {
         self.hostApiVersion = hostApiVersion
     }
 
-    /// Verifies an archive and reports what approving it would grant. The index's own capability
-    /// preview is compared against the manifest here: a mismatch is refused rather than reconciled.
+    /// Verifies an archive and reports what approving it would grant. A catalog listing is compared
+    /// against the manifest here: a mismatch is refused rather than reconciled, and only the
+    /// listing's root-signed migration can approve a publisher change.
     public func prepare(
         archiveBytes: Data,
-        declaring listed: RepositoryPackage?,
-        rotationApproved: Bool = false
+        declaring listed: RepositoryPackage?
     ) async throws -> PreparedExtensionInstall {
         let prepared = try await installer.prepare(
             archiveBytes: archiveBytes,
-            rotationApproved: rotationApproved
+            migration: listed?.legacyMigration
         )
         guard let listed else { return prepared }
         try RepositoryInstallPolicy.requireInstallable(
@@ -83,20 +83,21 @@ public struct ExtensionLifecycle: Sendable {
         )
     }
 
-    /// Applies an index's revocations. A revocation only ever deactivates: it never deletes a shelf
-    /// entry, and a package it names can no longer be reinstalled.
-    public func applyRevocations(
-        _ revocations: [RepositoryRevocation],
-        now: Date
-    ) async throws {
-        for revocation in revocations where revocation.expiresAt > now {
-            switch revocation.target {
-            case .keyId(let keyId):
-                try await trust.revoke(keyId: keyId)
-            case .packageDigest(let digest):
-                try await trust.revoke(packageDigest: digest)
-            }
+    /// Applies a catalog's revocations. A revocation only ever deactivates: it never deletes a shelf
+    /// entry, and a package or key it names can no longer be reinstalled or approved.
+    public func applyRevocations(_ revocations: RepositoryRevocations) async throws {
+        for fingerprint in CanonicalOrder.sorted(revocations.publisherFingerprints) {
+            try await trust.revoke(fingerprint: fingerprint)
         }
+        for digest in CanonicalOrder.sorted(revocations.packageDigests) {
+            try await trust.revoke(packageDigest: digest)
+        }
+        try await closeUnverifiable()
+    }
+
+    /// Whatever no longer verifies against the current trust is closed and its source marked
+    /// unavailable, whether trust changed because of a revocation or because the reader withdrew it.
+    public func closeUnverifiable() async throws {
         for sourceId in await installed.installedSourceIds() {
             let stillVerifies = (try? await installer.readVerifiedActive(sourceId)) ?? nil
             guard stillVerifies == nil else { continue }
