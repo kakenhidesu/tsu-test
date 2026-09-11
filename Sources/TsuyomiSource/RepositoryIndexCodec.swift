@@ -44,6 +44,11 @@ public struct RepositoryPublisher: Hashable, Sendable {
 public struct LegacyMigration: Hashable, Sendable {
     public let fromPublisherFingerprint: String
     public let fromPackageSha256: String
+
+    public init(fromPublisherFingerprint: String, fromPackageSha256: String) {
+        self.fromPublisherFingerprint = fromPublisherFingerprint
+        self.fromPackageSha256 = fromPackageSha256
+    }
 }
 
 public struct RepositoryPackage: Hashable, Sendable {

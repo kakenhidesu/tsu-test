@@ -320,7 +320,8 @@ private struct MarketWorld {
     }
 
     func detail() async throws -> RepositoryDetailModel {
-        let descriptor = try XCTUnwrap(await repositories.all().first)
+        let added = await repositories.all()
+        let descriptor = try XCTUnwrap(added.first)
         return RepositoryDetailModel(
             descriptor: descriptor,
             registry: registry,
