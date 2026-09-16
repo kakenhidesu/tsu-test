@@ -175,9 +175,11 @@ public extension TransferRepository {
                         shelfIds: Set(shelfIds),
                         rating: entry["rating"].int.map(Double.init),
                         readLater: entry["read_later"].bool ?? false,
+                        localPin: entry["local_pin"].bool ?? true,
                         addedAt: addedAt,
                         updatedAt: book.metadataUpdatedAt,
-                        progress: progress
+                        progress: progress,
+                        completedChapterIds: Set(try ReadingProgressStore.completedChapterIds(identity, connection))
                     )
                 )
             }
@@ -258,16 +260,24 @@ extension TransferRepository {
         try connection.execute(
             """
             INSERT OR IGNORE INTO library_entries (source_id, remote_book_id, added_at_epoch_second,
-            added_at_nano, rating, read_later, display_order) VALUES (?, ?, ?, ?, ?, ?, 2147483647)
+            added_at_nano, rating, read_later, display_order, local_pin) VALUES (?, ?, ?, ?, ?, ?, 2147483647, ?)
             """,
             [
                 .text(identity.sourceId), .text(identity.remoteBookId),
                 .integer(addedAt.epochSecond), .integer(Int64(addedAt.nanoOfSecond)),
                 rating.map { SQLiteValue.integer(Int64($0)) } ?? .null,
-                .integer(incoming.readLater ? 1 : 0)
+                .integer(incoming.readLater ? 1 : 0),
+                .integer(incoming.localPin ? 1 : 0)
             ]
         )
         let entryInserted = connection.changes != 0
+        // A pinned import pins an existing retained record; an unpinned one never unpins a local book.
+        if !entryInserted, incoming.localPin {
+            try connection.execute(
+                "UPDATE library_entries SET local_pin = 1 WHERE source_id = ? AND remote_book_id = ? AND local_pin = 0",
+                [.text(identity.sourceId), .text(identity.remoteBookId)]
+            )
+        }
         if !entryInserted, accepted, let rating {
             try connection.execute(
                 "UPDATE library_entries SET rating = ? WHERE source_id = ? AND remote_book_id = ?",
@@ -318,7 +328,11 @@ extension TransferRepository {
             }
         }
 
-        for shelfId in CanonicalOrder.sorted(incoming.shelfIds) {
+        for chapterId in CanonicalOrder.sorted(incoming.completedChapterIds) {
+            try ReadingProgressStore.insertCompletion(identity, chapterId: chapterId, at: plan.sourceCreatedAt, connection)
+        }
+
+        for shelfId in CanonicalOrder.sorted(incoming.shelfIds) where incoming.localPin {
             guard try CollectionStore.collection(shelfId, connection)?.kind == .manual else { continue }
             let members = try CollectionStore.manualIdentities(shelfId, connection)
             guard !members.contains(identity) else { continue }

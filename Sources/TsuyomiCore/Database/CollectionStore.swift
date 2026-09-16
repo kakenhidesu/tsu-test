@@ -318,7 +318,10 @@ extension CollectionStore {
         _ connection: SQLiteConnection
     ) throws -> Bool {
         guard let entry = try connection.query(
-            "SELECT added_at_epoch_second, added_at_nano FROM library_entries WHERE source_id = ? AND remote_book_id = ?",
+            """
+            SELECT added_at_epoch_second, added_at_nano FROM library_entries
+            WHERE source_id = ? AND remote_book_id = ? AND local_pin = 1
+            """,
             [.text(identity.sourceId), .text(identity.remoteBookId)]
         ).first else {
             throw DatabaseError.invariantViolated("Book is not in library")

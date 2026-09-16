@@ -45,6 +45,50 @@ public struct ReadingProgressStore: Sendable {
         }
     }
 
+    /// Completion is exact and separate from the locator: only an explicit chapter-end transition
+    /// records it, the first record wins, and no progress fraction ever implies it.
+    public func markChapterCompleted(_ identity: BookIdentity, chapterId: String, at moment: Date) async throws {
+        guard chapterId.contains(where: { !$0.isWhitespace }), Grammar.codePointCount(chapterId) <= 512 else {
+            throw DatabaseError.invariantViolated("Chapter id must be a bounded non-blank string")
+        }
+        try await database.withTransaction { connection in
+            try ReadingProgressStore.insertCompletion(identity, chapterId: chapterId, at: moment, connection)
+        }
+    }
+
+    public func completedChapterIds(_ identity: BookIdentity) async throws -> [String] {
+        try await database.read { try ReadingProgressStore.completedChapterIds(identity, $0) }
+    }
+
+    static func insertCompletion(
+        _ identity: BookIdentity,
+        chapterId: String,
+        at moment: Date,
+        _ connection: SQLiteConnection
+    ) throws {
+        try connection.execute(
+            """
+            INSERT OR IGNORE INTO completed_chapters
+            (source_id, remote_book_id, chapter_id, completed_at_epoch_second, completed_at_nano)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [
+                .text(identity.sourceId), .text(identity.remoteBookId), .text(chapterId),
+                .integer(moment.epochSecond), .integer(Int64(moment.nanoOfSecond))
+            ]
+        )
+    }
+
+    static func completedChapterIds(_ identity: BookIdentity, _ connection: SQLiteConnection) throws -> [String] {
+        try connection.query(
+            """
+            SELECT chapter_id FROM completed_chapters WHERE source_id = ? AND remote_book_id = ?
+            ORDER BY completed_at_epoch_second, completed_at_nano, chapter_id
+            """,
+            [.text(identity.sourceId), .text(identity.remoteBookId)]
+        ).compactMap { $0["chapter_id"].string }
+    }
+
     static func progress(_ identity: BookIdentity, _ connection: SQLiteConnection) throws -> ReadingProgress? {
         guard let row = try rawProgress(identity, connection) else { return nil }
         guard let contentId = row["content_id"].string,

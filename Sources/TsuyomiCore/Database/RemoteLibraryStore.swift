@@ -3,54 +3,40 @@
 import Foundation
 import TsuyomiProtocol
 
-/// One lease-checked remote library snapshot accepted into local persistence.
-public struct RemoteLibraryMergeRequest: Sendable {
-    public let sourceId: String
-    public let books: [LibraryBook]
-    public let expectedVersion: String
-    public let expectedCapabilityFingerprint: String
-    public let expectedGeneration: Int64
-    public let importedAt: Date
-
-    public init(
-        sourceId: String,
-        books: [LibraryBook],
-        expectedVersion: String,
-        expectedCapabilityFingerprint: String,
-        expectedGeneration: Int64,
-        importedAt: Date
-    ) {
-        self.sourceId = sourceId
-        self.books = books
-        self.expectedVersion = expectedVersion
-        self.expectedCapabilityFingerprint = expectedCapabilityFingerprint
-        self.expectedGeneration = expectedGeneration
-        self.importedAt = importedAt
-    }
-}
-
-/// Durable identity and package lease for one user-authorised remote add.
-public struct RemoteAddRequest: Sendable {
+/// Durable identity and package lease for one user-authorised website write.
+public struct RemoteMutationRequest: Sendable {
     public let book: LibraryBook
+    public let operation: RemoteWriteOperation
+    public let targetId: String?
+    public let targetName: String?
     public let packageDigest: String
     public let packageVersion: String
     public let capabilitySetFingerprint: String
     public let registryGeneration: Int64
+    public let retryingUnresolvedId: String?
     public let startedAt: Date
 
     public init(
         book: LibraryBook,
+        operation: RemoteWriteOperation,
+        targetId: String? = nil,
+        targetName: String? = nil,
         packageDigest: String,
         packageVersion: String,
         capabilitySetFingerprint: String,
         registryGeneration: Int64,
+        retryingUnresolvedId: String? = nil,
         startedAt: Date
     ) {
         self.book = book
+        self.operation = operation
+        self.targetId = targetId
+        self.targetName = targetName
         self.packageDigest = packageDigest
         self.packageVersion = packageVersion
         self.capabilitySetFingerprint = capabilitySetFingerprint
         self.registryGeneration = registryGeneration
+        self.retryingUnresolvedId = retryingUnresolvedId
         self.startedAt = startedAt
     }
 }
@@ -83,6 +69,22 @@ public struct RemoteLibraryStore: Sendable {
         }
     }
 
+    /// Cold-start reconciliation: every source whose archive is gone becomes dormant once. The
+    /// `available = 1` guard is what keeps a dormant source from being re-invalidated, and its
+    /// generation from churning, on every launch.
+    public func markMissingSourcesUnavailable(installed: Set<String>) async throws {
+        try await database.withTransaction { connection in
+            let rows = try connection.query("SELECT source_id FROM source_availability WHERE available = 1")
+            for row in rows {
+                guard let sourceId = row["source_id"].string, !installed.contains(sourceId) else { continue }
+                try connection.execute(
+                    "UPDATE source_availability SET available = 0, generation = generation + 1 WHERE source_id = ? AND available = 1",
+                    [.text(sourceId)]
+                )
+            }
+        }
+    }
+
     public func sourceAvailability(_ sourceId: String) async throws -> SourceAvailability? {
         try await database.read { try RemoteLibraryStore.availability(sourceId, $0) }
     }
@@ -96,56 +98,19 @@ public struct RemoteLibraryStore: Sendable {
             try connection.execute(
                 """
                 INSERT OR REPLACE INTO source_remote_policy (source_id, trusted_publisher_fingerprint,
-                capability_set_fingerprint, approved_origin, add_writeback_enabled, first_import_prompt_dismissed)
-                VALUES (?, ?, ?, ?, ?, ?)
+                capability_set_fingerprint, approved_origin, add_writeback_enabled, first_import_prompt_dismissed,
+                remove_writeback_enabled, move_writeback_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 [
                     .text(policy.sourceId), .text(policy.trustedPublisherFingerprint),
                     .text(policy.capabilitySetFingerprint), .text(policy.approvedOrigin),
                     .integer(policy.addWritebackEnabled ? 1 : 0),
-                    .integer(policy.firstImportPromptDismissed ? 1 : 0)
+                    .integer(policy.firstImportPromptDismissed ? 1 : 0),
+                    .integer(policy.removeWritebackEnabled ? 1 : 0),
+                    .integer(policy.moveWritebackEnabled ? 1 : 0)
                 ]
             )
-        }
-    }
-
-    /// The lease is checked before and after the merge, so a package or capability change mid-import
-    /// aborts instead of admitting rows granted under different terms.
-    @discardableResult
-    public func merge(_ request: RemoteLibraryMergeRequest) async throws -> Int {
-        guard isNonBlank(request.sourceId) else {
-            throw DatabaseError.invariantViolated("Remote library source is required")
-        }
-        guard Set(request.books.map(\.identity)).count == request.books.count else {
-            throw DatabaseError.invariantViolated("Duplicate remote library identity")
-        }
-        guard request.books.allSatisfy({ $0.identity.sourceId == request.sourceId }) else {
-            throw DatabaseError.invariantViolated("Remote library source mismatch")
-        }
-        return try await database.withTransaction { connection in
-            guard try RemoteLibraryStore.leaseValid(request, connection) else {
-                throw DatabaseError.invariantViolated("Source changed before remote merge")
-            }
-            var added = 0
-            for book in request.books {
-                try LibraryCatalog.saveBook(book, connection)
-                try connection.execute(
-                    """
-                    INSERT OR IGNORE INTO library_entries (source_id, remote_book_id, added_at_epoch_second,
-                    added_at_nano, rating, read_later, display_order)
-                    VALUES (?, ?, ?, ?, NULL, 0, 2147483647)
-                    """,
-                    [
-                        .text(book.identity.sourceId), .text(book.identity.remoteBookId),
-                        .integer(request.importedAt.epochSecond), .integer(Int64(request.importedAt.nanoOfSecond))
-                    ]
-                )
-                if connection.changes != 0 { added += 1 }
-            }
-            guard try RemoteLibraryStore.leaseValid(request, connection) else {
-                throw DatabaseError.invariantViolated("Source changed during remote merge")
-            }
-            return added
         }
     }
 
@@ -166,61 +131,65 @@ public struct RemoteLibraryStore: Sendable {
         }
     }
 
+    /// One receipt per operation, written only under the capability fingerprint it was given for:
+    /// a manifest that changes what a write can do silently retires the consent.
     @discardableResult
-    public func setAddWritebackEnabled(
+    public func setWritebackEnabled(
+        _ operation: RemoteWriteOperation,
         sourceId: String,
         capabilityFingerprint: String,
         enabled: Bool
     ) async throws -> Bool {
-        try await database.withTransaction { connection in
+        let column: String
+        switch operation {
+        case .add: column = "add_writeback_enabled"
+        case .remove: column = "remove_writeback_enabled"
+        case .move: column = "move_writeback_enabled"
+        }
+        return try await database.withTransaction { connection in
             try connection.execute(
-                """
-                UPDATE source_remote_policy SET add_writeback_enabled = ?
-                WHERE source_id = ? AND capability_set_fingerprint = ?
-                """,
+                "UPDATE source_remote_policy SET \(column) = ? WHERE source_id = ? AND capability_set_fingerprint = ?",
                 [.integer(enabled ? 1 : 0), .text(sourceId), .text(capabilityFingerprint)]
             )
             return connection.changes == 1
         }
     }
 
-    public func beginRemoteAdd(_ request: RemoteAddRequest) async throws -> String {
+    /// Opens one attempt. A second attempt while any row still blocks is refused unless it retries
+    /// exactly the unresolved row for the same operation; a website book never gets a library entry
+    /// from here — pinning is the reader's own act.
+    public func beginRemoteMutation(_ request: RemoteMutationRequest) async throws -> String {
         try await database.withTransaction { connection in
             let identity = request.book.identity
-            try LibraryCatalog.saveBook(request.book, connection)
-            try connection.execute(
-                """
-                INSERT OR IGNORE INTO library_entries (source_id, remote_book_id, added_at_epoch_second,
-                added_at_nano, rating, read_later, display_order)
-                VALUES (?, ?, ?, ?, NULL, 0, 2147483647)
-                """,
-                [
-                    .text(identity.sourceId), .text(identity.remoteBookId),
-                    .integer(request.startedAt.epochSecond), .integer(Int64(request.startedAt.nanoOfSecond))
-                ]
-            )
-            let active = try connection.query(
-                """
-                SELECT id FROM remote_library_reconciliation
-                WHERE source_id = ? AND remote_book_id = ? AND state IN ('PENDING_USER_ACTION','IN_FLIGHT') LIMIT 1
-                """,
-                [.text(identity.sourceId), .text(identity.remoteBookId)]
-            )
-            guard active.isEmpty else { throw DatabaseError.invariantViolated("Remote add already active") }
+            try RemoteMirrorStore.mergeBook(request.book, connection)
+            let blocking = try RemoteLibraryStore.records(identity, connection).filter {
+                [.pendingUserAction, .inFlight, .unresolved].contains($0.state)
+            }
+            if let retrying = request.retryingUnresolvedId {
+                guard blocking.count == 1, let current = blocking.first, current.id == retrying,
+                      current.state == .unresolved, current.operation == request.operation else {
+                    throw DatabaseError.invariantViolated("Remote mutation is not retryable")
+                }
+            } else if !blocking.isEmpty {
+                throw DatabaseError.invariantViolated("Remote mutation already active")
+            }
             let id = UUID().uuidString
             try connection.execute(
                 """
                 INSERT INTO remote_library_reconciliation (id, source_id, remote_book_id, package_digest,
                 package_version, capability_set_fingerprint, registry_generation, state,
-                created_at_epoch_second, updated_at_epoch_second, diagnostic_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+                created_at_epoch_second, updated_at_epoch_second, diagnostic_id, operation, target_id, target_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)
                 """,
                 [
                     .text(id), .text(identity.sourceId), .text(identity.remoteBookId),
                     .text(request.packageDigest), .text(request.packageVersion),
                     .text(request.capabilitySetFingerprint), .integer(request.registryGeneration),
                     .text(RemoteReconciliationState.pendingUserAction.rawValue),
-                    .integer(request.startedAt.epochSecond), .integer(request.startedAt.epochSecond)
+                    .integer(request.startedAt.epochSecond), .integer(request.startedAt.epochSecond),
+                    .text(request.operation.rawValue),
+                    request.targetId.map { SQLiteValue.text($0) } ?? .null,
+                    request.targetName.map { SQLiteValue.text($0) } ?? .null
                 ]
             )
             return id
@@ -228,19 +197,20 @@ public struct RemoteLibraryStore: Sendable {
     }
 
     @discardableResult
-    public func transitionRemoteAdd(
+    public func transitionRemoteMutation(
         id: String,
         expected: RemoteReconciliationState,
         next: RemoteReconciliationState,
         now: Date,
         diagnosticId: String? = nil
     ) async throws -> Bool {
-        guard RemoteLibraryStore.allowedNextStates(expected).contains(next) else {
-            throw DatabaseError.invariantViolated(
-                "Invalid reconciliation transition: \(expected.rawValue) -> \(next.rawValue)"
-            )
-        }
-        return try await database.withTransaction { connection in
+        try await database.withTransaction { connection in
+            guard let record = try RemoteLibraryStore.record(id, connection) else { return false }
+            guard RemoteLibraryStore.allowedNextStates(expected, operation: record.operation).contains(next) else {
+                throw DatabaseError.invariantViolated(
+                    "Invalid reconciliation transition: \(expected.rawValue) -> \(next.rawValue)"
+                )
+            }
             try connection.execute(
                 """
                 UPDATE remote_library_reconciliation SET state = ?, updated_at_epoch_second = ?, diagnostic_id = ?
@@ -256,12 +226,80 @@ public struct RemoteLibraryStore: Sendable {
         }
     }
 
-    static func allowedNextStates(_ state: RemoteReconciliationState) -> Set<RemoteReconciliationState> {
+    /// A retry that the website answered closes the whole unresolved chain for that operation: the
+    /// site has now said what happened to every earlier attempt too.
+    public func confirmUnresolvedMutations(
+        _ identity: BookIdentity,
+        operation: RemoteWriteOperation,
+        now: Date
+    ) async throws {
+        try await database.withTransaction { connection in
+            try connection.execute(
+                """
+                UPDATE remote_library_reconciliation SET state = ?, updated_at_epoch_second = ?
+                WHERE source_id = ? AND remote_book_id = ? AND operation = ? AND state = ?
+                """,
+                [
+                    .text(RemoteReconciliationState.confirmed.rawValue), .integer(now.epochSecond),
+                    .text(identity.sourceId), .text(identity.remoteBookId), .text(operation.rawValue),
+                    .text(RemoteReconciliationState.unresolved.rawValue)
+                ]
+            )
+        }
+    }
+
+    public func latestReconciliation(_ identity: BookIdentity) async throws -> RemoteReconciliationRecord? {
+        try await database.read { try RemoteLibraryStore.records(identity, $0).first }
+    }
+
+    public func reconciliation(id: String) async throws -> RemoteReconciliationRecord? {
+        try await database.read { try RemoteLibraryStore.record(id, $0) }
+    }
+
+    /// `CANCELLED` is reachable from `UNRESOLVED` only for a move or removal: an add the website may
+    /// already have applied cannot be declared undone by this side.
+    static func allowedNextStates(
+        _ state: RemoteReconciliationState,
+        operation: RemoteWriteOperation
+    ) -> Set<RemoteReconciliationState> {
         switch state {
         case .pendingUserAction: return [.inFlight, .cancelled]
         case .inFlight: return [.confirmed, .unresolved]
-        case .confirmed, .unresolved, .cancelled: return []
+        case .unresolved: return operation == .add ? [.inFlight, .confirmed] : [.inFlight, .confirmed, .cancelled]
+        case .confirmed, .cancelled: return []
         }
+    }
+
+    static func records(_ identity: BookIdentity, _ connection: SQLiteConnection) throws -> [RemoteReconciliationRecord] {
+        try connection.query(
+            """
+            SELECT * FROM remote_library_reconciliation WHERE source_id = ? AND remote_book_id = ?
+            ORDER BY rowid DESC
+            """,
+            [.text(identity.sourceId), .text(identity.remoteBookId)]
+        ).compactMap(RemoteLibraryStore.record(from:))
+    }
+
+    static func record(_ id: String, _ connection: SQLiteConnection) throws -> RemoteReconciliationRecord? {
+        try connection.query("SELECT * FROM remote_library_reconciliation WHERE id = ?", [.text(id)])
+            .first.flatMap(RemoteLibraryStore.record(from:))
+    }
+
+    private static func record(from row: SQLiteRow) -> RemoteReconciliationRecord? {
+        guard let id = row["id"].string, let identity = LibraryCatalog.identity(from: row),
+              let operation = row["operation"].string.flatMap(RemoteWriteOperation.init(rawValue:)),
+              let state = row["state"].string.flatMap(RemoteReconciliationState.init(rawValue:)) else { return nil }
+        return RemoteReconciliationRecord(
+            id: id,
+            identity: identity,
+            operation: operation,
+            state: state,
+            targetId: row["target_id"].string,
+            targetName: row["target_name"].string,
+            diagnosticId: row["diagnostic_id"].string,
+            createdAt: Date(timeIntervalSince1970: TimeInterval(row["created_at_epoch_second"].int ?? 0)),
+            updatedAt: Date(timeIntervalSince1970: TimeInterval(row["updated_at_epoch_second"].int ?? 0))
+        )
     }
 
     static func availability(_ sourceId: String, _ connection: SQLiteConnection) throws -> SourceAvailability? {
@@ -292,19 +330,24 @@ public struct RemoteLibraryStore: Sendable {
             capabilitySetFingerprint: capability,
             approvedOrigin: origin,
             addWritebackEnabled: row["add_writeback_enabled"].bool ?? false,
-            firstImportPromptDismissed: row["first_import_prompt_dismissed"].bool ?? false
+            firstImportPromptDismissed: row["first_import_prompt_dismissed"].bool ?? false,
+            removeWritebackEnabled: row["remove_writeback_enabled"].bool ?? false,
+            moveWritebackEnabled: row["move_writeback_enabled"].bool ?? false
         )
     }
 
-    private static func leaseValid(
-        _ request: RemoteLibraryMergeRequest,
+    static func leaseValid(
+        sourceId: String,
+        version: String,
+        capabilityFingerprint: String,
+        generation: Int64,
         _ connection: SQLiteConnection
     ) throws -> Bool {
-        guard let availability = try availability(request.sourceId, connection),
-              let policy = try policy(request.sourceId, connection) else { return false }
+        guard let availability = try availability(sourceId, connection),
+              let policy = try policy(sourceId, connection) else { return false }
         return availability.available
-            && availability.verifiedVersion == request.expectedVersion
-            && availability.generation == request.expectedGeneration
-            && policy.capabilitySetFingerprint == request.expectedCapabilityFingerprint
+            && availability.verifiedVersion == version
+            && availability.generation == generation
+            && policy.capabilitySetFingerprint == capabilityFingerprint
     }
 }

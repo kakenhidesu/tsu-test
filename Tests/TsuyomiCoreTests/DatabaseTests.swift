@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import Foundation
+import SQLite3
 import TsuyomiProtocol
 import XCTest
 @testable import TsuyomiCore
@@ -23,21 +24,23 @@ final class DatabaseTests: XCTestCase {
         )
     }
 
-    func testSchemaIsCreatedAtVersionFour() async throws {
+    func testSchemaIsCreatedAtTheCurrentVersion() async throws {
         let database = try TsuyomiDatabase.inMemory()
         let version = try await database.read { connection in
             try connection.query("PRAGMA user_version").first?["user_version"].int
         }
-        XCTAssertEqual(version, 4)
+        XCTAssertEqual(version, 10)
         let tables = try await database.read { connection in
             try connection.query("SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name")
                 .compactMap { $0["name"].string }
         }
         for expected in [
-            "books", "browsing_history", "collections", "import_sessions", "import_warnings", "library_entries",
-            "local_book_tags", "manual_collection_memberships", "reading_progress",
-            "remote_library_reconciliation", "search_history", "smart_rules", "source_availability",
-            "source_remote_policy", "subscription_drafts"
+            "books", "browsing_history", "collections", "completed_chapters", "import_sessions", "import_warnings",
+            "library_entries", "local_book_tags", "manual_collection_memberships", "reading_progress",
+            "remote_library_reconciliation", "remote_mirror_bindings", "remote_mirror_items", "remote_mirror_targets",
+            "search_history", "smart_rules", "source_availability", "source_remote_policy", "subscription_drafts",
+            "unresolved_updates", "update_baselines", "update_book_exclusions", "update_ignore_undos", "update_policy",
+            "update_session_items", "update_sessions", "update_source_exclusions"
         ] {
             XCTAssertTrue(tables.contains(expected), "missing table \(expected)")
         }
@@ -200,9 +203,10 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(entries.map(\.book.identity.remoteBookId), ["1"])
     }
 
-    func testRemoteMergeRequiresAnUnchangedLease() async throws {
+    func testAMirrorSnapshotRequiresAnUnchangedLeaseAndNeverPins() async throws {
         let database = try TsuyomiDatabase.inMemory()
         let store = RemoteLibraryStore(database: database)
+        let mirror = RemoteMirrorStore(database: database)
         try await store.setSourceAvailability(
             sourceId: "org.tsuyomi.wenku8", version: "0.2.0", available: true, generation: 3
         )
@@ -216,23 +220,38 @@ final class DatabaseTests: XCTestCase {
                 firstImportPromptDismissed: false
             )
         )
-        let request = RemoteLibraryMergeRequest(
-            sourceId: "org.tsuyomi.wenku8",
-            books: [try book("1", title: "書")],
-            expectedVersion: "0.2.0",
-            expectedCapabilityFingerprint: "capability",
-            expectedGeneration: 3,
-            importedAt: Date(timeIntervalSince1970: 5_000)
+        let folder = RemoteMirrorTarget(
+            sourceId: "org.tsuyomi.wenku8", targetId: "t1", displayName: "默认", parentId: nil, kind: "folder"
         )
-        let added = try await store.merge(request)
-        XCTAssertEqual(added, 1)
+        func snapshot(_ targets: [RemoteMirrorTarget], generation: Int64) throws -> RemoteMirrorSnapshot {
+            RemoteMirrorSnapshot(
+                sourceId: "org.tsuyomi.wenku8",
+                displayName: "Wenku8",
+                targets: targets,
+                books: [try book("1", title: "書")],
+                memberships: [try identity("1"): "t1"],
+                expectedVersion: "0.2.0",
+                expectedCapabilityFingerprint: "capability",
+                expectedGeneration: generation,
+                observedAt: Date(timeIntervalSince1970: 5_000)
+            )
+        }
+        try await mirror.save(try snapshot([folder], generation: 3))
+        let saved = try XCTUnwrap(try await mirror.mirror(sourceId: "org.tsuyomi.wenku8"))
+        XCTAssertEqual(saved.items.map(\.identity.remoteBookId), ["1"])
+        XCTAssertEqual(saved.targets.map(\.frozen), [false])
+        XCTAssertTrue(try await LibraryRepository(database: database).libraryEntries().isEmpty, "a mirror never pins")
+
+        try await mirror.save(try snapshot([], generation: 3))
+        let refreshed = try XCTUnwrap(try await mirror.mirror(sourceId: "org.tsuyomi.wenku8"))
+        XCTAssertEqual(refreshed.targets.map(\.frozen), [true], "a target the site stopped listing survives frozen")
 
         try await store.setSourceAvailability(
             sourceId: "org.tsuyomi.wenku8", version: "0.3.0", available: true, generation: 4
         )
         do {
-            _ = try await store.merge(request)
-            XCTFail("expected a stale lease to abort the merge")
+            try await mirror.save(try snapshot([folder], generation: 3))
+            XCTFail("expected a stale lease to abort the snapshot")
         } catch {
             XCTAssertNotNil(error as? DatabaseError)
         }
@@ -241,32 +260,151 @@ final class DatabaseTests: XCTestCase {
     func testReconciliationTransitionsFollowTheDeclaredStateMachine() async throws {
         let database = try TsuyomiDatabase.inMemory()
         let store = RemoteLibraryStore(database: database)
-        let id = try await store.beginRemoteAdd(
-            RemoteAddRequest(
+        func request(_ operation: RemoteWriteOperation, retrying: String? = nil) throws -> RemoteMutationRequest {
+            RemoteMutationRequest(
                 book: try book("1", title: "書"),
+                operation: operation,
                 packageDigest: "digest",
                 packageVersion: "0.2.0",
                 capabilitySetFingerprint: "capability",
                 registryGeneration: 1,
+                retryingUnresolvedId: retrying,
                 startedAt: Date(timeIntervalSince1970: 1_000)
             )
-        )
-        let started = try await store.transitionRemoteAdd(
+        }
+        let id = try await store.beginRemoteMutation(try request(.add))
+        let started = try await store.transitionRemoteMutation(
             id: id, expected: .pendingUserAction, next: .inFlight, now: Date(timeIntervalSince1970: 1_001)
         )
         XCTAssertTrue(started)
         do {
-            _ = try await store.transitionRemoteAdd(
+            _ = try await store.transitionRemoteMutation(
                 id: id, expected: .inFlight, next: .pendingUserAction, now: Date(timeIntervalSince1970: 1_002)
             )
             XCTFail("expected an illegal transition to be rejected")
         } catch {
             XCTAssertNotNil(error as? DatabaseError)
         }
-        let confirmed = try await store.transitionRemoteAdd(
-            id: id, expected: .inFlight, next: .confirmed, now: Date(timeIntervalSince1970: 1_003)
+        XCTAssertTrue(try await store.transitionRemoteMutation(
+            id: id, expected: .inFlight, next: .unresolved, now: Date(timeIntervalSince1970: 1_003)
+        ))
+        do {
+            _ = try await store.beginRemoteMutation(try request(.remove))
+            XCTFail("an unresolved attempt blocks any other operation")
+        } catch {
+            XCTAssertNotNil(error as? DatabaseError)
+        }
+        do {
+            _ = try await store.transitionRemoteMutation(
+                id: id, expected: .unresolved, next: .cancelled, now: Date(timeIntervalSince1970: 1_004)
+            )
+            XCTFail("an accepted add can never be declared undone")
+        } catch {
+            XCTAssertNotNil(error as? DatabaseError)
+        }
+        let retry = try await store.beginRemoteMutation(try request(.add, retrying: id))
+        XCTAssertTrue(try await store.transitionRemoteMutation(
+            id: retry, expected: .pendingUserAction, next: .inFlight, now: Date(timeIntervalSince1970: 1_005)
+        ))
+        XCTAssertTrue(try await store.transitionRemoteMutation(
+            id: retry, expected: .inFlight, next: .confirmed, now: Date(timeIntervalSince1970: 1_006)
+        ))
+        try await store.confirmUnresolvedMutations(try identity("1"), operation: .add, now: Date(timeIntervalSince1970: 1_007))
+        XCTAssertEqual(try await store.reconciliation(id: id)?.state, .confirmed)
+        XCTAssertEqual(try await store.latestReconciliation(try identity("1"))?.id, retry)
+    }
+
+    /// Removal keeps everything the reader wrote about the book; only the pin and the manual
+    /// memberships go, and adding again brings the pin back over the same annotations.
+    func testRemovalUnpinsButKeepsTheRetainedRecord() async throws {
+        let database = try TsuyomiDatabase.inMemory()
+        let library = LibraryRepository(database: database)
+        let collections = CollectionStore(database: database)
+        let identity = try identity("1")
+        XCTAssertTrue(try await library.addToLibrary(try book("1", title: "書")))
+        try await library.setRating(identity, rating: 4)
+        try await library.setLocalTags(identity, tags: ["收藏"])
+        try await library.setReadLater(identity, readLater: true)
+        try await collections.createCollection(
+            try LibraryCollection(collectionId: "c1", kind: .manual, title: "夹", parentCollectionId: nil, displayOrder: 0)
         )
-        XCTAssertTrue(confirmed)
+        XCTAssertTrue(try await collections.addManualMembership("c1", identity))
+
+        XCTAssertTrue(try await library.removeFromLibrary(identity))
+        XCTAssertFalse(try await library.removeFromLibrary(identity), "removing an unpinned book changes nothing")
+        XCTAssertTrue(try await library.libraryEntries().isEmpty)
+        let retained = try XCTUnwrap(try await library.libraryEntry(identity))
+        XCTAssertFalse(retained.localMembership)
+        XCTAssertEqual(retained.rating, 4)
+        XCTAssertEqual(retained.localTags, ["收藏"])
+        XCTAssertTrue(retained.readLater)
+        XCTAssertEqual(try await library.readLaterEntries().map(\.book.identity), [identity])
+        XCTAssertTrue(try await collections.collectionEntries("c1").isEmpty)
+        do {
+            _ = try await collections.addManualMembership("c1", identity)
+            XCTFail("a retained record cannot hold a manual membership")
+        } catch {
+            XCTAssertNotNil(error as? DatabaseError)
+        }
+
+        XCTAssertTrue(try await library.addToLibrary(try book("1", title: "書")))
+        let pinned = try XCTUnwrap(try await library.libraryEntry(identity))
+        XCTAssertTrue(pinned.localMembership)
+        XCTAssertEqual(pinned.rating, 4)
+        XCTAssertEqual(try await library.libraryEntries().count, 1)
+    }
+
+    func testChapterCompletionIsExactAndFirstWins() async throws {
+        let database = try TsuyomiDatabase.inMemory()
+        let library = LibraryRepository(database: database)
+        let progress = ReadingProgressStore(database: database)
+        let identity = try identity("1")
+        try await library.saveBook(try book("1", title: "書"))
+        try await progress.markChapterCompleted(identity, chapterId: "c2", at: Date(timeIntervalSince1970: 20))
+        try await progress.markChapterCompleted(identity, chapterId: "c1", at: Date(timeIntervalSince1970: 30))
+        try await progress.markChapterCompleted(identity, chapterId: "c2", at: Date(timeIntervalSince1970: 40))
+        XCTAssertEqual(try await progress.completedChapterIds(identity), ["c2", "c1"])
+        do {
+            try await progress.markChapterCompleted(identity, chapterId: "  ", at: Date())
+            XCTFail("a blank chapter id is not a completion")
+        } catch {
+            XCTAssertNotNil(error as? DatabaseError)
+        }
+    }
+
+    /// A database written at the frozen v4 schema is carried to the current version in place.
+    func testAVersionFourDatabaseIsMigratedInPlace() async throws {
+        let path = NSTemporaryDirectory() + "migrate-\(UUID().uuidString).sqlite"
+        defer { try? FileManager.default.removeItem(atPath: path) }
+        var handle: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(path, &handle), SQLITE_OK)
+        let raw = try XCTUnwrap(handle)
+        let legacy = SQLiteConnection(handle: raw)
+        for statement in TsuyomiSchema.version4 { try legacy.execute(statement) }
+        try legacy.execute("PRAGMA user_version=4")
+        try legacy.execute(
+            """
+            INSERT INTO books (source_id, remote_book_id, title, added_at_epoch_second, added_at_nano,
+            metadata_updated_at_epoch_second, metadata_updated_at_nano) VALUES ('org.tsuyomi.wenku8', '1', '書', 1, 0, 1, 0)
+            """
+        )
+        try legacy.execute(
+            """
+            INSERT INTO library_entries (source_id, remote_book_id, added_at_epoch_second, added_at_nano)
+            VALUES ('org.tsuyomi.wenku8', '1', 1, 0)
+            """
+        )
+        sqlite3_close_v2(raw)
+
+        let database = try TsuyomiDatabase(path: path)
+        let version = try await database.read { try $0.query("PRAGMA user_version").first?["user_version"].int }
+        XCTAssertEqual(version, 10)
+        let entries = try await LibraryRepository(database: database).libraryEntries()
+        XCTAssertEqual(entries.map(\.localMembership), [true], "every pre-existing entry is pinned")
+        let tables = try await database.read { connection in
+            try connection.query("SELECT name FROM sqlite_master WHERE type = 'table'").compactMap { $0["name"].string }
+        }
+        XCTAssertTrue(Set(tables).isSuperset(of: ["completed_chapters", "remote_mirror_items", "unresolved_updates"]))
     }
 
     private func progressRecord(_ identity: BookIdentity, offset: Int, at seconds: TimeInterval) throws

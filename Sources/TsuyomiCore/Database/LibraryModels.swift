@@ -96,12 +96,15 @@ public enum RemoteReconciliationState: String, Sendable, CaseIterable {
     case cancelled = "CANCELLED"
 }
 
+/// A book the reader has touched. `localMembership` is the shelf pin; a retained record without it
+/// keeps its rating, tags, read-later flag, progress and completion after removal from the shelf.
 public struct LibraryEntry: Hashable, Sendable {
     public let book: LibraryBook
     public let libraryAddedAt: Date
     public let rating: Int?
     public let localTags: [String]
     public let readLater: Bool
+    public let localMembership: Bool
     public let sourceAvailable: Bool
     public let reconciliation: RemoteReconciliationState?
     public let progress: ReadingProgress?
@@ -112,6 +115,7 @@ public struct LibraryEntry: Hashable, Sendable {
         rating: Int?,
         localTags: [String],
         readLater: Bool = false,
+        localMembership: Bool = true,
         sourceAvailable: Bool,
         reconciliation: RemoteReconciliationState?,
         progress: ReadingProgress? = nil
@@ -124,6 +128,7 @@ public struct LibraryEntry: Hashable, Sendable {
         self.rating = rating
         self.localTags = localTags
         self.readLater = readLater
+        self.localMembership = localMembership
         self.sourceAvailable = sourceAvailable
         self.reconciliation = reconciliation
         self.progress = progress
@@ -137,6 +142,8 @@ public struct SourceRemotePolicy: Hashable, Sendable {
     public let approvedOrigin: String
     public let addWritebackEnabled: Bool
     public let firstImportPromptDismissed: Bool
+    public let removeWritebackEnabled: Bool
+    public let moveWritebackEnabled: Bool
 
     public init(
         sourceId: String,
@@ -144,7 +151,9 @@ public struct SourceRemotePolicy: Hashable, Sendable {
         capabilitySetFingerprint: String,
         approvedOrigin: String,
         addWritebackEnabled: Bool,
-        firstImportPromptDismissed: Bool
+        firstImportPromptDismissed: Bool,
+        removeWritebackEnabled: Bool = false,
+        moveWritebackEnabled: Bool = false
     ) {
         self.sourceId = sourceId
         self.trustedPublisherFingerprint = trustedPublisherFingerprint
@@ -152,6 +161,16 @@ public struct SourceRemotePolicy: Hashable, Sendable {
         self.approvedOrigin = approvedOrigin
         self.addWritebackEnabled = addWritebackEnabled
         self.firstImportPromptDismissed = firstImportPromptDismissed
+        self.removeWritebackEnabled = removeWritebackEnabled
+        self.moveWritebackEnabled = moveWritebackEnabled
+    }
+
+    public func writebackEnabled(_ operation: RemoteWriteOperation) -> Bool {
+        switch operation {
+        case .add: return addWritebackEnabled
+        case .remove: return removeWritebackEnabled
+        case .move: return moveWritebackEnabled
+        }
     }
 }
 

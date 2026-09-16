@@ -20,7 +20,7 @@ public actor TsuyomiDatabase {
     private var changeSequence: Int64 = 0
     private var observers: [UUID: @Sendable (Int64) -> Void] = [:]
 
-    public static let schemaVersion: Int32 = 4
+    public static let schemaVersion: Int32 = 10
 
     public init(path: String) throws {
         var handle: OpaquePointer?
@@ -36,18 +36,31 @@ public actor TsuyomiDatabase {
         try connection.execute("PRAGMA foreign_keys=ON")
         try connection.execute("PRAGMA busy_timeout=5000")
         let current = try connection.query("PRAGMA user_version").first?["user_version"].int ?? 0
-        if current == 0 {
-            try connection.execute("BEGIN")
-            do {
-                for statement in TsuyomiSchema.version4 { try connection.execute(statement) }
-                try connection.execute("PRAGMA user_version=\(TsuyomiDatabase.schemaVersion)")
-                try connection.execute("COMMIT")
-            } catch {
-                try? connection.execute("ROLLBACK")
-                throw error
-            }
-        } else if current != Int64(TsuyomiDatabase.schemaVersion) {
+        guard current <= Int64(TsuyomiDatabase.schemaVersion) else {
             throw DatabaseError.invariantViolated("unsupported schema version \(current)")
+        }
+        guard current < Int64(TsuyomiDatabase.schemaVersion) else { return }
+        // Each migration is its own transaction and stamps its own version, so an interrupted
+        // upgrade resumes from the last version that fully landed instead of replaying a step.
+        try connection.execute("PRAGMA foreign_keys=OFF")
+        defer { try? connection.execute("PRAGMA foreign_keys=ON") }
+        if current == 0 {
+            try TsuyomiDatabase.apply(TsuyomiSchema.version4, version: 4, connection)
+        }
+        for migration in TsuyomiSchema.migrations where Int64(migration.version) > max(current, 4) {
+            try TsuyomiDatabase.apply(migration.statements, version: migration.version, connection)
+        }
+    }
+
+    private static func apply(_ statements: [String], version: Int32, _ connection: SQLiteConnection) throws {
+        try connection.execute("BEGIN")
+        do {
+            for statement in statements { try connection.execute(statement) }
+            try connection.execute("PRAGMA user_version=\(version)")
+            try connection.execute("COMMIT")
+        } catch {
+            try? connection.execute("ROLLBACK")
+            throw error
         }
     }
 

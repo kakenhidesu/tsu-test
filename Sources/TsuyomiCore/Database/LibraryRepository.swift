@@ -5,7 +5,8 @@ import TsuyomiProtocol
 
 /// The only public persistence boundary for `books`, `library_entries`, `local_book_tags`, and the
 /// browsing and search history. Every statement is parameterised; no caller
-/// value is ever concatenated into SQL.
+/// value is ever concatenated into SQL. The shelf is the set of pinned entries; removal unpins and
+/// drops manual memberships but keeps everything the reader wrote about the book.
 public struct LibraryRepository: Sendable {
     let database: TsuyomiDatabase
 
@@ -28,7 +29,25 @@ public struct LibraryRepository: Sendable {
                 SELECT library_entries.source_id, library_entries.remote_book_id
                 FROM library_entries
                 INNER JOIN books USING(source_id, remote_book_id)
+                WHERE library_entries.local_pin = 1
                 ORDER BY library_entries.display_order, library_entries.added_at_epoch_second DESC,
+                books.title COLLATE NOCASE, books.source_id, books.remote_book_id
+                """
+            )
+            return try LibraryCatalog.entries(rows.compactMap(LibraryCatalog.identity), connection)
+        }
+    }
+
+    /// Read-later is independent of the pin: a book removed from the shelf stays in this list.
+    public func readLaterEntries() async throws -> [LibraryEntry] {
+        try await database.read { connection in
+            let rows = try connection.query(
+                """
+                SELECT library_entries.source_id, library_entries.remote_book_id
+                FROM library_entries
+                INNER JOIN books USING(source_id, remote_book_id)
+                WHERE library_entries.read_later = 1
+                ORDER BY library_entries.added_at_epoch_second DESC,
                 books.title COLLATE NOCASE, books.source_id, books.remote_book_id
                 """
             )
@@ -40,6 +59,7 @@ public struct LibraryRepository: Sendable {
         try await database.read { try LibraryCatalog.entries([identity], $0).first }
     }
 
+    /// Adding pins: a retained record is pinned back with its rating, tags and progress intact.
     @discardableResult
     public func addToLibrary(_ book: LibraryBook) async throws -> Bool {
         try await database.withTransaction { connection in
@@ -47,13 +67,18 @@ public struct LibraryRepository: Sendable {
             try connection.execute(
                 """
                 INSERT OR IGNORE INTO library_entries
-                (source_id, remote_book_id, added_at_epoch_second, added_at_nano, rating, read_later, display_order)
-                VALUES (?, ?, ?, ?, NULL, 0, 2147483647)
+                (source_id, remote_book_id, added_at_epoch_second, added_at_nano, rating, read_later, display_order, local_pin)
+                VALUES (?, ?, ?, ?, NULL, 0, 2147483647, 1)
                 """,
                 [
                     .text(book.identity.sourceId), .text(book.identity.remoteBookId),
                     .integer(book.addedAt.epochSecond), .integer(Int64(book.addedAt.nanoOfSecond))
                 ]
+            )
+            if connection.changes != 0 { return true }
+            try connection.execute(
+                "UPDATE library_entries SET local_pin = 1 WHERE source_id = ? AND remote_book_id = ? AND local_pin = 0",
+                [.text(book.identity.sourceId), .text(book.identity.remoteBookId)]
             )
             return connection.changes != 0
         }
@@ -64,16 +89,24 @@ public struct LibraryRepository: Sendable {
         try await removeFromLibrary([identity]) != 0
     }
 
+    /// Removal unpins and drops the book's manual memberships, nothing else: rating, tags,
+    /// read-later, progress and completion stay on the retained record. Removing a book that is not
+    /// pinned changes nothing.
     @discardableResult
     public func removeFromLibrary(_ identities: Set<BookIdentity>) async throws -> Int {
         try await database.withTransaction { connection in
             var removed = 0
             for identity in identities.sorted() {
                 try connection.execute(
-                    "DELETE FROM library_entries WHERE source_id = ? AND remote_book_id = ?",
+                    "UPDATE library_entries SET local_pin = 0 WHERE source_id = ? AND remote_book_id = ? AND local_pin = 1",
                     [.text(identity.sourceId), .text(identity.remoteBookId)]
                 )
-                if connection.changes != 0 { removed += 1 }
+                guard connection.changes != 0 else { continue }
+                try connection.execute(
+                    "DELETE FROM manual_collection_memberships WHERE source_id = ? AND remote_book_id = ?",
+                    [.text(identity.sourceId), .text(identity.remoteBookId)]
+                )
+                removed += 1
             }
             return removed
         }
@@ -83,7 +116,7 @@ public struct LibraryRepository: Sendable {
     /// so a stale screen can never silently drop or duplicate an entry.
     public func reorderLibrary(_ identities: [BookIdentity]) async throws {
         try await database.withTransaction { connection in
-            let current = try connection.query("SELECT source_id, remote_book_id FROM library_entries")
+            let current = try connection.query("SELECT source_id, remote_book_id FROM library_entries WHERE local_pin = 1")
                 .compactMap(LibraryCatalog.identity)
             guard identities.count == current.count, Set(identities) == Set(current) else {
                 throw DatabaseError.invariantViolated("Library reorder must contain every current entry exactly once")
@@ -261,6 +294,7 @@ enum LibraryCatalog {
                     rating: entry["rating"].int.map(Int.init),
                     localTags: tags,
                     readLater: entry["read_later"].bool ?? false,
+                    localMembership: entry["local_pin"].bool ?? true,
                     sourceAvailable: available,
                     reconciliation: reconciliation,
                     progress: try ReadingProgressStore.progress(identity, connection)
