@@ -8,6 +8,14 @@
 	</array>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<false/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>org.tsuyomi.ios.updates.refresh</string>
+	</array>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>processing</string>
+	</array>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsArbitraryLoads</key>

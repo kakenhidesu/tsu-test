@@ -8,8 +8,10 @@ import os
 import TsuyomiApp
 import TsuyomiCore
 import TsuyomiProtocol
+import LibraryFeature
 import TsuyomiRemoteLibrary
 import TsuyomiSource
+import TsuyomiUpdates
 import XCTest
 
 /// A source installed through the real lifecycle, signed in, and answered by a transport that
@@ -22,11 +24,15 @@ struct MirrorWorld {
     let library: LibraryRepository
     let remoteLibrary: RemoteLibraryStore
     let mirror: RemoteMirrorStore
+    let updates: UpdateStore
+    let progress: ReadingProgressStore
     let coordinator: RemoteLibraryCoordinator
+    let updateCoordinator: UpdateCoordinator
     let lifecycle: ExtensionLifecycle
     let preferences: AppPreferences
     let transport: MirrorTransport
     let installedSourceId: SourceId
+    private let databaseHandle: TsuyomiDatabase
 
     init(directory: URL, signedIn: Bool = true) async throws {
         sourceId = try SourceId("org.tsuyomi.wenku8")
@@ -34,9 +40,12 @@ struct MirrorWorld {
         transport = MirrorTransport()
         let roots = try StorageRoots(base: directory)
         let database = try TsuyomiDatabase(path: directory.appendingPathComponent("t.sqlite").path)
+        databaseHandle = database
         library = LibraryRepository(database: database)
         remoteLibrary = RemoteLibraryStore(database: database)
         mirror = RemoteMirrorStore(database: database)
+        updates = UpdateStore(database: database)
+        progress = ReadingProgressStore(database: database)
         preferences = AppPreferences(defaults: UserDefaults(suiteName: "mirror-\(UUID().uuidString)") ?? .standard)
         let files = try QuotaFileStore(
             roots: roots,
@@ -97,6 +106,24 @@ struct MirrorWorld {
             sessions: sessions,
             tokens: tokens
         )
+        updateCoordinator = UpdateCoordinator(
+            registry: registry,
+            updates: updates,
+            library: library,
+            mirror: mirror,
+            remoteLibrary: remoteLibrary,
+            progress: progress
+        )
+    }
+
+    func libraryModel() -> LibraryModel {
+        LibraryModel(
+            library: library,
+            collections: CollectionStore(database: databaseHandle),
+            preferences: preferences,
+            updates: updates,
+            checker: updateCoordinator
+        )
     }
 
     func mirrorModel(targetId: String? = nil) -> RemoteLibraryModel {
@@ -147,6 +174,7 @@ final class MirrorTransport: HostHttpTransport {
         var failNext: Failure?
         var removeOutcome = "applied"
         var moveOutcome = "applied"
+        var directoryPage = "directory"
     }
 
     var requests: [HostHttpRequest] { state.withLock { $0.requests } }
@@ -163,12 +191,17 @@ final class MirrorTransport: HostHttpTransport {
         state.withLock { $0.removeOutcome = outcome }
     }
 
+    /// The page the source's directory and update-check requests read.
+    func setDirectoryPage(_ name: String) {
+        state.withLock { $0.directoryPage = name }
+    }
+
     func execute(_ request: HostHttpRequest) async throws -> HostHttpResponse {
-        let (failure, remove, move) = state.withLock { current -> (Failure?, String, String) in
+        let (failure, remove, move, directory) = state.withLock { current -> (Failure?, String, String, String) in
             current.requests.append(request)
             let failure = current.failNext
             current.failNext = nil
-            return (failure, current.removeOutcome, current.moveOutcome)
+            return (failure, current.removeOutcome, current.moveOutcome, current.directoryPage)
         }
         if failure == .transport { throw HostNetworkException(.transport) }
         let url = request.url.absoluteString
@@ -194,7 +227,7 @@ final class MirrorTransport: HostHttpTransport {
         } else if url.contains("cid=") {
             html = try MirrorTransport.utf8("chapter")
         } else if url.contains("reader.php") {
-            html = try MirrorTransport.utf8("directory")
+            html = try MirrorTransport.utf8(directory)
         } else {
             html = try MirrorTransport.utf8("detail")
         }

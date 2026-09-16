@@ -120,7 +120,8 @@ struct BookHost: View {
                 registry: container.registry,
                 library: container.library,
                 progressStore: container.progress,
-                collections: container.collections
+                collections: container.collections,
+                updates: container.updates
             )
         )
         _remote = StateObject(
@@ -166,6 +167,7 @@ struct ReaderHost: View {
                 settings: container.preferences.reader,
                 registry: container.registry,
                 progressStore: container.progress,
+                updates: container.updates,
                 persist: { [preferences = container.preferences] in preferences.setReader($0) }
             )
         )

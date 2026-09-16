@@ -8,6 +8,7 @@ import TsuyomiUI
 enum MoreRoute: Hashable {
     case display
     case readerSettings
+    case updateSettings
     case data
     case transfer
     case help
@@ -19,10 +20,19 @@ enum MoreRoute: Hashable {
 struct MoreScreen: View {
     @ObservedObject var container: AppContainer
     @StateObject private var transfer: TransferModel
+    @StateObject private var updateSettings: UpdateSettingsModel
     @State private var path: [MoreRoute] = []
 
-    init(container: AppContainer) {
+    init(container: AppContainer, scheduler: UpdateScheduler) {
         self.container = container
+        _updateSettings = StateObject(
+            wrappedValue: UpdateSettingsModel(
+                updates: container.updates,
+                library: container.library,
+                registry: container.registry,
+                policyChanged: { [weak scheduler] in await scheduler?.reschedule() }
+            )
+        )
         _transfer = StateObject(
             wrappedValue: TransferModel(
                 transfers: container.transfers,
@@ -38,6 +48,7 @@ struct MoreScreen: View {
                 Section("设置") {
                     row("显示", "paintpalette", .display)
                     row("阅读器设置", "textformat", .readerSettings)
+                    row("更新检查", "arrow.triangle.2.circlepath", .updateSettings)
                 }
                 Section("数据") {
                     row("数据", "externaldrive", .data)
@@ -66,6 +77,8 @@ struct MoreScreen: View {
             DisplaySettingsScreen(preferences: container.preferences)
         case .readerSettings:
             ReaderSettingsScreen(preferences: container.preferences)
+        case .updateSettings:
+            UpdateSettingsScreen(model: updateSettings)
         case .data:
             DataSettingsScreen { path.append(.transfer) }
         case .transfer:

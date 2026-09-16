@@ -122,6 +122,16 @@ public struct BookScreen: View {
                         Label("从书架移除", systemImage: "bookmark.slash")
                     }
                 }
+                if case .content(let content) = model.state {
+                    Button {
+                        Task { await model.setUpdateChecksExcluded(!content.updateChecksExcluded) }
+                    } label: {
+                        Label(
+                            content.updateChecksExcluded ? "恢复检查更新" : "停止检查更新",
+                            systemImage: content.updateChecksExcluded ? "bell" : "bell.slash"
+                        )
+                    }
+                }
                 if let shelf = remote.state, shelf.canMove {
                     Menu {
                         ForEach(shelf.liveTargets, id: \.targetId) { target in

@@ -36,6 +36,7 @@ public final class ReaderModel: ObservableObject {
     public let identity: BookIdentity
     private let registry: SourceRegistry
     private let progressStore: ReadingProgressStore
+    private let updates: UpdateStore?
     private let persist: @MainActor (ReaderSettings) -> Void
     private let documents = ReaderDocumentCache()
     private let clock: () -> Date
@@ -48,6 +49,7 @@ public final class ReaderModel: ObservableObject {
     private var layoutEpoch: Int64 = 0
     private var navigationEpoch: Int64 = 0
     private var lastFlushed: ReaderLocator?
+    private var reportedCompletions: Set<String> = []
 
     public init(
         identity: BookIdentity,
@@ -56,6 +58,7 @@ public final class ReaderModel: ObservableObject {
         settings: ReaderSettings,
         registry: SourceRegistry,
         progressStore: ReadingProgressStore,
+        updates: UpdateStore? = nil,
         persist: @MainActor @escaping (ReaderSettings) -> Void = { _ in },
         clock: @escaping () -> Date = Date.init
     ) {
@@ -65,8 +68,16 @@ public final class ReaderModel: ObservableObject {
         self.settings = settings
         self.registry = registry
         self.progressStore = progressStore
+        self.updates = updates
         self.persist = persist
         self.clock = clock
+    }
+
+    /// Whether the page on screen is the chapter's last. Only a forward transition from here counts
+    /// as completing the chapter; a position, however far, never does.
+    public var atChapterEnd: Bool {
+        guard let textLayout, !textLayout.pages.isEmpty else { return false }
+        return visiblePageIndex >= textLayout.pages.count - 1
     }
 
     public var chapter: SourceChapter? {
@@ -160,10 +171,20 @@ public final class ReaderModel: ObservableObject {
     public func openAdjacent(_ delta: Int) async {
         let target = chapterIndex + delta
         guard chapters.indices.contains(target) else { return }
+        if delta > 0, atChapterEnd { await reportChapterCompleted() }
         await flush()
         chapterIndex = target
         pageIndex = 0
         await open()
+    }
+
+    /// Completion is exact and first-wins in the store; here it is reported once per chapter per
+    /// reader so a reader paging back and forth does not keep writing the same row.
+    private func reportChapterCompleted() async {
+        guard let chapter, reportedCompletions.insert(chapter.chapterId).inserted else { return }
+        try? await progressStore.markChapterCompleted(identity, chapterId: chapter.chapterId, at: clock())
+        guard let updates, let completed = try? await progressStore.completedChapterIds(identity) else { return }
+        try? await updates.reconcileCompleted(identity, completedChapterIds: Set(completed))
     }
 
     public func open(chapterId: String) async {

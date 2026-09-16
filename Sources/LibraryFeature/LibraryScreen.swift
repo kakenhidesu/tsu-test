@@ -207,7 +207,7 @@ public struct LibraryScreen: View {
 
     private func badge(_ entry: LibraryEntry) -> (text: LocalizedStringKey, tone: TsuyomiStatusTone)? {
         if !entry.sourceAvailable { return ("来源休眠", .warning) }
-        if entry.book.hasUnreadUpdate { return ("有更新", .positive) }
+        if let update = model.update(for: entry.book.identity) { return ("新增 \(update.newChapterIds.count) 章", .positive) }
         if entry.readLater { return ("稍后再读", .neutral) }
         return nil
     }

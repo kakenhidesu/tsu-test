@@ -16,6 +16,7 @@ public struct BookDetailState: Sendable {
     public let readChapterIds: Set<String>
     public let collections: [LibraryCollection]
     public let memberCollectionIds: Set<String>
+    public let updateChecksExcluded: Bool
 }
 
 /// The detail page and its directory are one screen backed by one identity. Everything it writes is
@@ -31,6 +32,7 @@ public final class BookModel: ObservableObject {
     private let library: LibraryRepository
     private let progressStore: ReadingProgressStore
     private let collections: CollectionStore?
+    private let updates: UpdateStore?
     private let clock: () -> Date
     private var detail: SourceBookDetail?
     private var chapters: [SourceChapter] = []
@@ -42,6 +44,7 @@ public final class BookModel: ObservableObject {
         library: LibraryRepository,
         progressStore: ReadingProgressStore,
         collections: CollectionStore? = nil,
+        updates: UpdateStore? = nil,
         clock: @escaping () -> Date = Date.init
     ) {
         self.identity = identity
@@ -49,7 +52,15 @@ public final class BookModel: ObservableObject {
         self.library = library
         self.progressStore = progressStore
         self.collections = collections
+        self.updates = updates
         self.clock = clock
+    }
+
+    /// Excluding a book from update checks removes nothing: not the book, not its progress.
+    public func setUpdateChecksExcluded(_ excluded: Bool) async {
+        guard let updates else { return }
+        try? await updates.setBookExcluded(identity, excluded: excluded)
+        await publish()
     }
 
     public var libraryBook: LibraryBook? {
@@ -174,7 +185,8 @@ public final class BookModel: ObservableObject {
                 resumeChapterId: progress?.locator.document.contentId,
                 readChapterIds: readChapterIds(upTo: progress?.locator.document.contentId),
                 collections: manual,
-                memberCollectionIds: member
+                memberCollectionIds: member,
+                updateChecksExcluded: (try? await updates?.isBookExcluded(identity)) ?? false
             )
         )
     }

@@ -104,11 +104,12 @@ final class RemoteMirrorJourneyTests: XCTestCase {
         XCTAssertEqual(shelf.banner, .added(targetName: nil))
         XCTAssertEqual(world.transport.writes.count, 1)
         XCTAssertEqual(shelf.state?.inMirror, true)
-        let record = try XCTUnwrap(try await world.remoteLibrary.latestReconciliation(identity))
+        let awaited7 = try await world.remoteLibrary.latestReconciliation(identity)
+        let record = try XCTUnwrap(awaited7)
         XCTAssertEqual(record.state, .confirmed)
         XCTAssertEqual(record.operation, .add)
-        let awaited7 = try await world.library.libraryEntries().isEmpty
-        XCTAssertTrue(awaited7, "a website add never pins locally")
+        let awaited8 = try await world.library.libraryEntries().isEmpty
+        XCTAssertTrue(awaited8, "a website add never pins locally")
 
         await shelf.addToWebsite(detail, targetId: nil, targetName: nil)
         XCTAssertEqual(shelf.banner, .result(.add, .failure(.bookAlreadyAdded, code: "book-already-added")))
@@ -121,31 +122,33 @@ final class RemoteMirrorJourneyTests: XCTestCase {
     func testAFailureAfterAcceptanceStaysUnresolvedUntilARetryIsAnswered() async throws {
         let world = try await MirrorWorld(directory: directory)
         let identity = try world.identity("1234")
-        let awaited8 = await world.coordinator.pull(world.sourceId)
-        XCTAssertEqual(awaited8, .success(count: 2))
+        let awaited9 = await world.coordinator.pull(world.sourceId)
+        XCTAssertEqual(awaited9, .success(count: 2))
         try await world.coordinator.grantWriteback(.remove, sourceId: world.sourceId)
         try await world.coordinator.grantWriteback(.move, sourceId: world.sourceId)
 
         world.transport.failNext(.transport)
-        let awaited9 = await world.coordinator.remove(identity)
-        XCTAssertEqual(awaited9, .unresolved)
-        let unresolved = try XCTUnwrap(try await world.remoteLibrary.latestReconciliation(identity))
+        let awaited10 = await world.coordinator.remove(identity)
+        XCTAssertEqual(awaited10, .unresolved)
+        let awaited11 = try await world.remoteLibrary.latestReconciliation(identity)
+        let unresolved = try XCTUnwrap(awaited11)
         XCTAssertEqual(unresolved.state, .unresolved)
-        let awaited10 = try await world.mirror.membership(identity)
-        XCTAssertNotNil(awaited10, "an unanswered removal changes nothing here")
+        let awaited12 = try await world.mirror.membership(identity)
+        XCTAssertNotNil(awaited12, "an unanswered removal changes nothing here")
 
-        let awaited11 = await world.coordinator.move(identity, targetId: "0", targetName: "默认书架")
-        XCTAssertEqual(awaited11,
+        let awaited13 = await world.coordinator.move(identity, targetId: "0", targetName: "默认书架")
+        XCTAssertEqual(awaited13,
             .failure(.blockedUnresolved, code: "remote-mutation-blocked-unresolved")
         )
-        let awaited12 = await world.coordinator.retry(identity)
-        XCTAssertEqual(awaited12, .confirmed)
-        let closed = try XCTUnwrap(try await world.remoteLibrary.latestReconciliation(identity))
+        let awaited14 = await world.coordinator.retry(identity)
+        XCTAssertEqual(awaited14, .confirmed)
+        let awaited15 = try await world.remoteLibrary.latestReconciliation(identity)
+        let closed = try XCTUnwrap(awaited15)
         XCTAssertEqual(closed.state, .confirmed)
-        let awaited13 = try await world.remoteLibrary.reconciliation(id: unresolved.id)?.state
-        XCTAssertEqual(awaited13, .confirmed, "the chain closes")
-        let awaited14 = try await world.mirror.membership(identity)
-        XCTAssertNil(awaited14)
+        let awaited16 = try await world.remoteLibrary.reconciliation(id: unresolved.id)?.state
+        XCTAssertEqual(awaited16, .confirmed, "the chain closes")
+        let awaited17 = try await world.mirror.membership(identity)
+        XCTAssertNil(awaited17)
         XCTAssertEqual(world.transport.writes.count, 2)
     }
 
@@ -159,22 +162,22 @@ final class RemoteMirrorJourneyTests: XCTestCase {
         try await world.coordinator.grantWriteback(.add, sourceId: world.sourceId)
 
         world.transport.failNext(.transport)
-        let awaited15 = await world.coordinator.move(identity, targetId: "0", targetName: nil)
-        XCTAssertEqual(awaited15, .unresolved)
-        let awaited16 = await world.coordinator.acknowledgeUnresolved(identity)
-        XCTAssertTrue(awaited16)
-        let awaited17 = try await world.remoteLibrary.latestReconciliation(identity)?.state
-        XCTAssertEqual(awaited17, .cancelled)
+        let awaited18 = await world.coordinator.move(identity, targetId: "0", targetName: nil)
+        XCTAssertEqual(awaited18, .unresolved)
+        let awaited19 = await world.coordinator.acknowledgeUnresolved(identity)
+        XCTAssertTrue(awaited19)
+        let awaited20 = try await world.remoteLibrary.latestReconciliation(identity)?.state
+        XCTAssertEqual(awaited20, .cancelled)
 
         let fresh = try world.identity("9999")
         let book = LibraryBook(identity: fresh, title: "新书", addedAt: Date(), metadataUpdatedAt: Date())
         world.transport.failNext(.transport)
-        let awaited18 = await world.coordinator.add(book, targetId: nil, targetName: nil)
-        XCTAssertEqual(awaited18, .unresolved)
-        let awaited19 = await world.coordinator.acknowledgeUnresolved(fresh)
-        XCTAssertFalse(awaited19, "an add the site may have applied cannot be declared undone")
-        let awaited20 = try await world.remoteLibrary.latestReconciliation(fresh)?.state
-        XCTAssertEqual(awaited20, .unresolved)
+        let awaited21 = await world.coordinator.add(book, targetId: nil, targetName: nil)
+        XCTAssertEqual(awaited21, .unresolved)
+        let awaited22 = await world.coordinator.acknowledgeUnresolved(fresh)
+        XCTAssertFalse(awaited22, "an add the site may have applied cannot be declared undone")
+        let awaited23 = try await world.remoteLibrary.latestReconciliation(fresh)?.state
+        XCTAssertEqual(awaited23, .unresolved)
     }
 
     /// An add into a named folder is an add and then a move; both are recorded and the mirror ends
@@ -188,15 +191,15 @@ final class RemoteMirrorJourneyTests: XCTestCase {
         let fresh = try world.identity("9999")
         let book = LibraryBook(identity: fresh, title: "新书", addedAt: Date(), metadataUpdatedAt: Date())
 
-        let awaited21 = await world.coordinator.add(book, targetId: "1", targetName: "第1组书架")
-        XCTAssertEqual(awaited21,
+        let awaited24 = await world.coordinator.add(book, targetId: "1", targetName: "第1组书架")
+        XCTAssertEqual(awaited24,
             .confirmed(targetId: "1")
         )
         XCTAssertEqual(world.transport.writes.count, 2)
-        let awaited22 = try await world.mirror.membership(fresh)?.targetId
-        XCTAssertEqual(awaited22, "1")
-        let awaited23 = await world.coordinator.add(book, targetId: "0", targetName: "默认书架")
-        XCTAssertEqual(awaited23,
+        let awaited25 = try await world.mirror.membership(fresh)?.targetId
+        XCTAssertEqual(awaited25, "1")
+        let awaited26 = await world.coordinator.add(book, targetId: "0", targetName: "默认书架")
+        XCTAssertEqual(awaited26,
             .confirmed(targetId: "0"),
             "an add into the default folder is one request"
         )
@@ -208,11 +211,11 @@ final class RemoteMirrorJourneyTests: XCTestCase {
         let world = try await MirrorWorld(directory: directory, signedIn: false)
         try await world.coordinator.grantWriteback(.add, sourceId: world.sourceId)
         let book = LibraryBook(identity: try world.identity("9999"), title: "新书", addedAt: Date(), metadataUpdatedAt: Date())
-        let awaited24 = await world.coordinator.add(book, targetId: nil, targetName: nil)
-        XCTAssertEqual(awaited24, .loginRequired)
+        let awaited27 = await world.coordinator.add(book, targetId: nil, targetName: nil)
+        XCTAssertEqual(awaited27, .loginRequired)
         XCTAssertTrue(world.transport.writes.isEmpty)
-        let awaited25 = try await world.remoteLibrary.latestReconciliation(try world.identity("9999"))
-        XCTAssertNil(awaited25, "no attempt is opened")
+        let awaited28 = try await world.remoteLibrary.latestReconciliation(try world.identity("9999"))
+        XCTAssertNil(awaited28, "no attempt is opened")
     }
 
     /// The page's removal is a single-selection act: consent, then a confirmation naming the book,

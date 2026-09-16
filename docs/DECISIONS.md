@@ -196,3 +196,8 @@
 - 回写授权按操作逐个 JIT：ADD/MOVE 首次使用时弹出授权，REMOVE 有回执后**每次**仍要确认书名；无已存会话（`VerifiedBrowserSessionStore`）时不发任何写请求，直接要求登录。
 - `SourceBookSummary.remoteTargetId`（≤128 码点）随网站列表落入镜像；未标注的条目归到"默认"目录（名称含"默认"，否则第一个）。网站分组是每来源的展示偏好（`library_website_grouping`），默认关闭，切换从不移动任何数据；目录页是独立路由 `remoteLibraryFolder`。
 - 详情页拆出 `BookRemoteShelfModel`（网站书架部分）与 `BookModel`（本地写入：书架、稍后再读、本地收藏夹）：`更多加入选项`菜单顺序为 稍后再读 → 网站收藏（分组时逐目录、未分组时"全部网站收藏"）→ 本地收藏夹；MOVE/REMOVE 只在右上角溢出菜单。作者名可点击，一次性交给搜索页做作者检索（`SearchModel.submitAuthor`，输入即清除作者模式）。
+- S5b 更新检查（对齐上游 Phase 4C）：新增服务模块 `TsuyomiUpdates`。`UpdateCoordinator` 一次只跑一个会话：候选 = 已钉住的书架条目 ∪ 未冻结镜像里的书（去重、≤128、排除表在开会话时过滤），每本书重读资格、带上上一次基线锚点发起签名 `update-check-v2`，请求前后各核对一次来源租约（可用、版本、代号），把 `SourceException` 折成受限 reason 令牌（`UpdateCheckAdmission.reason`）：登录/验证/超时/离线记 UNAVAILABLE，其余 FAILED，取消记 SKIPPED。租约剩余不足 40 秒即续约，续约失败为 RELINQUISHED。进程内并发调用折叠（COALESCED），别的活会话占用则 BUSY。
+- 调度用 `BGTaskScheduler` 的 `BGProcessingTask`（标识 `org.tsuyomi.ios.updates.refresh`，Info.plist 已登记 `processing` 后台模式）取代 WorkManager：策略行是唯一真相，启动与每次改策略都重新提交一条"最早开始时间 = 一个周期之后"的请求；系统约束只覆盖联网与充电，"仅非计费网络"与"电量不低"在任务开始时由本侧检查（`NWPathMonitor` 一次读取、`UIDevice` 电量），不满足则整次推迟。注册必须在 `TsuyomiRootScene.init` 里完成，晚了系统拒绝。
+- 章节完读只由"在章末向前翻章"记录（`ReaderModel.openAdjacent(+1)` 且当前页是最后一页），每个阅读器实例每章只报一次；进度位置无论多远都不算完读。完读后调用 `UpdateStore.reconcileCompleted`，收件箱条目只在**所有**新章节都完读时消失。
+- 书架的"有更新"改读 `unresolved_updates`（`LibraryModel.unresolvedUpdates`），`books.has_unread_update` 退为遗留列不再展示；"忽略当前更新"只针对读者看到的那次检测（锚点匹配），30 秒内可撤销，从不改进度。详情页溢出菜单提供"停止/恢复检查更新"（按书排除）。
+- 更新设置页（更多 → 更新检查）：周期、三项条件、按来源开关、已停止检查的书列表；排除既不卸载来源也不删书。

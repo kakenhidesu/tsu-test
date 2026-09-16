@@ -5,6 +5,7 @@ import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiSource
 import TsuyomiUI
+import TsuyomiUpdates
 
 public struct LibraryContent: Sendable {
     public let entries: [LibraryEntry]
@@ -31,24 +32,104 @@ public final class LibraryModel: ObservableObject {
     @Published public private(set) var activeCollection: LibraryCollection?
     @Published public var isShortcutBarCollapsed = false
     @Published public private(set) var isArranging = false
+    /// The inbox: every detected update not yet read through or ignored, by book.
+    @Published public private(set) var unresolvedUpdates: [BookIdentity: UnresolvedUpdate] = [:]
+    @Published public private(set) var updateSession: UpdateSessionSummary?
+    @Published public private(set) var isCheckingUpdates = false
+    @Published public private(set) var undoIgnoreToken: String?
+    @Published public var showUpdatesOnly = false
 
     private let library: LibraryRepository
     private let collections: CollectionStore
     private let preferences: AppPreferences
+    private let updates: UpdateStore?
+    private let checker: UpdateCoordinator?
+    private let clock: () -> Date
     private var entries: [LibraryEntry] = []
     private var allCollections: [LibraryCollection] = []
 
-    public init(library: LibraryRepository, collections: CollectionStore, preferences: AppPreferences) {
+    public init(
+        library: LibraryRepository,
+        collections: CollectionStore,
+        preferences: AppPreferences,
+        updates: UpdateStore? = nil,
+        checker: UpdateCoordinator? = nil,
+        clock: @escaping () -> Date = Date.init
+    ) {
         self.library = library
         self.collections = collections
         self.preferences = preferences
+        self.updates = updates
+        self.checker = checker
+        self.clock = clock
         hiddenSystemNodes = Set(
             preferences.library.hiddenSystemNodes.compactMap(SystemLibraryFilter.init(rawValue:))
         )
     }
 
     public func project(_ values: [LibraryEntry]) -> [LibraryEntry] {
-        LibraryProjection.apply(values, filter: filter, sort: sort, descending: sortDescending)
+        let projected = LibraryProjection.apply(values, filter: filter, sort: sort, descending: sortDescending)
+        guard showUpdatesOnly, filter == .all, activeCollection == nil else { return projected }
+        return projected.filter { unresolvedUpdates[$0.book.identity] != nil }
+    }
+
+    public func update(for identity: BookIdentity) -> UnresolvedUpdate? {
+        unresolvedUpdates[identity]
+    }
+
+    // MARK: Updates
+
+    /// `立即检查` runs a manual session and keeps the status strip current while it does.
+    public func checkUpdatesNow() async {
+        guard let checker, !isCheckingUpdates else { return }
+        isCheckingUpdates = true
+        defer { isCheckingUpdates = false }
+        let run = Task { await checker.run(trigger: .manual) }
+        while !run.isCancelled {
+            await loadUpdateState()
+            if let session = updateSession, session.state == .running || session.state == .queued {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                continue
+            }
+            if await checker.isRunning {
+                try? await Task.sleep(nanoseconds: 500_000_000)
+                continue
+            }
+            break
+        }
+        _ = await run.value
+        await load()
+    }
+
+    public func cancelUpdateCheck() async {
+        guard let checker else { return }
+        _ = await checker.cancel()
+        await loadUpdateState()
+    }
+
+    /// Ignoring names the exact detection the reader saw; it never touches reading progress.
+    public func ignoreUpdate(_ identity: BookIdentity) async {
+        guard let updates, let current = unresolvedUpdates[identity] else { return }
+        undoIgnoreToken = try? await updates.ignore(identity, anchor: current.anchor, now: clock())
+        await loadUpdateState()
+    }
+
+    public func undoIgnore() async {
+        guard let updates, let token = undoIgnoreToken else { return }
+        undoIgnoreToken = nil
+        _ = try? await updates.undo(token: token, now: clock())
+        await loadUpdateState()
+    }
+
+    public func dismissUndo() {
+        undoIgnoreToken = nil
+    }
+
+    private func loadUpdateState() async {
+        guard let updates else { return }
+        let detected = (try? await updates.unresolvedUpdates()) ?? []
+        unresolvedUpdates = Dictionary(detected.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
+        updateSession = try? await updates.latestSession()
     }
 
     public var visibleSystemNodes: [SystemLibraryFilter] {
@@ -101,6 +182,7 @@ public final class LibraryModel: ObservableObject {
     }
 
     public func load() async {
+        await loadUpdateState()
         do {
             if let collection = activeCollection {
                 entries = try await collections.collectionEntries(collection.collectionId)

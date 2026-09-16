@@ -14,6 +14,7 @@ let package = Package(
         .library(name: "TsuyomiReader", targets: ["TsuyomiReader"]),
         .library(name: "TsuyomiUI", targets: ["TsuyomiUI"]),
         .library(name: "TsuyomiRemoteLibrary", targets: ["TsuyomiRemoteLibrary"]),
+        .library(name: "TsuyomiUpdates", targets: ["TsuyomiUpdates"]),
         .library(name: "BrowseFeature", targets: ["BrowseFeature"]),
         .library(name: "SearchFeature", targets: ["SearchFeature"]),
         .library(name: "BookFeature", targets: ["BookFeature"]),
@@ -67,6 +68,11 @@ let package = Package(
         ),
 
         .target(
+            name: "TsuyomiUpdates",
+            dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiSource"]
+        ),
+
+        .target(
             name: "BrowseFeature",
             dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI"]
         ),
@@ -88,7 +94,9 @@ let package = Package(
 
         .target(
             name: "LibraryFeature",
-            dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI"]
+            dependencies: [
+                "TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI", "TsuyomiUpdates"
+            ]
         ),
 
         .target(
@@ -103,7 +111,7 @@ let package = Package(
 
         .target(
             name: "SettingsFeature",
-            dependencies: ["TsuyomiCore", "TsuyomiUI"]
+            dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiSource", "TsuyomiUI", "TsuyomiUpdates"]
         ),
 
         .target(
@@ -111,14 +119,14 @@ let package = Package(
             dependencies: [
                 "BookFeature", "BrowseFeature", "LibraryFeature", "ReaderFeature", "SearchFeature",
                 "ExtensionsFeature", "SettingsFeature", "TransferFeature",
-                "TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI"
+                "TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI", "TsuyomiUpdates"
             ]
         ),
         .testTarget(
             name: "TsuyomiAppTests",
             dependencies: [
-                "BookFeature", "BrowseFeature", "ExtensionsFeature", "ReaderFeature", "SearchFeature", "TsuyomiApp",
-                "TsuyomiReader", "TsuyomiRemoteLibrary", "TsuyomiUI"
+                "BookFeature", "BrowseFeature", "ExtensionsFeature", "LibraryFeature", "ReaderFeature", "SearchFeature",
+                "SettingsFeature", "TsuyomiApp", "TsuyomiReader", "TsuyomiRemoteLibrary", "TsuyomiUI", "TsuyomiUpdates"
             ]
         )
     ]

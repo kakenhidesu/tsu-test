@@ -91,21 +91,24 @@ final class ExtensionTrustJourneyTests: XCTestCase {
         let prepared = try await world.installer.prepare(archiveBytes: original)
         try await world.lifecycle.activate(prepared)
         let sourceId = prepared.candidate.manifest.sourceId
-        let live = try XCTUnwrap(try await world.remoteLibrary.sourceAvailability(sourceId.value))
+        let awaited2 = try await world.remoteLibrary.sourceAvailability(sourceId.value)
+        let live = try XCTUnwrap(awaited2)
         XCTAssertTrue(live.available)
 
         await world.model.uninstall(sourceId)
         XCTAssertNil(world.model.failureCode)
         XCTAssertEqual(world.removedSources.ids, [sourceId])
-        let dormant = try XCTUnwrap(try await world.remoteLibrary.sourceAvailability(sourceId.value))
+        let awaited3 = try await world.remoteLibrary.sourceAvailability(sourceId.value)
+        let dormant = try XCTUnwrap(awaited3)
         XCTAssertFalse(dormant.available)
         XCTAssertNil(dormant.verifiedVersion)
         XCTAssertGreaterThan(dormant.generation, live.generation)
-        let awaited2 = try await world.registry.installedSources().isEmpty
-        XCTAssertTrue(awaited2)
+        let awaited4 = try await world.registry.installedSources().isEmpty
+        XCTAssertTrue(awaited4)
 
         try await world.lifecycle.closeUnverifiable()
-        let unchanged = try XCTUnwrap(try await world.remoteLibrary.sourceAvailability(sourceId.value))
+        let awaited5 = try await world.remoteLibrary.sourceAvailability(sourceId.value)
+        let unchanged = try XCTUnwrap(awaited5)
         XCTAssertEqual(unchanged.generation, dormant.generation, "a dormant source must not churn its generation")
     }
 

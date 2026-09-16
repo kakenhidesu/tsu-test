@@ -5,6 +5,7 @@ import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiRemoteLibrary
 import TsuyomiSource
+import TsuyomiUpdates
 
 /// The single object graph, built once at launch by constructor injection. There is no container
 /// framework and no service locator: everything a screen needs is handed to it.
@@ -18,6 +19,8 @@ public final class AppContainer: ObservableObject {
     public let mirror: RemoteMirrorStore
     public let directActions = DirectActionTokenRegistry()
     public let remoteCoordinator: RemoteLibraryCoordinator
+    public let updates: UpdateStore
+    public let updateCoordinator: UpdateCoordinator
     public let credentials: SourceCredentialStore
     public let sessions: VerifiedBrowserSessionStore
     public let collections: CollectionStore
@@ -50,6 +53,7 @@ public final class AppContainer: ObservableObject {
         progress = ReadingProgressStore(database: database)
         remoteLibrary = RemoteLibraryStore(database: database)
         mirror = RemoteMirrorStore(database: database)
+        updates = UpdateStore(database: database)
         credentials = try SourceCredentialStore(roots: roots)
         sessions = VerifiedBrowserSessionStore(credentials: credentials)
         collections = CollectionStore(database: database)
@@ -86,6 +90,14 @@ public final class AppContainer: ObservableObject {
             library: library,
             sessions: sessions,
             tokens: directActions
+        )
+        updateCoordinator = UpdateCoordinator(
+            registry: registry,
+            updates: updates,
+            library: library,
+            mirror: mirror,
+            remoteLibrary: remoteLibrary,
+            progress: progress
         )
         preferences = AppPreferences(defaults: defaults)
         snapshots = SourceFlowSnapshotStore(defaults: defaults)

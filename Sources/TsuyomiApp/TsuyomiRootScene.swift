@@ -8,17 +8,24 @@ import TsuyomiCore
 public struct TsuyomiRootScene: Scene {
     @StateObject private var container: AppContainer
     @StateObject private var flow: SourceFlowController
+    @StateObject private var scheduler: UpdateScheduler
     @Environment(\.scenePhase) private var scenePhase
 
+    /// The background task is registered here, before any scene body runs: the system accepts a
+    /// registration only while the app is still launching.
     public init() {
         let built = TsuyomiRootScene.build()
+        let scheduler = UpdateScheduler(coordinator: built.updateCoordinator, updates: built.updates)
+        scheduler.register()
         _container = StateObject(wrappedValue: built)
         _flow = StateObject(wrappedValue: SourceFlowController(container: built))
+        _scheduler = StateObject(wrappedValue: scheduler)
     }
 
     public var body: some Scene {
         WindowGroup {
-            AppRootView(container: container, flow: flow)
+            AppRootView(container: container, flow: flow, scheduler: scheduler)
+                .task { await scheduler.reschedule() }
         }
         .onChange(of: scenePhase) { phase in
             guard phase == .background else { return }

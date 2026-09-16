@@ -39,6 +39,7 @@ public struct AppRootView: View {
     /// appeared when something else happened to redraw it — switching tabs, typically.
     @ObservedObject private var preferences: AppPreferences
     @ObservedObject private var flow: SourceFlowController
+    private let scheduler: UpdateScheduler
     @StateObject private var browse: BrowseModel
     @StateObject private var library: LibraryModel
     @StateObject private var libraryCovers: LibraryCoverProvider
@@ -46,10 +47,11 @@ public struct AppRootView: View {
     @State private var tab: RootTab = .library
     @State private var libraryPath: [LibraryRoute] = []
 
-    public init(container: AppContainer, flow: SourceFlowController) {
+    public init(container: AppContainer, flow: SourceFlowController, scheduler: UpdateScheduler) {
         self.container = container
         self.preferences = container.preferences
         self.flow = flow
+        self.scheduler = scheduler
         _browse = StateObject(
             wrappedValue: BrowseModel(
                 registry: container.registry,
@@ -61,7 +63,9 @@ public struct AppRootView: View {
             wrappedValue: LibraryModel(
                 library: container.library,
                 collections: container.collections,
-                preferences: container.preferences
+                preferences: container.preferences,
+                updates: container.updates,
+                checker: container.updateCoordinator
             )
         )
         _libraryCovers = StateObject(
@@ -82,7 +86,7 @@ public struct AppRootView: View {
             browseTab
                 .tabItem { Label(RootTab.browse.title, systemImage: RootTab.browse.symbol) }
                 .tag(RootTab.browse)
-            MoreScreen(container: container)
+            MoreScreen(container: container, scheduler: scheduler)
                 .tabItem { Label(RootTab.more.title, systemImage: RootTab.more.symbol) }
                 .tag(RootTab.more)
         }
