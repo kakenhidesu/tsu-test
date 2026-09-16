@@ -16,9 +16,11 @@ import TsuyomiSource
 struct SourceHomeHost: View {
     @ObservedObject var flow: SourceFlowController
     @StateObject private var model: SourceHomeModel
+    private let sourceId: SourceId
 
     init(container: AppContainer, flow: SourceFlowController, sourceId: SourceId) {
         self.flow = flow
+        self.sourceId = sourceId
         _model = StateObject(
             wrappedValue: SourceHomeModel(
                 sourceId: sourceId,
