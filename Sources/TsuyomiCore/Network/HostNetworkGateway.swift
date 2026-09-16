@@ -135,15 +135,41 @@ public actor HostNetworkGateway {
             guard response.bytes.count <= grant.maximumResponseBytes else {
                 throw HostNetworkException(.responseLimit)
             }
-            let contentType = (header(response.headers, "content-type") ?? "")
+            let declared = (header(response.headers, "content-type") ?? "")
                 .split(separator: ";", maxSplits: 1).first
                 .map { $0.trimmingCharacters(in: .whitespaces).lowercased() } ?? ""
-            guard contentType == "image/jpeg" || contentType == "image/png" else {
-                throw HostNetworkException(.decode)
+            // The bytes decide what the image is. Image hosts mislabel routinely — `image/jpg`,
+            // `application/octet-stream`, a WebP under a JPEG name — and a declared type that the
+            // bytes contradict is refused, so an HTML error page can never pass as a picture.
+            guard let sniffed = HostNetworkGateway.imageType(of: response.bytes) else {
+                throw HostNetworkException(.decode, diagnosticId: "type-" + HostNetworkGateway.token(declared))
             }
-            return HostMediaResponse(bytes: response.bytes, contentType: contentType)
+            return HostMediaResponse(bytes: response.bytes, contentType: sniffed)
         }
         throw HostNetworkException(.redirectLimit)
+    }
+
+    /// The image formats the cover decoder accepts, recognised by their leading bytes.
+    static func imageType(of bytes: Data) -> String? {
+        guard bytes.count >= 12 else { return nil }
+        let head = [UInt8](bytes.prefix(12))
+        if head[0] == 0xFF, head[1] == 0xD8, head[2] == 0xFF { return "image/jpeg" }
+        if head[0] == 0x89, head[1] == 0x50, head[2] == 0x4E, head[3] == 0x47 { return "image/png" }
+        if head[0] == 0x47, head[1] == 0x49, head[2] == 0x46, head[3] == 0x38 { return "image/gif" }
+        if head[0] == 0x52, head[1] == 0x49, head[2] == 0x46, head[3] == 0x46,
+           head[8] == 0x57, head[9] == 0x45, head[10] == 0x42, head[11] == 0x50 { return "image/webp" }
+        return nil
+    }
+
+    /// A declared content type reduced to a bounded token for a diagnostic: lowercase letters,
+    /// digits and hyphens only, so nothing a server sent can reach a screen as text.
+    private static func token(_ declared: String) -> String {
+        let scalars = declared.unicodeScalars.map { scalar -> Character in
+            if ("a"..."z").contains(scalar) || ("0"..."9").contains(scalar) { return Character(scalar) }
+            return "-"
+        }
+        let token = String(scalars.prefix(32))
+        return token.isEmpty ? "none" : token
     }
 
     public func request(

@@ -244,7 +244,7 @@ final class HostNetworkGatewayPolicyTests: XCTestCase {
                 status: 200,
                 finalUrl: request.url,
                 headers: ["content-type": "image/jpeg"],
-                bytes: Data([1, 2, 3])
+                bytes: NetworkFixture.jpegHead
             )
         }
         let gateway = HostNetworkGateway(transport: transport)
@@ -257,11 +257,40 @@ final class HostNetworkGatewayPolicyTests: XCTestCase {
         )
 
         XCTAssertEqual(response.contentType, "image/jpeg")
-        XCTAssertEqual(response.bytes.count, 3)
+        XCTAssertEqual(response.bytes.count, NetworkFixture.jpegHead.count)
         let recorded = await transport.requests()
         XCTAssertEqual(recorded.count, 1)
         XCTAssertEqual(recorded[0].referrer?.absoluteString, "https://www.wenku8.net/book/1234.htm")
         XCTAssertNil(recorded[0].headers["cookie"])
+    }
+
+    /// The bytes name the format, not the header: a WebP served as JPEG is a WebP, an HTML page
+    /// served as JPEG is refused with the type it claimed, and a bare `application/octet-stream`
+    /// JPEG is accepted.
+    func testMediaTypeComesFromTheBytesNotTheHeader() async throws {
+        let cover = try NetworkFixture.origin("https://pic.wenku8.com")
+        let grant = try NetworkFixture.grant(origins: [cover], cookieOrigins: [])
+        let cases: [(String, Data, String?)] = [
+            ("image/jpeg", NetworkFixture.webpHead, "image/webp"),
+            ("application/octet-stream", NetworkFixture.jpegHead, "image/jpeg"),
+            ("image/jpeg", Data("<html><body>blocked</body></html>".utf8), nil)
+        ]
+        for (declared, bytes, expected) in cases {
+            let transport = RecordingTransport { request in
+                HostHttpResponse(status: 200, finalUrl: request.url, headers: ["content-type": declared], bytes: bytes)
+            }
+            let gateway = HostNetworkGateway(transport: transport)
+            do {
+                let response = try await gateway.fetchMedia(
+                    grant: grant, url: "https://pic.wenku8.com/files/article/image/12/1234/1234.jpg", referrerUrl: nil
+                )
+                XCTAssertEqual(response.contentType, expected, "declared \(declared)")
+            } catch let failure as HostNetworkException {
+                XCTAssertNil(expected, "declared \(declared) should have been accepted")
+                XCTAssertEqual(failure.error, .decode)
+                XCTAssertEqual(failure.diagnosticId, "type-image-jpeg")
+            }
+        }
     }
 
     /// A site that redirects its own pages onto plain http is followed there: otherwise a session

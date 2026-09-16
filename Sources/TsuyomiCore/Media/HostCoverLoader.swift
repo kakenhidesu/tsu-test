@@ -10,7 +10,8 @@ import UIKit
 public actor HostCoverLoader {
     public static let maximumSourcePixels = 50_000_000
     public static let defaultMaximumResponseBytes = 8 * 1024 * 1024
-    public static let supportedContentTypes: Set<String> = ["image/jpeg", "image/png"]
+    /// What ImageIO decodes on the deployment target; the gateway has already sniffed the bytes.
+    public static let supportedContentTypes: Set<String> = ["image/jpeg", "image/png", "image/gif", "image/webp"]
 
     private let policy: MediaOriginPolicy
     private let files: QuotaFileStore
@@ -56,9 +57,11 @@ public actor HostCoverLoader {
         } catch let failure as MediaLoadError {
             throw failure
         } catch let failure as HostNetworkException {
-            // The transport's own name for what went wrong, plus the HTTP status when there was one.
-            let status = failure.diagnosticId.hasPrefix("status-") ? "/" + failure.diagnosticId : ""
-            throw MediaLoadError.httpFailure(detail: failure.error.rawValue.lowercased() + status)
+            // The transport's own name for what went wrong, plus the HTTP status or the declared
+            // content type when the gateway recorded one.
+            let recorded = failure.diagnosticId.hasPrefix("status-") || failure.diagnosticId.hasPrefix("type-")
+            let extra = recorded ? "/" + failure.diagnosticId : ""
+            throw MediaLoadError.httpFailure(detail: failure.error.rawValue.lowercased() + extra)
         } catch {
             throw MediaLoadError.httpFailure(detail: "fetch")
         }
