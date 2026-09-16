@@ -32,20 +32,18 @@ public final class UpdateScheduler: ObservableObject {
     }
 
     /// Must be called before the app finishes launching; the system refuses later registrations.
-    /// The launch handler is asked for on the main queue so the task can be owned by this object.
+    /// The task object the system hands over is not `Sendable`, and it has to reach the main actor
+    /// where this object lives: `nonisolated(unsafe)` states that hand-over explicitly. It is sound
+    /// because the handler uses the task nowhere else, and BGTask's own methods are thread-safe.
     public nonisolated func register() {
         #if canImport(BackgroundTasks)
-        BGTaskScheduler.shared.register(
-            forTaskWithIdentifier: UpdateScheduler.taskIdentifier,
-            using: DispatchQueue.main
-        ) { [weak self] task in
-            MainActor.assumeIsolated {
-                guard let self, let processing = task as? BGProcessingTask else {
-                    task.setTaskCompleted(success: false)
-                    return
-                }
-                self.begin(processing)
+        BGTaskScheduler.shared.register(forTaskWithIdentifier: UpdateScheduler.taskIdentifier, using: nil) { [weak self] task in
+            guard let self, let processing = task as? BGProcessingTask else {
+                task.setTaskCompleted(success: false)
+                return
             }
+            nonisolated(unsafe) let handed = processing
+            Task { @MainActor in self.begin(handed) }
         }
         #endif
     }

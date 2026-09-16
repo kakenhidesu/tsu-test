@@ -109,7 +109,13 @@ public enum RepositoryIndexCodec {
     static let maximumClockSkew: TimeInterval = 5 * 60
     static let signaturePrefix = Data("tsuyomi-repository-v1\u{0}".utf8)
 
-    public static func decode(_ bytes: Data, rootPublicKey: Data, now: Date) throws -> RepositoryIndex {
+    /// A catalog this host verified once and cached, read past its expiry so what it offered can
+    /// still be shown — marked as possibly out of date, and never installed from.
+    public static func decodeIgnoringExpiry(_ bytes: Data, rootPublicKey: Data) -> RepositoryIndex? {
+        try? decode(bytes, rootPublicKey: rootPublicKey, now: Date(), tolerateExpiry: true)
+    }
+
+    public static func decode(_ bytes: Data, rootPublicKey: Data, now: Date, tolerateExpiry: Bool = false) throws -> RepositoryIndex {
         guard bytes.count <= maximumIndexBytes else { throw RepositoryError.indexTooLarge }
         guard !JsonDuplicateKeys.found(in: bytes), let root = try? JSONValue.decode(bytes).objectValue,
               hasKeys(root, ["format", "version", "keyId", "signed", "signature"]) else {
@@ -139,7 +145,7 @@ public enum RepositoryIndexCodec {
               issuedAt.timeIntervalSince(now) <= maximumClockSkew else {
             throw RepositoryError.invalidIndex
         }
-        guard now < expiresAt else { throw RepositoryError.indexExpired }
+        guard tolerateExpiry || now < expiresAt else { throw RepositoryError.indexExpired }
         let publishers = try publishers(signed)
         return RepositoryIndex(
             repositoryId: repositoryId,
