@@ -62,13 +62,11 @@ public enum LibraryTab: String, Sendable, CaseIterable, Hashable {
 public enum LibraryLayout: String, Sendable, CaseIterable, Hashable {
     case grid
     case list
-    case compact
 
     public var title: String {
         switch self {
         case .grid: return "网格"
         case .list: return "列表"
-        case .compact: return "紧凑"
         }
     }
 

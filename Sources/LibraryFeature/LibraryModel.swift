@@ -47,6 +47,16 @@ public final class LibraryModel: ObservableObject {
     @Published public private(set) var undoIgnoreToken: String?
     @Published public private(set) var showUpdatesOnly = false
     @Published public private(set) var dismissedSessionId: String?
+    /// The shelf's own search. While it is open the grid shows hits instead of the projection.
+    @Published public private(set) var isSearching = false
+    @Published public var searchQuery = "" {
+        didSet {
+            if searchQuery.count > LibrarySearch.maximumQueryLength {
+                searchQuery = String(searchQuery.prefix(LibrarySearch.maximumQueryLength))
+            }
+        }
+    }
+    private var readLaterOnly: [LibraryEntry] = []
 
     private let library: LibraryRepository
     private let collections: CollectionStore
@@ -130,6 +140,35 @@ public final class LibraryModel: ObservableObject {
     }
 
     public var updateStore: UpdateStore? { updates }
+
+    // MARK: Search
+
+    public func beginSearch() {
+        isSearching = true
+    }
+
+    public func endSearch() {
+        isSearching = false
+        searchQuery = ""
+    }
+
+    /// Hits over the pinned shelf plus the read-later books that are not pinned; collections that
+    /// match come along. A blank query shows the recommendations instead.
+    public var searchHits: [LibrarySearchHit] {
+        let corpus = entries + readLaterOnly
+        if LibrarySearch.normalize(searchQuery).isEmpty {
+            return LibrarySearch.recommendations(books: corpus, collections: allCollections)
+        }
+        return LibrarySearch.search(searchQuery, books: corpus, collections: allCollections)
+    }
+
+    public var searchBooks: [LibraryEntry] {
+        searchHits.compactMap { if case .book(let entry) = $0 { return entry } else { return nil } }
+    }
+
+    public var searchCollections: [LibraryCollection] {
+        searchHits.compactMap { if case .collection(let collection) = $0 { return collection } else { return nil } }
+    }
 
     /// A terminal session's strip stays until dismissed, except a clean completion, which says so
     /// for two seconds from its durable finish time and then leaves on its own.
@@ -312,6 +351,7 @@ public final class LibraryModel: ObservableObject {
                 entries += try await mirrorOnlyEntriesWithUpdates(excluding: Set(entries.map(\.book.identity)))
             }
             allCollections = try await collections.collections()
+            readLaterOnly = try await library.readLaterEntries().filter { !$0.localMembership }
             mirrors = ((try? await mirrorStore?.bindings()) ?? []).filter { !$0.frozen }
             guard !entries.isEmpty || !allCollections.isEmpty else {
                 state = .empty(title: "书架还是空的", detail: "在来源里找到一本书，然后加入书架。")

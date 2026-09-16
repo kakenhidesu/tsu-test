@@ -10,7 +10,7 @@ public struct LibraryScreen: View {
     private let coverState: (LibraryBook) -> CoverUiState
     private let openBook: (BookIdentity) -> Void
     private let openMirror: (String) -> Void
-    private let openSearch: () -> Void
+    @FocusState private var searchFocused: Bool
     @State private var newCollectionTitle = ""
     @State private var pendingPair: [BookIdentity] = []
     @State private var insertionIndex: Int?
@@ -22,31 +22,40 @@ public struct LibraryScreen: View {
         model: LibraryModel,
         coverState: @escaping (LibraryBook) -> CoverUiState,
         openBook: @escaping (BookIdentity) -> Void,
-        openMirror: @escaping (String) -> Void = { _ in },
-        openSearch: @escaping () -> Void = {}
+        openMirror: @escaping (String) -> Void = { _ in }
     ) {
         self.model = model
         self.coverState = coverState
         self.openBook = openBook
         self.openMirror = openMirror
-        self.openSearch = openSearch
     }
 
     public var body: some View {
         StateView(model.state, retry: { Task { await model.load() } }) { content in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
+                    if model.isSearching {
+                        searchField
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                    }
                     if model.activeCollection == nil {
                         tabs
                     }
                     updateStrip
                     LibraryShortcutBar(model: model, openMirror: openMirror, createCollection: { isCreatingCollection = true })
-                    if model.showUpdatesOnly, model.isUpdatesFilterAvailable {
+                    if model.showUpdatesOnly, model.isUpdatesFilterAvailable, !model.isSearching {
                         filterSummary(model.project(content.entries).count)
                     }
-                    books(model.project(content.entries))
+                    if model.isSearching {
+                        searchCollections
+                        books(model.searchBooks)
+                    } else {
+                        books(model.project(content.entries))
+                    }
                 }
                 .padding(.vertical, TsuyomiTheme.Metrics.gutter)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: model.isSearching)
+                .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: model.searchQuery)
             }
             .refreshable { await model.checkUpdatesNow() }
         }
@@ -185,9 +194,14 @@ public struct LibraryScreen: View {
         }
         ToolbarItem(placement: .topBarTrailing) {
             Button {
-                openSearch()
+                if model.isSearching {
+                    closeSearch()
+                } else {
+                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { model.beginSearch() }
+                    searchFocused = true
+                }
             } label: {
-                Label("搜索书架", systemImage: "magnifyingglass")
+                Label("搜索书架", systemImage: model.isSearching ? "xmark.circle" : "magnifyingglass")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
@@ -236,7 +250,65 @@ public struct LibraryScreen: View {
         switch model.layout {
         case .grid: return "square.grid.3x3"
         case .list: return "list.bullet"
-        case .compact: return "list.dash"
+        }
+    }
+
+    /// The field is the shelf's own: it never leaves this screen, and 取消 puts everything back.
+    private var searchField: some View {
+        HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                TextField("搜索书架", text: $model.searchQuery)
+                    .focused($searchFocused)
+                    .submitLabel(.search)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                if !model.searchQuery.isEmpty {
+                    Button {
+                        model.searchQuery = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(TsuyomiTheme.Palette.tertiaryText)
+                    }
+                    .accessibilityLabel("清除")
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 36)
+            .background(TsuyomiTheme.Palette.raisedSurface, in: RoundedRectangle(cornerRadius: 10))
+            Button("取消") { closeSearch() }
+        }
+        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+    }
+
+    private func closeSearch() {
+        searchFocused = false
+        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { model.endSearch() }
+    }
+
+    @ViewBuilder
+    private var searchCollections: some View {
+        let hits = model.searchCollections
+        if !hits.isEmpty {
+            VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
+                Text("收藏夹")
+                    .font(TsuyomiTheme.Typography.sectionTitle)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+                        ForEach(hits, id: \.collectionId) { collection in
+                            Button {
+                                closeSearch()
+                                Task { await model.open(collection: collection) }
+                            } label: {
+                                Label(collection.title, systemImage: collection.kind == .smart ? "sparkles" : "folder")
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+            .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
         }
     }
 
@@ -244,7 +316,7 @@ public struct LibraryScreen: View {
     @ViewBuilder
     private func books(_ entries: [LibraryEntry]) -> some View {
         if entries.isEmpty {
-            Text("这个筛选下还没有书。")
+            Text(model.isSearching ? "没有匹配的书。" : "这个筛选下还没有书。")
                 .font(TsuyomiTheme.Typography.supporting)
                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
@@ -262,10 +334,10 @@ public struct LibraryScreen: View {
                 }
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
                 .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: insertionIndex)
-            case .list, .compact:
+            case .list:
                 LazyVStack(spacing: 0) {
                     ForEach(entries, id: \.book.identity) { entry in
-                        row(entry, compact: model.layout == .compact)
+                        row(entry)
                     }
                 }
             }
@@ -351,20 +423,18 @@ public struct LibraryScreen: View {
         }
     }
 
-    private func row(_ entry: LibraryEntry, compact: Bool) -> some View {
+    private func row(_ entry: LibraryEntry) -> some View {
         Button {
             activate(entry)
         } label: {
             HStack(spacing: TsuyomiTheme.Metrics.gutter) {
-                if !compact {
-                    CoverImage(coverState(entry.book))
-                        .frame(width: 44)
-                }
+                CoverImage(coverState(entry.book))
+                    .frame(width: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(entry.book.title)
                         .font(TsuyomiTheme.Typography.body)
                         .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                    if !compact, !entry.book.authors.isEmpty {
+                    if !entry.book.authors.isEmpty {
                         Text(entry.book.authors.sorted(by: CanonicalOrder.precedes).joined(separator: "、"))
                             .font(TsuyomiTheme.Typography.caption)
                             .foregroundStyle(TsuyomiTheme.Palette.secondaryText)

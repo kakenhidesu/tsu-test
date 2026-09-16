@@ -342,17 +342,15 @@ public final class RemoteLibraryModel: ObservableObject {
     }
 }
 
-/// The three densities a shelf can be shown at, cycled by one action.
+/// The two densities a shelf can be shown at, toggled by one action.
 public enum LibraryLayoutChoice: String, Sendable, CaseIterable {
     case grid
     case list
-    case compact
 
     public var next: LibraryLayoutChoice {
         switch self {
         case .grid: return .list
-        case .list: return .compact
-        case .compact: return .grid
+        case .list: return .grid
         }
     }
 }
