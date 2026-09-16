@@ -3,10 +3,20 @@
 import Foundation
 import TsuyomiProtocol
 
-/// Host-minted policy for one remote-library transport operation.
-public enum SourceOperationKind: Sendable, Equatable {
-    case remoteLibraryRead
-    case remoteLibraryAdd
+/// Host-minted policy for one signed source operation. Reads and target discovery fetch, the
+/// three writes change the website and each needs a single-use direct action token, and the update
+/// check is a read the host initiates on its own signed surface.
+public enum SourceOperationKind: String, Sendable, Equatable, CaseIterable {
+    case remoteLibraryRead = "READ"
+    case remoteLibraryTargets = "TARGETS"
+    case remoteLibraryAdd = "ADD"
+    case remoteLibraryRemove = "REMOVE"
+    case remoteLibraryMove = "MOVE"
+    case updateCheck = "UPDATE_CHECK"
+
+    public var isWrite: Bool {
+        self == .remoteLibraryAdd || self == .remoteLibraryRemove || self == .remoteLibraryMove
+    }
 }
 
 /// A signed, exact redirect destination for one remote-library operation.
@@ -43,6 +53,7 @@ public struct RemoteOperationRequestPolicy: Hashable, Sendable {
     public let fixedParameters: [String: String]
     public let remoteBookIdParameter: String?
     public let cursorParameter: String?
+    public let targetIdParameter: String?
     public let referrerPath: String?
     public let redirects: [RemoteOperationRedirectPolicy]
 
@@ -53,17 +64,15 @@ public struct RemoteOperationRequestPolicy: Hashable, Sendable {
         fixedParameters: [String: String],
         remoteBookIdParameter: String? = nil,
         cursorParameter: String? = nil,
+        targetIdParameter: String? = nil,
         referrerPath: String? = nil,
         redirects: [RemoteOperationRedirectPolicy] = []
     ) throws {
         guard isPolicyPath(path), fixedParameters.keys.allSatisfy(isNonBlank) else {
             throw HostNetworkException(.invalidRequest)
         }
-        if let remoteBookIdParameter, fixedParameters[remoteBookIdParameter] != nil {
-            throw HostNetworkException(.invalidRequest)
-        }
-        if let cursorParameter,
-           fixedParameters[cursorParameter] != nil || cursorParameter == remoteBookIdParameter {
+        let bound = [remoteBookIdParameter, cursorParameter, targetIdParameter].compactMap { $0 }
+        guard Set(bound).count == bound.count, bound.allSatisfy({ fixedParameters[$0] == nil }) else {
             throw HostNetworkException(.invalidRequest)
         }
         if let referrerPath, !isPolicyPath(referrerPath) { throw HostNetworkException(.invalidRequest) }
@@ -74,13 +83,13 @@ public struct RemoteOperationRequestPolicy: Hashable, Sendable {
         self.fixedParameters = fixedParameters
         self.remoteBookIdParameter = remoteBookIdParameter
         self.cursorParameter = cursorParameter
+        self.targetIdParameter = targetIdParameter
         self.referrerPath = referrerPath
         self.redirects = redirects
     }
 
-    /// True when a request would land on the protected remote-write surface, whatever it claims to
-    /// be doing and whatever scheme it arrives on: the plaintext form of that URL is the same
-    /// surface. Only an explicitly minted add context may reach it.
+    /// True when a request would land on this policy's surface, whatever it claims to be doing and
+    /// whatever scheme it arrives on: the plaintext form of that URL is the same surface.
     func matchesSurface(_ request: SourceNetworkRequest) -> Bool {
         guard let path = pathOf(request.url) else { return false }
         if request.method == method, path == self.path,
@@ -92,6 +101,32 @@ public struct RemoteOperationRequestPolicy: Hashable, Sendable {
                 && declaredOrigin(of: request.url, within: [redirect.origin]) != nil
         }
     }
+
+    /// The shape each operation's policy must have (hxp-manifest-v1 §Signed remote-library
+    /// operations, §Signed update check v2), checked once when the grant is built.
+    func requireShape(for kind: SourceOperationKind) throws {
+        switch kind {
+        case .remoteLibraryRead:
+            guard remoteBookIdParameter == nil, targetIdParameter == nil else { throw HostNetworkException(.invalidRequest) }
+        case .remoteLibraryTargets:
+            guard remoteBookIdParameter == nil, targetIdParameter == nil, cursorParameter == nil else {
+                throw HostNetworkException(.invalidRequest)
+            }
+        case .remoteLibraryAdd, .remoteLibraryRemove:
+            guard remoteBookIdParameter != nil, cursorParameter == nil, targetIdParameter == nil else {
+                throw HostNetworkException(.invalidRequest)
+            }
+        case .remoteLibraryMove:
+            guard remoteBookIdParameter != nil, targetIdParameter != nil, cursorParameter == nil else {
+                throw HostNetworkException(.invalidRequest)
+            }
+        case .updateCheck:
+            guard method == .get, remoteBookIdParameter != nil, targetIdParameter == nil, cursorParameter == nil,
+                  redirects.isEmpty else {
+                throw HostNetworkException(.invalidRequest)
+            }
+        }
+    }
 }
 
 /// Only host code may create this after resolving immutable manifest policy and direct user intent.
@@ -101,31 +136,35 @@ public struct SourceOperationContext: Sendable {
     public let policy: RemoteOperationRequestPolicy
     public let cursor: String?
     public let remoteBookId: String?
-    let addToken: String?
+    public let targetId: String?
+    let directActionToken: String?
 
     init(
         kind: SourceOperationKind,
         policy: RemoteOperationRequestPolicy,
         cursor: String? = nil,
         remoteBookId: String? = nil,
-        addToken: String? = nil
+        targetId: String? = nil,
+        directActionToken: String? = nil
     ) throws {
-        if kind == .remoteLibraryAdd {
-            guard let addToken, isNonBlank(addToken), let remoteBookId, isNonBlank(remoteBookId), cursor == nil else {
-                throw HostNetworkException(.invalidRequest)
-            }
-        } else if remoteBookId != nil {
+        let needsBook = kind.isWrite || kind == .updateCheck
+        guard needsBook == (remoteBookId != nil), kind.isWrite == (directActionToken != nil),
+              (kind == .remoteLibraryMove) == (targetId != nil),
+              cursor == nil || kind == .remoteLibraryRead else {
             throw HostNetworkException(.invalidRequest)
         }
-        if let cursor, !isNonBlank(cursor) { throw HostNetworkException(.invalidRequest) }
+        for value in [cursor, remoteBookId, targetId, directActionToken].compactMap({ $0 }) where !isNonBlank(value) {
+            throw HostNetworkException(.invalidRequest)
+        }
         self.kind = kind
         self.policy = policy
         self.cursor = cursor
         self.remoteBookId = remoteBookId
-        self.addToken = addToken
+        self.targetId = targetId
+        self.directActionToken = directActionToken
     }
 
-    /// The cursor parameter appears exactly once when the host holds a cursor and is omitted
+    /// Every bound parameter appears exactly once when the host holds a value and is omitted
     /// otherwise; the extension can neither add nor drop a parameter on this surface.
     func validate(_ request: SourceNetworkRequest) throws {
         guard request.method == policy.method, request.utf8Body == nil else {
@@ -141,6 +180,7 @@ public struct SourceOperationContext: Sendable {
         var expected = policy.fixedParameters
         if let name = policy.cursorParameter, let cursor { expected[name] = cursor }
         if let name = policy.remoteBookIdParameter, let remoteBookId { expected[name] = remoteBookId }
+        if let name = policy.targetIdParameter, let targetId { expected[name] = targetId }
         let actual: [String: String]
         switch request.method {
         case .get, .head: actual = try decodeQuery(components.percentEncodedQuery)
@@ -192,17 +232,56 @@ public func remoteLibraryReadContext(
     try SourceOperationContext(kind: .remoteLibraryRead, policy: policy, cursor: cursor)
 }
 
+public func remoteLibraryTargetsContext(policy: RemoteOperationRequestPolicy) throws -> SourceOperationContext {
+    try SourceOperationContext(kind: .remoteLibraryTargets, policy: policy)
+}
+
 public func remoteLibraryAddContext(
     policy: RemoteOperationRequestPolicy,
     remoteBookId: String,
-    addToken: String
+    directActionToken: String
 ) throws -> SourceOperationContext {
     try SourceOperationContext(
         kind: .remoteLibraryAdd,
         policy: policy,
         remoteBookId: remoteBookId,
-        addToken: addToken
+        directActionToken: directActionToken
     )
+}
+
+public func remoteLibraryRemoveContext(
+    policy: RemoteOperationRequestPolicy,
+    remoteBookId: String,
+    directActionToken: String
+) throws -> SourceOperationContext {
+    try SourceOperationContext(
+        kind: .remoteLibraryRemove,
+        policy: policy,
+        remoteBookId: remoteBookId,
+        directActionToken: directActionToken
+    )
+}
+
+public func remoteLibraryMoveContext(
+    policy: RemoteOperationRequestPolicy,
+    remoteBookId: String,
+    targetId: String,
+    directActionToken: String
+) throws -> SourceOperationContext {
+    try SourceOperationContext(
+        kind: .remoteLibraryMove,
+        policy: policy,
+        remoteBookId: remoteBookId,
+        targetId: targetId,
+        directActionToken: directActionToken
+    )
+}
+
+public func updateCheckContext(
+    policy: RemoteOperationRequestPolicy,
+    remoteBookId: String
+) throws -> SourceOperationContext {
+    try SourceOperationContext(kind: .updateCheck, policy: policy, remoteBookId: remoteBookId)
 }
 
 func isPolicyPath(_ path: String) -> Bool {

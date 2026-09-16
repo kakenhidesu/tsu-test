@@ -33,8 +33,29 @@ public final class SourceExtensionClient: Sendable {
             maximumConcurrentRequests: manifest.capabilities.network.maximumConcurrentRequests,
             requestTimeoutMs: manifest.capabilities.network.requestTimeoutMs,
             maximumResponseBytes: manifest.capabilities.network.maximumResponseBytes,
-            remoteAddPolicy: try manifest.capabilities.remoteLibrary.policies[.add]?.networkPolicy()
+            operationPolicies: try SourceExtensionClient.operationPolicies(manifest)
         )
+    }
+
+    /// Every signed surface the manifest declares becomes one grant policy; the update check joins
+    /// the remote-library operations because the gateway guards it the same way.
+    static func operationPolicies(_ manifest: HxpManifest) throws -> [SourceOperationKind: RemoteOperationRequestPolicy] {
+        var policies: [SourceOperationKind: RemoteOperationRequestPolicy] = [:]
+        for (operation, policy) in manifest.capabilities.remoteLibrary.policies {
+            let kind: SourceOperationKind
+            switch operation {
+            case .read: kind = .remoteLibraryRead
+            case .targets: kind = .remoteLibraryTargets
+            case .add: kind = .remoteLibraryAdd
+            case .remove: kind = .remoteLibraryRemove
+            case .move: kind = .remoteLibraryMove
+            }
+            policies[kind] = try policy.networkPolicy()
+        }
+        if let updateCheck = manifest.capabilities.updateCheck {
+            policies[.updateCheck] = try updateCheck.networkPolicy()
+        }
+        return policies
     }
 
     public static func open(
@@ -65,6 +86,10 @@ public final class SourceExtensionClient: Sendable {
 
     public func searchRequestUrl(query: String, page: Int = 1) async throws -> String {
         try await requestUrl("buildSearchRequest", [.string(query), .int(page)], stage: "search-network")
+    }
+
+    public func authorSearchRequestUrl(author: String, page: Int = 1) async throws -> String {
+        try await requestUrl("buildAuthorSearchRequest", [.string(author), .int(page)], stage: "author-search-network")
     }
 
     public func detailRequestUrl(remoteBookId: String) async throws -> String {
@@ -101,6 +126,59 @@ public final class SourceExtensionClient: Sendable {
             stage: "search-parse"
         )
         return try SourceExtensionMarshalling.summaries(root, stage: "search-parse")
+    }
+
+    /// One read-only request bound to an author the reader tapped; it uses the same result contract
+    /// as a title search and never falls back to one (hxp-host-api-v1 §Optional Detail metadata).
+    public func searchByAuthor(
+        author: String,
+        page: Int = 1,
+        offlineOnly: Bool = false
+    ) async throws -> [SourceBookSummary] {
+        let response = try await invokeNetwork(
+            "buildAuthorSearchRequest",
+            [.string(author), .int(page)],
+            stage: "author-search-network",
+            offlineOnly: offlineOnly
+        )
+        try await classify(response, stage: "author-search-classify", operation: "search")
+        let root = try await callObject(
+            "parseSearch",
+            [.string(response.text ?? ""), .string(response.finalUrl)],
+            stage: "author-search-parse"
+        )
+        return try SourceExtensionMarshalling.summaries(root, stage: "author-search-parse")
+    }
+
+    public var supportsUpdateChecks: Bool { manifest.capabilities.updateCheck != nil }
+
+    /// The signed update check: its own exact GET surface, always fresh, never redirected, and the
+    /// parsed list admitted against the reader's previous anchor before anything is recorded.
+    public func checkUpdates(remoteBookId: String, previousAnchor: String?) async throws -> UpdateProbeResult {
+        let identity = try BookIdentity(sourceId: manifest.sourceId.value, remoteBookId: remoteBookId)
+        guard let capability = manifest.capabilities.updateCheck else {
+            return try UpdateCheckAdmission.refused(identity, .failed, previousAnchor: previousAnchor, reason: "updates-not-supported")
+        }
+        let response = try await invokeNetwork(
+            "buildUpdateCheckV2Request",
+            [.string(remoteBookId)],
+            stage: "update-check-network",
+            offlineOnly: false,
+            operationContext: try updateCheckContext(policy: try capability.networkPolicy(), remoteBookId: remoteBookId)
+        )
+        try await classify(response, stage: "update-check-classify", operation: "update-check", remoteBookId: remoteBookId)
+        let root = try await callObject(
+            "parseUpdateCheckV2",
+            [.string(response.text ?? ""), .string(remoteBookId)],
+            stage: "update-check-parse"
+        )
+        let parsed: UpdateCheckResult
+        do {
+            parsed = try UpdateCheckResult.decode(.object(root))
+        } catch {
+            throw SourceExtensionMarshalling.failure(.malformedSourceResponse, "update-check-parse", "invalid-update-check")
+        }
+        return try UpdateCheckAdmission.admit(expected: identity, previousAnchor: previousAnchor, parsed: parsed)
     }
 
     public func home(
@@ -227,6 +305,99 @@ public final class SourceExtensionClient: Sendable {
         return try SourceExtensionMarshalling.remoteLibraryPage(root)
     }
 
+    /// Destination discovery is its own signed operation: a generic read cannot list targets and
+    /// this host never synthesises one.
+    public func listRemoteTargets() async throws -> RemoteLibraryTargetList {
+        guard let policy = manifest.capabilities.remoteLibrary.policies[.targets] else {
+            throw SourceExtensionMarshalling.failure(
+                .malformedSourceResponse, "remote-library-targets", "remote-targets-not-granted"
+            )
+        }
+        let response = try await invokeNetwork(
+            "buildRemoteLibraryTargetsRequest",
+            [],
+            stage: "remote-library-targets-network",
+            offlineOnly: false,
+            operationContext: try remoteLibraryTargetsContext(policy: try policy.networkPolicy())
+        )
+        try await classify(response, stage: "remote-library-targets-classify")
+        let root = try await callObject(
+            "parseRemoteLibraryTargets",
+            [.string(response.text ?? "")],
+            stage: "remote-library-targets-parse"
+        )
+        return try SourceExtensionMarshalling.remoteTargets(root, expectedSourceId: manifest.sourceId.value)
+    }
+
+    public func removeRemoteLibrary(
+        remoteBookId: String,
+        directActionToken: String
+    ) async throws -> RemoteLibraryRemoveResult {
+        guard let policy = manifest.capabilities.remoteLibrary.policies[.remove] else {
+            throw SourceExtensionMarshalling.failure(
+                .malformedSourceResponse, "remote-library-remove", "remote-remove-not-granted"
+            )
+        }
+        let response = try await invokeNetwork(
+            "buildRemoteLibraryRemoveRequest",
+            [.string(remoteBookId)],
+            stage: "remote-library-remove-network",
+            offlineOnly: false,
+            operationContext: try remoteLibraryRemoveContext(
+                policy: try policy.networkPolicy(),
+                remoteBookId: remoteBookId,
+                directActionToken: directActionToken
+            )
+        )
+        try await classify(response, stage: "remote-library-remove-classify")
+        let root = try await callObject(
+            "parseRemoteLibraryRemove",
+            [.string(response.text ?? ""), .string(remoteBookId)],
+            stage: "remote-library-remove-parse"
+        )
+        return try SourceExtensionMarshalling.remoteRemoveResult(
+            root,
+            expectedSourceId: manifest.sourceId.value,
+            expectedRemoteBookId: remoteBookId
+        )
+    }
+
+    public func moveRemoteLibrary(
+        remoteBookId: String,
+        targetId: String,
+        directActionToken: String
+    ) async throws -> RemoteLibraryMoveResult {
+        guard let policy = manifest.capabilities.remoteLibrary.policies[.move] else {
+            throw SourceExtensionMarshalling.failure(
+                .malformedSourceResponse, "remote-library-move", "remote-move-not-granted"
+            )
+        }
+        let response = try await invokeNetwork(
+            "buildRemoteLibraryMoveRequest",
+            [.string(remoteBookId), .string(targetId)],
+            stage: "remote-library-move-network",
+            offlineOnly: false,
+            operationContext: try remoteLibraryMoveContext(
+                policy: try policy.networkPolicy(),
+                remoteBookId: remoteBookId,
+                targetId: targetId,
+                directActionToken: directActionToken
+            )
+        )
+        try await classify(response, stage: "remote-library-move-classify")
+        let root = try await callObject(
+            "parseRemoteLibraryMove",
+            [.string(response.text ?? ""), .string(remoteBookId), .string(targetId)],
+            stage: "remote-library-move-parse"
+        )
+        return try SourceExtensionMarshalling.remoteMoveResult(
+            root,
+            expectedSourceId: manifest.sourceId.value,
+            expectedRemoteBookId: remoteBookId,
+            expectedTargetId: targetId
+        )
+    }
+
     public func addRemoteLibrary(
         remoteBookId: String,
         directActionToken: String
@@ -244,13 +415,13 @@ public final class SourceExtensionClient: Sendable {
             operationContext: try remoteLibraryAddContext(
                 policy: try policy.networkPolicy(),
                 remoteBookId: remoteBookId,
-                addToken: directActionToken
+                directActionToken: directActionToken
             )
         )
         try await classify(response, stage: "remote-library-add-classify")
         let root = try await callObject(
             "parseRemoteLibraryAdd",
-            [.string(response.text ?? ""), .string(remoteBookId)],
+            [.string(response.text ?? ""), .string(remoteBookId), .string(response.finalUrl)],
             stage: "remote-library-add-parse"
         )
         return try SourceExtensionMarshalling.remoteAddResult(

@@ -50,7 +50,8 @@ enum NetworkFixture {
         cookieMode: SourceCookieMode = .sourceScoped,
         cookieOrigins: Set<HttpsOrigin>? = nil,
         maximumResponseBytes: Int = 1_024,
-        remoteAddPolicy: RemoteOperationRequestPolicy? = nil
+        remoteAddPolicy: RemoteOperationRequestPolicy? = nil,
+        readPolicy: RemoteOperationRequestPolicy? = nil
     ) throws -> SourceNetworkGrant {
         let defaultOrigin = try origin("https://www.wenku8.net")
         return try SourceNetworkGrant(
@@ -62,7 +63,8 @@ enum NetworkFixture {
             maximumConcurrentRequests: 2,
             requestTimeoutMs: 15_000,
             maximumResponseBytes: maximumResponseBytes,
-            remoteAddPolicy: remoteAddPolicy ?? (try addPolicy())
+            operationPolicies: [.remoteLibraryAdd: remoteAddPolicy ?? (try addPolicy())]
+                .merging(readPolicy.map { [.remoteLibraryRead: $0] } ?? [:]) { _, new in new }
         )
     }
 

@@ -201,9 +201,8 @@ public actor HostNetworkGateway {
         referrer: URL?,
         operationContext: SourceOperationContext?
     ) async throws -> HostHttpResponse {
-        if operationContext?.kind == .remoteLibraryAdd {
-            guard let context = operationContext, let remoteBookId = context.remoteBookId,
-                  let token = context.addToken else {
+        if let context = operationContext, context.kind.isWrite {
+            guard let remoteBookId = context.remoteBookId, let token = context.directActionToken else {
                 throw HostNetworkException(.invalidRequest)
             }
             try await directActionTokens.accept(
@@ -230,7 +229,7 @@ public actor HostNetworkGateway {
                 guard currentReferrer?.absoluteString == expectedReferrer else {
                     throw HostNetworkException(.redirectDisallowed)
                 }
-                try validateProtectedAddSurface(grant, hop, operationContext)
+                try validateProtectedSurfaces(grant, hop, operationContext)
             } else {
                 try validateOperationBoundary(grant, hop, nil)
             }
@@ -298,30 +297,36 @@ public actor HostNetworkGateway {
         )
     }
 
+    /// A signed operation runs only against the exact policy the grant holds for it, always fresh
+    /// from the network; anything else on a write surface is refused, whatever it claims to be.
     private func validateOperationBoundary(
         _ grant: SourceNetworkGrant,
         _ request: SourceNetworkRequest,
         _ operationContext: SourceOperationContext?
     ) throws {
-        if let operationContext, operationContext.kind == .remoteLibraryAdd {
-            guard grant.remoteAddPolicy == operationContext.policy, request.cache == .networkOnly else {
+        if let operationContext {
+            guard grant.operationPolicies[operationContext.kind] == operationContext.policy,
+                  request.cache == .networkOnly else {
                 throw HostNetworkException(.invalidRequest)
             }
-            try operationContext.validate(request)
-            return
+            if operationContext.kind.isWrite {
+                try operationContext.validate(request)
+                return
+            }
         }
-        try validateProtectedAddSurface(grant, request, operationContext)
+        try validateProtectedSurfaces(grant, request, operationContext)
         try operationContext?.validate(request)
     }
 
-    /// The remote-write surface is reachable only through an explicitly minted add context, whatever
-    /// URL an extension constructs (`ANDROID_RUNTIME.md` §Source request path).
-    private func validateProtectedAddSurface(
+    /// The remote-write surfaces are reachable only through an explicitly minted write context,
+    /// whatever URL an extension constructs (`ANDROID_RUNTIME.md` §Source request path).
+    private func validateProtectedSurfaces(
         _ grant: SourceNetworkGrant,
         _ request: SourceNetworkRequest,
         _ operationContext: SourceOperationContext?
     ) throws {
-        if operationContext?.kind != .remoteLibraryAdd, grant.remoteAddPolicy?.matchesSurface(request) == true {
+        guard operationContext?.kind.isWrite != true else { return }
+        if grant.protectedPolicies.contains(where: { $0.matchesSurface(request) }) {
             throw HostNetworkException(.invalidRequest)
         }
     }

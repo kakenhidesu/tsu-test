@@ -9,17 +9,15 @@ final class RemoteOperationPolicyTests: XCTestCase {
     func testRemoteOperationContextRejectsAlteredLiteralsBeforeTransport() async throws {
         let transport = RecordingTransport()
         let gateway = HostNetworkGateway(transport: transport)
-        let grant = try NetworkFixture.grant()
-        let context = try remoteLibraryReadContext(
-            policy: try RemoteOperationRequestPolicy(
-                origin: try NetworkFixture.origin("https://www.wenku8.net"),
-                method: .get,
-                path: "/remote/shelf",
-                fixedParameters: ["mode": "list"],
-                cursorParameter: "cursor"
-            ),
-            cursor: nil
+        let policy = try RemoteOperationRequestPolicy(
+            origin: try NetworkFixture.origin("https://www.wenku8.net"),
+            method: .get,
+            path: "/remote/shelf",
+            fixedParameters: ["mode": "list"],
+            cursorParameter: "cursor"
         )
+        let grant = try NetworkFixture.grant(readPolicy: policy)
+        let context = try remoteLibraryReadContext(policy: policy, cursor: nil)
 
         await assertHostFailure(.invalidRequest) {
             _ = try await gateway.request(
@@ -43,7 +41,6 @@ final class RemoteOperationPolicyTests: XCTestCase {
     func testCursorAppearsExactlyOnceWhenTheHostHoldsOne() async throws {
         let transport = RecordingTransport()
         let gateway = HostNetworkGateway(transport: transport)
-        let grant = try NetworkFixture.grant()
         let policy = try RemoteOperationRequestPolicy(
             origin: try NetworkFixture.origin("https://www.wenku8.net"),
             method: .get,
@@ -51,6 +48,7 @@ final class RemoteOperationPolicyTests: XCTestCase {
             fixedParameters: ["mode": "list"],
             cursorParameter: "cursor"
         )
+        let grant = try NetworkFixture.grant(readPolicy: policy)
         let context = try remoteLibraryReadContext(policy: policy, cursor: "page-2")
 
         await assertHostFailure(.invalidRequest) {
@@ -95,7 +93,7 @@ final class RemoteOperationPolicyTests: XCTestCase {
             ]
         )
         let result = try await HostNetworkGateway(transport: transport).request(
-            grant: try NetworkFixture.grant(),
+            grant: try NetworkFixture.grant(readPolicy: policy),
             request: try NetworkFixture.request(url: "https://www.wenku8.net/remote/shelf?mode=list"),
             operationContext: try remoteLibraryReadContext(policy: policy, cursor: nil)
         )
@@ -123,7 +121,7 @@ final class RemoteOperationPolicyTests: XCTestCase {
         )
         await assertHostFailure(.redirectDisallowed) {
             _ = try await HostNetworkGateway(transport: transport).request(
-                grant: try NetworkFixture.grant(),
+                grant: try NetworkFixture.grant(readPolicy: policy),
                 request: try NetworkFixture.request(url: "https://www.wenku8.net/remote/shelf?mode=list"),
                 operationContext: try remoteLibraryReadContext(policy: policy, cursor: nil)
             )
@@ -173,7 +171,7 @@ final class RemoteOperationPolicyTests: XCTestCase {
         let result = try await HostNetworkGateway(transport: transport, directActionTokens: registry).request(
             grant: try NetworkFixture.grant(remoteAddPolicy: policy),
             request: try NetworkFixture.addRequest(),
-            operationContext: try remoteLibraryAddContext(policy: policy, remoteBookId: "42", addToken: token)
+            operationContext: try remoteLibraryAddContext(policy: policy, remoteBookId: "42", directActionToken: token)
         )
 
         XCTAssertEqual(result.text, "confirmed")

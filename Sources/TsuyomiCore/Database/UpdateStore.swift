@@ -492,12 +492,14 @@ public struct UpdateStore: Sendable {
             guard let state = row["state"].string.flatMap(UpdateItemState.init(rawValue:)) else { continue }
             counts[state] = row["n"].int ?? 0
         }
-        let pending = counts[.pending] ?? 0
-        let total = counts.values.reduce(0, +)
-        let failed = (counts[.failed] ?? 0) + (counts[.unavailable] ?? 0)
+        let pending: Int64 = counts[.pending] ?? 0
+        let total: Int64 = counts.values.reduce(0, +)
+        let failed: Int64 = (counts[.failed] ?? 0) + (counts[.unavailable] ?? 0)
+        let completed: Int64 = total - pending
+        let updated: Int64 = counts[.updated] ?? 0
         try connection.execute(
             "UPDATE update_sessions SET completed = ?, updated = ?, failed = ? WHERE session_id = ?",
-            [.integer(total - pending), .integer(counts[.updated] ?? 0), .integer(failed), .text(sessionId)]
+            [.integer(completed), .integer(updated), .integer(failed), .text(sessionId)]
         )
         guard pending == 0 else { return }
         try finish(sessionId, reason: nil, at: now, connection)
@@ -513,8 +515,8 @@ public struct UpdateStore: Sendable {
             guard let state = row["state"].string.flatMap(UpdateItemState.init(rawValue:)) else { continue }
             counts[state] = row["n"].int ?? 0
         }
-        let total = counts.values.reduce(0, +)
-        let failed = (counts[.failed] ?? 0) + (counts[.unavailable] ?? 0)
+        let total: Int64 = counts.values.reduce(0, +)
+        let failed: Int64 = (counts[.failed] ?? 0) + (counts[.unavailable] ?? 0)
         let state: UpdateSessionState
         if cancelled {
             state = .cancelled
@@ -525,10 +527,25 @@ public struct UpdateStore: Sendable {
         } else {
             state = .completed
         }
-        let composed = [
-            ("skipped", counts[.skipped] ?? 0), ("cancelled", counts[.cancelled] ?? 0),
-            ("unavailable", counts[.unavailable] ?? 0), ("failed", counts[.failed] ?? 0)
-        ].filter { $0.1 > 0 }.map { "\($0.0)=\($0.1)" }.joined(separator: "; ")
+        var pieces: [String] = []
+        let named: [(String, UpdateItemState)] = [
+            ("skipped", .skipped), ("cancelled", .cancelled), ("unavailable", .unavailable), ("failed", .failed)
+        ]
+        for (name, item) in named {
+            let count = counts[item] ?? 0
+            if count > 0 { pieces.append("\(name)=\(count)") }
+        }
+        let composed = pieces.joined(separator: "; ")
+        let reasonValue: SQLiteValue
+        if !composed.isEmpty {
+            reasonValue = .text(composed)
+        } else if let reason {
+            reasonValue = .text(reason)
+        } else {
+            reasonValue = .null
+        }
+        let completed: Int64 = total - (counts[.pending] ?? 0)
+        let updated: Int64 = counts[.updated] ?? 0
         try connection.execute(
             """
             UPDATE update_sessions SET state = ?, reason = ?, lease_expires_at_millis = NULL, lease_owner_token = NULL,
@@ -536,8 +553,7 @@ public struct UpdateStore: Sendable {
             WHERE session_id = ? AND state IN ('QUEUED', 'RUNNING')
             """,
             [
-                .text(state.rawValue), composed.isEmpty ? (reason.map { SQLiteValue.text($0) } ?? .null) : .text(composed),
-                .integer(millis(now)), .integer(total - (counts[.pending] ?? 0)), .integer(counts[.updated] ?? 0),
+                .text(state.rawValue), reasonValue, .integer(millis(now)), .integer(completed), .integer(updated),
                 .integer(failed), .text(sessionId)
             ]
         )

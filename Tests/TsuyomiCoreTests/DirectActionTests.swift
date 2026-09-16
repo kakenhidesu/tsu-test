@@ -81,17 +81,17 @@ final class DirectActionTests: XCTestCase {
     func testGenericContextCannotReachTheSignedAddSurface() async throws {
         let transport = RecordingTransport()
         let gateway = HostNetworkGateway(transport: transport)
-        let grant = try NetworkFixture.grant()
-
-        await assertHostFailure(.invalidRequest) {
-            _ = try await gateway.request(grant: grant, request: try NetworkFixture.addRequest())
-        }
         let readPolicy = try RemoteOperationRequestPolicy(
             origin: try NetworkFixture.origin("https://www.wenku8.net"),
             method: .get,
             path: "/remote/shelf",
             fixedParameters: ["mode": "list"]
         )
+        let grant = try NetworkFixture.grant(readPolicy: readPolicy)
+
+        await assertHostFailure(.invalidRequest) {
+            _ = try await gateway.request(grant: grant, request: try NetworkFixture.addRequest())
+        }
         await assertHostFailure(.invalidRequest) {
             _ = try await gateway.request(
                 grant: grant,
@@ -122,7 +122,7 @@ final class DirectActionTests: XCTestCase {
             fixedParameters: ["mode": "add"],
             remoteBookIdParameter: "bid"
         )
-        let context = try remoteLibraryAddContext(policy: cacheablePolicy, remoteBookId: "42", addToken: token)
+        let context = try remoteLibraryAddContext(policy: cacheablePolicy, remoteBookId: "42", directActionToken: token)
         let grant = try NetworkFixture.grant(remoteAddPolicy: cacheablePolicy)
 
         await assertHostFailure(.invalidRequest) {
@@ -157,7 +157,7 @@ final class DirectActionTests: XCTestCase {
                 operationContext: try remoteLibraryAddContext(
                     policy: policy,
                     remoteBookId: "42",
-                    addToken: rejectedToken
+                    directActionToken: rejectedToken
                 )
             )
         }
@@ -165,7 +165,7 @@ final class DirectActionTests: XCTestCase {
         XCTAssertTrue(recorded.isEmpty)
 
         let acceptedToken = await registry.mint(binding) { true }
-        let context = try remoteLibraryAddContext(policy: policy, remoteBookId: "42", addToken: acceptedToken)
+        let context = try remoteLibraryAddContext(policy: policy, remoteBookId: "42", directActionToken: acceptedToken)
         _ = try await gateway.request(
             grant: grant,
             request: try NetworkFixture.addRequest(),

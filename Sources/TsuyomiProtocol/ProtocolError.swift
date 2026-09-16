@@ -45,6 +45,7 @@ public enum ProtocolError: Error, Equatable, Sendable {
     case invalidBookTitle
     case invalidLastUpdatedDate
     case invalidUpdateCheck(field: String)
+    case invalidRemoteTarget
     case invalidAuthor
     case invalidCanonicalUrl
     case invalidCoverUrl

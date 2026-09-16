@@ -234,6 +234,73 @@ enum SourceExtensionMarshalling {
         }
     }
 
+    /// Target discovery is decoded on the host's own terms: strings only, the manifest's source id,
+    /// a bounded duplicate-free list, folder kind, and parents that are listed targets.
+    static func remoteTargets(_ root: [String: JSONValue], expectedSourceId: String) throws -> RemoteLibraryTargetList {
+        guard root.string("sourceId") == expectedSourceId, let rows = root.array("targets") else {
+            throw failure(.malformedSourceResponse, "remote-library-targets-parse", "invalid-targets")
+        }
+        do {
+            let targets = try rows.map { row -> RemoteLibraryTarget in
+                guard let object = row.objectValue, object.hasOnly(["targetId", "displayName", "parentId", "kind"]),
+                      let targetId = object.string("targetId"), let displayName = object.string("displayName"),
+                      let kind = object.string("kind"),
+                      object["parentId"] == nil || object.string("parentId") != nil else {
+                    throw ProtocolError.invalidRemoteTarget
+                }
+                return try RemoteLibraryTarget(targetId: targetId, displayName: displayName, parentId: object.string("parentId"), kind: kind)
+            }
+            return try RemoteLibraryTargetList(sourceId: expectedSourceId, targets: targets)
+        } catch {
+            throw failure(.malformedSourceResponse, "remote-library-targets-parse", "invalid-targets")
+        }
+    }
+
+    static func remoteRemoveResult(
+        _ root: [String: JSONValue],
+        expectedSourceId: String,
+        expectedRemoteBookId: String
+    ) throws -> RemoteLibraryRemoveResult {
+        guard let sourceId = root.string("sourceId"), let remoteBookId = root.string("remoteBookId"),
+              sourceId == expectedSourceId, remoteBookId == expectedRemoteBookId else {
+            throw failure(.malformedSourceResponse, "remote-library-remove-parse", "identity-mismatch")
+        }
+        let outcome: RemoteLibraryRemoveOutcome
+        switch root.string("outcome") {
+        case "applied": outcome = .applied
+        case "already-absent": outcome = .alreadyAbsent
+        default: throw failure(.malformedSourceResponse, "remote-library-remove-parse", "invalid-outcome")
+        }
+        return RemoteLibraryRemoveResult(
+            identity: try BookIdentity(sourceId: sourceId, remoteBookId: remoteBookId),
+            outcome: outcome
+        )
+    }
+
+    static func remoteMoveResult(
+        _ root: [String: JSONValue],
+        expectedSourceId: String,
+        expectedRemoteBookId: String,
+        expectedTargetId: String
+    ) throws -> RemoteLibraryMoveResult {
+        guard let sourceId = root.string("sourceId"), let remoteBookId = root.string("remoteBookId"),
+              let targetId = root.string("targetId"), sourceId == expectedSourceId,
+              remoteBookId == expectedRemoteBookId, targetId == expectedTargetId else {
+            throw failure(.malformedSourceResponse, "remote-library-move-parse", "identity-mismatch")
+        }
+        let outcome: RemoteLibraryMoveOutcome
+        switch root.string("outcome") {
+        case "applied": outcome = .applied
+        case "already-at-target": outcome = .alreadyAtTarget
+        default: throw failure(.malformedSourceResponse, "remote-library-move-parse", "invalid-outcome")
+        }
+        return RemoteLibraryMoveResult(
+            identity: try BookIdentity(sourceId: sourceId, remoteBookId: remoteBookId),
+            targetId: targetId,
+            outcome: outcome
+        )
+    }
+
     static func remoteAddResult(
         _ root: [String: JSONValue],
         expectedSourceId: String,
@@ -261,15 +328,13 @@ extension HxpRemoteOperationPolicy {
         var fixed: [String: String] = [:]
         var remoteBookIdParameter: String?
         var cursorParameter: String?
+        var targetIdParameter: String?
         for parameter in parameters {
             switch parameter {
             case .fixed(let name, let value): fixed[name] = value
             case .remoteBookId(let name): remoteBookIdParameter = name
             case .cursor(let name): cursorParameter = name
-            case .targetId:
-                throw SourceExtensionMarshalling.failure(
-                    .malformedSourceResponse, "remote-policy", "target-id-outside-move"
-                )
+            case .targetId(let name): targetIdParameter = name
             }
         }
         return try RemoteOperationRequestPolicy(
@@ -279,6 +344,7 @@ extension HxpRemoteOperationPolicy {
             fixedParameters: fixed,
             remoteBookIdParameter: remoteBookIdParameter,
             cursorParameter: cursorParameter,
+            targetIdParameter: targetIdParameter,
             referrerPath: referrerPath,
             redirects: try redirects.map { redirect in
                 try RemoteOperationRedirectPolicy(
@@ -289,6 +355,30 @@ extension HxpRemoteOperationPolicy {
                     referrerPath: redirect.referrerPath
                 )
             }
+        )
+    }
+}
+
+extension HxpUpdateCheckCapability {
+    /// The update check is always a GET on its own signed surface with no redirects.
+    func networkPolicy() throws -> RemoteOperationRequestPolicy {
+        var fixed: [String: String] = [:]
+        var remoteBookIdParameter: String?
+        for parameter in parameters {
+            switch parameter {
+            case .fixed(let name, let value): fixed[name] = value
+            case .remoteBookId(let name): remoteBookIdParameter = name
+            case .cursor, .targetId:
+                throw SourceExtensionMarshalling.failure(.malformedSourceResponse, "update-check", "invalid-parameter")
+            }
+        }
+        return try RemoteOperationRequestPolicy(
+            origin: origin,
+            method: .get,
+            path: path,
+            fixedParameters: fixed,
+            remoteBookIdParameter: remoteBookIdParameter,
+            referrerPath: referrerPath
         )
     }
 }

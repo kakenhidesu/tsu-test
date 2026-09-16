@@ -13,7 +13,9 @@ public struct SourceNetworkGrant: Hashable, Sendable {
     public let maximumConcurrentRequests: Int
     public let requestTimeoutMs: Int
     public let maximumResponseBytes: Int
-    public let remoteAddPolicy: RemoteOperationRequestPolicy?
+    /// The signed surfaces this source may use, one per operation, each already checked for the
+    /// shape its operation requires and for an origin the network capability grants.
+    public let operationPolicies: [SourceOperationKind: RemoteOperationRequestPolicy]
 
     public init(
         sourceId: String,
@@ -24,7 +26,7 @@ public struct SourceNetworkGrant: Hashable, Sendable {
         maximumConcurrentRequests: Int,
         requestTimeoutMs: Int,
         maximumResponseBytes: Int,
-        remoteAddPolicy: RemoteOperationRequestPolicy? = nil
+        operationPolicies: [SourceOperationKind: RemoteOperationRequestPolicy] = [:]
     ) throws {
         guard sourceId.contains(where: { !$0.isWhitespace }),
               extensionVersion.contains(where: { !$0.isWhitespace }),
@@ -36,10 +38,10 @@ public struct SourceNetworkGrant: Hashable, Sendable {
               cookieOrigins.allSatisfy({ origins.contains($0) }) else {
             throw HostNetworkException(.invalidRequest)
         }
-        if let remoteAddPolicy {
-            guard remoteAddPolicy.remoteBookIdParameter != nil,
-                  remoteAddPolicy.cursorParameter == nil,
-                  origins.contains(remoteAddPolicy.origin) else {
+        for (kind, policy) in operationPolicies {
+            try policy.requireShape(for: kind)
+            guard origins.contains(policy.origin),
+                  policy.redirects.allSatisfy({ origins.contains($0.origin) }) else {
                 throw HostNetworkException(.invalidRequest)
             }
         }
@@ -51,7 +53,12 @@ public struct SourceNetworkGrant: Hashable, Sendable {
         self.maximumConcurrentRequests = maximumConcurrentRequests
         self.requestTimeoutMs = requestTimeoutMs
         self.maximumResponseBytes = maximumResponseBytes
-        self.remoteAddPolicy = remoteAddPolicy
+        self.operationPolicies = operationPolicies
+    }
+
+    /// The write surfaces an extension may never reach on its own.
+    var protectedPolicies: [RemoteOperationRequestPolicy] {
+        operationPolicies.filter { $0.key.isWrite }.map(\.value)
     }
 
     public func allowsCookies(_ origin: HttpsOrigin) -> Bool {
