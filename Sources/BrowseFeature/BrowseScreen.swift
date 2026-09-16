@@ -275,7 +275,7 @@ public struct BrowseScreen: View {
                         Button {
                             actions.openRemoteLibrary(row.source.sourceId)
                         } label: {
-                            Label("网站书库", systemImage: "books.vertical")
+                            Label("网站收藏", systemImage: "bookmark")
                         }
                     }
                     if row.source.supportsWebLogin {
