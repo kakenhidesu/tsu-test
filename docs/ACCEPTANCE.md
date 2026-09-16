@@ -105,3 +105,17 @@ Sources/ReverseImportCheck/ReverseImport.swift:5:8: error: no such module 'Tsuyo
 
 确认 SwiftPM 强制依赖边界后该 target 已删除。第一次尝试只加 target 未加 product，目标未被构建、
 CI 误报为通过——只加 target 不足以验证，必须让它进入构建图。
+
+## 上游同步 S1–S6（Xfire233/Tsuyomi@c704480 + tsuyomi-extensions@1d7062e）— 通过（S6 界面待用户把关）
+
+CI run 35094873410：`** BUILD SUCCEEDED **`（`SWIFT_TREAT_WARNINGS_AS_ERRORS=YES`，Swift 6 严格并发）、`Test Suite 'All tests' passed`，213 个用例全部通过。
+
+| 项 | 结果 |
+|---|---|
+| S2 数据库 | `user_version = 10`，Room v5–v10 全部表存在；镜像快照要求租约不变且从不钉住；对账状态机；移除只解钉且保留标签/进度；章节完读精确且先到先得；v4 库就地迁移 |
+| S3 来源运行时 | READ/TARGETS/ADD/REMOVE/MOVE/UPDATE_CHECK 逐操作签名策略与受保护写面；`update-check-v2` 准入（基线、追加、重排/截断不重置、错书失败）；transfer v2/v3 严格解析 |
+| S4 扩展生命周期 | 非官方包无授权即拒绝（`PACKAGE_GRANT_REQUIRED`）；未知发布者本地包要公钥、错钥不留痕、审批拒绝不留钥；卸载一次休眠且不抖动代号；官方仓库只停用不移除；复合解析器层级与撤销并集 |
+| S5a 网站书架 | 拉取入镜像不钉住、目录与归属正确、分组不移动数据；复制每来源只问一次且零远程写；ADD 需授权、只发一次、被记住；接受后失败留 UNRESOLVED 并阻塞，重试关闭整链；`仅解除锁定` 不对 ADD；定向 ADD→MOVE 两次请求；未登录零请求 |
+| S5b 更新检查 | 首检静默基线，追加章节入收件箱（`10003`，`2026-09-07`）；全部完读才消失；忽略可撤销且不写进度；排除按书/按来源；镜像书在候选内；会话不重叠、取消持久 |
+| S5c 书架 | 智能排序分区规则、本地搜索规范化与顺序、推荐顺序、分段默认展示、`mirror:` 快捷入口 |
+| S6 界面 | `InterfaceSnapshotTests` 产出 18 张截图（浏览已安装/可安装、仓库确认、安装审批、发布者公钥、书架有更新、镜像根、详情身份模块、更新设置/报告）；交用户把关 |
