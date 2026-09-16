@@ -19,40 +19,41 @@ private struct FixedResolver: PublisherKeyResolver {
 final class CompositePublisherKeyResolverTests: XCTestCase {
     private let keyA = Data(repeating: 0xA1, count: 32)
     private let keyB = Data(repeating: 0xB2, count: 32)
+    private let shared = "tsuyomi-shared-key"
 
     private func key(_ bytes: Data, _ trust: PublisherTrust) throws -> PublisherKey {
-        try PublisherKey(keyId: "shared", publicKey: bytes, trust: trust)
+        try PublisherKey(keyId: "tsuyomi-shared-key", publicKey: bytes, trust: trust)
     }
 
     func testABuiltInIdentityShadowsAUserAddedDeclaration() throws {
         let resolver = CompositePublisherKeyResolver([
-            FixedResolver(keys: ["shared": try key(keyB, .userAdded)]),
-            FixedResolver(keys: ["shared": try key(keyA, .builtInOfficial)])
+            FixedResolver(keys: [shared: try key(keyB, .userAdded)]),
+            FixedResolver(keys: [shared: try key(keyA, .builtInOfficial)])
         ])
-        let resolved = try XCTUnwrap(resolver.resolve(keyId: "shared"))
+        let resolved = try XCTUnwrap(resolver.resolve(keyId: shared))
         XCTAssertEqual(resolved.publicKey, keyA)
         XCTAssertEqual(resolved.trust, .builtInOfficial)
     }
 
     func testTestTrustBeatsUserAddedButNotOfficial() throws {
         let resolver = CompositePublisherKeyResolver([
-            FixedResolver(keys: ["shared": try key(keyB, .userAdded)]),
-            FixedResolver(keys: ["shared": try key(keyA, .builtInTest)])
+            FixedResolver(keys: [shared: try key(keyB, .userAdded)]),
+            FixedResolver(keys: [shared: try key(keyA, .builtInTest)])
         ])
-        XCTAssertEqual(resolver.resolve(keyId: "shared")?.trust, .builtInTest)
+        XCTAssertEqual(resolver.resolve(keyId: shared)?.trust, .builtInTest)
     }
 
     func testTwoDeclarationsInOneTierThatDisagreeResolveToNothing() throws {
         let resolver = CompositePublisherKeyResolver([
-            FixedResolver(keys: ["shared": try key(keyA, .userAdded)]),
-            FixedResolver(keys: ["shared": try key(keyB, .userAdded)])
+            FixedResolver(keys: [shared: try key(keyA, .userAdded)]),
+            FixedResolver(keys: [shared: try key(keyB, .userAdded)])
         ])
-        XCTAssertNil(resolver.resolve(keyId: "shared"))
+        XCTAssertNil(resolver.resolve(keyId: shared))
         let agreeing = CompositePublisherKeyResolver([
-            FixedResolver(keys: ["shared": try key(keyA, .userAdded)]),
-            FixedResolver(keys: ["shared": try key(keyA, .userAdded)])
+            FixedResolver(keys: [shared: try key(keyA, .userAdded)]),
+            FixedResolver(keys: [shared: try key(keyA, .userAdded)])
         ])
-        XCTAssertEqual(agreeing.resolve(keyId: "shared")?.publicKey, keyA)
+        XCTAssertEqual(agreeing.resolve(keyId: shared)?.publicKey, keyA)
     }
 
     func testRevocationIsTheUnion() {

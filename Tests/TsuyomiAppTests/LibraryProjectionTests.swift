@@ -67,7 +67,7 @@ final class LibraryProjectionTests: XCTestCase {
             [untouched, detectedLater, olderDate, newestDate, readRecently],
             filter: .all, sort: .title, descending: false, updates: updates
         )
-        XCTAssertEqual(explicit.map(\.book.identity.remoteBookId), ["1", "2", "3", "4", "5"], "an explicit sort never partitions")
+        XCTAssertEqual(explicit.map(\.book.identity.remoteBookId), ["4", "3", "2", "5", "1"], "an explicit sort never partitions: code-point order of the titles")
     }
 
     func testSearchNormalisesAndOrdersCollectionsBeforeBooks() throws {

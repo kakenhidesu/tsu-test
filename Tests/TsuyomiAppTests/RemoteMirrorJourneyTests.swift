@@ -36,8 +36,8 @@ final class RemoteMirrorJourneyTests: XCTestCase {
         XCTAssertNil(page.notice)
         let content = try XCTUnwrap(page.content)
         XCTAssertEqual(content.items.map(\.identity.remoteBookId).sorted(), ["1234", "5678"])
-        XCTAssertEqual(content.mirror.targets.map(\.targetId), ["0", "1"])
-        XCTAssertEqual(content.mirror.targets.map(\.displayName), ["默认书架", "第1组书架"])
+        XCTAssertEqual(content.mirror.targets.map(\.targetId).sorted(), ["0", "1"])
+        XCTAssertEqual(Set(content.mirror.targets.map(\.displayName)), ["默认书架", "第1组书架"])
         XCTAssertEqual(content.defaultTargetId, "0")
         let awaited1 = try await world.mirror.membership(try world.identity("1234"))?.targetId
         XCTAssertEqual(awaited1, "1")

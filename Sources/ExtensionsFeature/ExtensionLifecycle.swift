@@ -101,7 +101,13 @@ public struct ExtensionLifecycle: Sendable {
                     )
                 )
             }
-            try await installer.activate(prepared, approval: ExtensionInstallApproval.approve(prepared, consent: consent))
+            do {
+                try await installer.activate(prepared, approval: ExtensionInstallApproval.approve(prepared, consent: consent))
+            } catch {
+                // A refused install retains nothing: the key that verified it leaves with it.
+                if let key { try? await trust.forget(keyId: key.keyId) }
+                throw error
+            }
             await registry.close(prepared.candidate.manifest.sourceId)
             let manifest = prepared.candidate.manifest
             try await remoteLibrary.synchronizeVerifiedPackage(

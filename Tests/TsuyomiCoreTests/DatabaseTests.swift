@@ -55,7 +55,9 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(stored?.remoteTags, ["冒险", "奇幻"])
     }
 
-    func testRemovingALibraryEntryCascadesToTagsAndProgress() async throws {
+    /// Removal unpins. The retained record keeps what the reader wrote about the book — tags and
+    /// progress included — which is what lets a re-add restore them.
+    func testRemovingALibraryEntryKeepsTagsAndProgressOnTheRetainedRecord() async throws {
         let database = try TsuyomiDatabase.inMemory()
         let repository = LibraryRepository(database: database)
         let progress = ReadingProgressStore(database: database)
@@ -69,8 +71,7 @@ final class DatabaseTests: XCTestCase {
         let tags = try await database.read { connection in
             try connection.query("SELECT COUNT(*) AS count FROM local_book_tags").first?["count"].int
         }
-        XCTAssertEqual(tags, 0)
-        // The book row survives: only the library entry and its dependents are removed.
+        XCTAssertEqual(tags, 1)
         let book = try await repository.book(identity)
         XCTAssertNotNil(book)
         let stored = try await progress.progress(identity)
