@@ -40,7 +40,7 @@ enum ExtensionFixtures {
 }
 
 final class HxpVerificationTests: XCTestCase {
-    private let hostApi = try? SemanticVersion("1.1.0")
+    private let hostApi = try? SemanticVersion("1.2.0")
 
     private func verifier(_ keys: InMemoryPublisherKeyStore) throws -> HxpArchiveVerifier {
         HxpArchiveVerifier(publisherKeys: keys, hostApiVersion: try XCTUnwrap(hostApi))

@@ -33,7 +33,7 @@ final class Wenku8ReplayTests: XCTestCase {
         #else
         throw XCTSkip("The fixture publisher is only compiled into DEBUG builds")
         #endif
-        let verifier = HxpArchiveVerifier(publisherKeys: keys, hostApiVersion: try SemanticVersion("1.1.0"))
+        let verifier = HxpArchiveVerifier(publisherKeys: keys, hostApiVersion: try SemanticVersion("1.2.0"))
         let verified = try verifier.verify(
             archiveBytes: try ExtensionFixtures.data("fixtures/wenku8/wenku8-fixture.hxp")
         )
@@ -145,7 +145,7 @@ final class Wenku8ReplayTests: XCTestCase {
         #else
         throw XCTSkip("The fixture publisher is only compiled into DEBUG builds")
         #endif
-        let verifier = HxpArchiveVerifier(publisherKeys: keys, hostApiVersion: try SemanticVersion("1.1.0"))
+        let verifier = HxpArchiveVerifier(publisherKeys: keys, hostApiVersion: try SemanticVersion("1.2.0"))
         let verified = try verifier.verify(
             archiveBytes: try ExtensionFixtures.data("fixtures/wenku8/wenku8-fixture.hxp")
         )

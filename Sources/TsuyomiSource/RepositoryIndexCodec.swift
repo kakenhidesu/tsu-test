@@ -123,14 +123,16 @@ public enum RepositoryIndexCodec {
               let signed = root.object("signed") else {
             throw RepositoryError.invalidIndex
         }
+        guard hasKeys(signed, ["repositoryId", "sequence", "issuedAt", "expiresAt", "publishers", "packages", "revocations"]) else {
+            throw RepositoryError.invalidIndex
+        }
         guard signature.count == 64,
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: rootPublicKey),
               let canonical = try? Rfc8785.canonicalize(.object(signed)),
               key.isValidSignature(signature, for: signaturePrefix + canonical) else {
             throw RepositoryError.invalidSignature
         }
-        guard hasKeys(signed, ["repositoryId", "sequence", "issuedAt", "expiresAt", "publishers", "packages", "revocations"]),
-              let repositoryId = signed.string("repositoryId"), Grammar.isStrictSourceId(repositoryId),
+        guard let repositoryId = signed.string("repositoryId"), Grammar.isStrictSourceId(repositoryId),
               let sequence = signed.int("sequence"), sequence > 0,
               let issuedAt = signed.instant("issuedAt"), let expiresAt = signed.instant("expiresAt"),
               issuedAt < expiresAt, expiresAt.timeIntervalSince(issuedAt) <= maximumLifetime,
