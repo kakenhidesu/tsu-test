@@ -55,7 +55,8 @@ final class ExtensionTrustJourneyTests: XCTestCase {
         await world.model.approvePendingInstall()
         XCTAssertEqual(world.model.failureCode, ExtensionInstallError.packageGrantRequired.rawValue)
         XCTAssertTrue(world.trust.trusted.isEmpty, "a refused install retains no key")
-        XCTAssertTrue(try await world.registry.installedSources().isEmpty)
+        let awaited1 = try await world.registry.installedSources().isEmpty
+        XCTAssertTrue(awaited1)
 
         try JourneyFixtures.data("wenku8-fixture.hxp").write(to: picked)
         await world.model.importPackage(at: picked)
@@ -100,7 +101,8 @@ final class ExtensionTrustJourneyTests: XCTestCase {
         XCTAssertFalse(dormant.available)
         XCTAssertNil(dormant.verifiedVersion)
         XCTAssertGreaterThan(dormant.generation, live.generation)
-        XCTAssertTrue(try await world.registry.installedSources().isEmpty)
+        let awaited2 = try await world.registry.installedSources().isEmpty
+        XCTAssertTrue(awaited2)
 
         try await world.lifecycle.closeUnverifiable()
         let unchanged = try XCTUnwrap(try await world.remoteLibrary.sourceAvailability(sourceId.value))

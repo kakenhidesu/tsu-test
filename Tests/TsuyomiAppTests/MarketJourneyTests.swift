@@ -58,7 +58,8 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertTrue(prepared.requiresNonOfficialConsent, "a user-added publisher's package needs explicit consent")
         await detail.approvePendingInstall()
         XCTAssertEqual(detail.failureCode, ExtensionInstallError.packageGrantRequired.rawValue)
-        XCTAssertTrue(try await world.registry.installedSources().isEmpty, "no consent, no archive on disk")
+        let awaited1 = try await world.registry.installedSources().isEmpty
+        XCTAssertTrue(awaited1, "no consent, no archive on disk")
 
         await detail.prepare(cached.rows[0].package)
         detail.installConsent = ExtensionInstallConsent(nonOfficialExecution: true)

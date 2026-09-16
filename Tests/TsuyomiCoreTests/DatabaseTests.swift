@@ -240,7 +240,8 @@ final class DatabaseTests: XCTestCase {
         let saved = try XCTUnwrap(try await mirror.mirror(sourceId: "org.tsuyomi.wenku8"))
         XCTAssertEqual(saved.items.map(\.identity.remoteBookId), ["1"])
         XCTAssertEqual(saved.targets.map(\.frozen), [false])
-        XCTAssertTrue(try await LibraryRepository(database: database).libraryEntries().isEmpty, "a mirror never pins")
+        let awaited1 = try await LibraryRepository(database: database).libraryEntries().isEmpty
+        XCTAssertTrue(awaited1, "a mirror never pins")
 
         try await mirror.save(try snapshot([], generation: 3))
         let refreshed = try XCTUnwrap(try await mirror.mirror(sourceId: "org.tsuyomi.wenku8"))
@@ -285,9 +286,10 @@ final class DatabaseTests: XCTestCase {
         } catch {
             XCTAssertNotNil(error as? DatabaseError)
         }
-        XCTAssertTrue(try await store.transitionRemoteMutation(
+        let awaited2 = try await store.transitionRemoteMutation(
             id: id, expected: .inFlight, next: .unresolved, now: Date(timeIntervalSince1970: 1_003)
-        ))
+        )
+        XCTAssertTrue(awaited2)
         do {
             _ = try await store.beginRemoteMutation(try request(.remove))
             XCTFail("an unresolved attempt blocks any other operation")
@@ -303,15 +305,19 @@ final class DatabaseTests: XCTestCase {
             XCTAssertNotNil(error as? DatabaseError)
         }
         let retry = try await store.beginRemoteMutation(try request(.add, retrying: id))
-        XCTAssertTrue(try await store.transitionRemoteMutation(
+        let awaited3 = try await store.transitionRemoteMutation(
             id: retry, expected: .pendingUserAction, next: .inFlight, now: Date(timeIntervalSince1970: 1_005)
-        ))
-        XCTAssertTrue(try await store.transitionRemoteMutation(
+        )
+        XCTAssertTrue(awaited3)
+        let awaited4 = try await store.transitionRemoteMutation(
             id: retry, expected: .inFlight, next: .confirmed, now: Date(timeIntervalSince1970: 1_006)
-        ))
+        )
+        XCTAssertTrue(awaited4)
         try await store.confirmUnresolvedMutations(try identity("1"), operation: .add, now: Date(timeIntervalSince1970: 1_007))
-        XCTAssertEqual(try await store.reconciliation(id: id)?.state, .confirmed)
-        XCTAssertEqual(try await store.latestReconciliation(try identity("1"))?.id, retry)
+        let awaited5 = try await store.reconciliation(id: id)?.state
+        XCTAssertEqual(awaited5, .confirmed)
+        let awaited6 = try await store.latestReconciliation(try identity("1"))?.id
+        XCTAssertEqual(awaited6, retry)
     }
 
     /// Removal keeps everything the reader wrote about the book; only the pin and the manual
@@ -321,25 +327,32 @@ final class DatabaseTests: XCTestCase {
         let library = LibraryRepository(database: database)
         let collections = CollectionStore(database: database)
         let identity = try identity("1")
-        XCTAssertTrue(try await library.addToLibrary(try book("1", title: "書")))
+        let awaited7 = try await library.addToLibrary(try book("1", title: "書"))
+        XCTAssertTrue(awaited7)
         try await library.setRating(identity, rating: 4)
         try await library.setLocalTags(identity, tags: ["收藏"])
         try await library.setReadLater(identity, readLater: true)
         try await collections.createCollection(
             try LibraryCollection(collectionId: "c1", kind: .manual, title: "夹", parentCollectionId: nil, displayOrder: 0)
         )
-        XCTAssertTrue(try await collections.addManualMembership("c1", identity))
+        let awaited8 = try await collections.addManualMembership("c1", identity)
+        XCTAssertTrue(awaited8)
 
-        XCTAssertTrue(try await library.removeFromLibrary(identity))
-        XCTAssertFalse(try await library.removeFromLibrary(identity), "removing an unpinned book changes nothing")
-        XCTAssertTrue(try await library.libraryEntries().isEmpty)
+        let awaited9 = try await library.removeFromLibrary(identity)
+        XCTAssertTrue(awaited9)
+        let awaited10 = try await library.removeFromLibrary(identity)
+        XCTAssertFalse(awaited10, "removing an unpinned book changes nothing")
+        let awaited11 = try await library.libraryEntries().isEmpty
+        XCTAssertTrue(awaited11)
         let retained = try XCTUnwrap(try await library.libraryEntry(identity))
         XCTAssertFalse(retained.localMembership)
         XCTAssertEqual(retained.rating, 4)
         XCTAssertEqual(retained.localTags, ["收藏"])
         XCTAssertTrue(retained.readLater)
-        XCTAssertEqual(try await library.readLaterEntries().map(\.book.identity), [identity])
-        XCTAssertTrue(try await collections.collectionEntries("c1").isEmpty)
+        let awaited12 = try await library.readLaterEntries().map(\.book.identity)
+        XCTAssertEqual(awaited12, [identity])
+        let awaited13 = try await collections.collectionEntries("c1").isEmpty
+        XCTAssertTrue(awaited13)
         do {
             _ = try await collections.addManualMembership("c1", identity)
             XCTFail("a retained record cannot hold a manual membership")
@@ -347,11 +360,13 @@ final class DatabaseTests: XCTestCase {
             XCTAssertNotNil(error as? DatabaseError)
         }
 
-        XCTAssertTrue(try await library.addToLibrary(try book("1", title: "書")))
+        let awaited14 = try await library.addToLibrary(try book("1", title: "書"))
+        XCTAssertTrue(awaited14)
         let pinned = try XCTUnwrap(try await library.libraryEntry(identity))
         XCTAssertTrue(pinned.localMembership)
         XCTAssertEqual(pinned.rating, 4)
-        XCTAssertEqual(try await library.libraryEntries().count, 1)
+        let awaited15 = try await library.libraryEntries().count
+        XCTAssertEqual(awaited15, 1)
     }
 
     /// A policy row follows the package that verifies now. The reader's consents are kept only when
@@ -363,8 +378,10 @@ final class DatabaseTests: XCTestCase {
             sourceId: "org.tsuyomi.wenku8", publisherFingerprint: "pub", capabilityFingerprint: "cap-1",
             approvedOrigin: "https://www.wenku8.net", preserveWriteback: true
         )
-        XCTAssertTrue(try await store.setWritebackEnabled(.add, sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1", enabled: true))
-        XCTAssertTrue(try await store.dismissFirstRemoteImportPrompt(sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1"))
+        let awaited16 = try await store.setWritebackEnabled(.add, sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1", enabled: true)
+        XCTAssertTrue(awaited16)
+        let awaited17 = try await store.dismissFirstRemoteImportPrompt(sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1")
+        XCTAssertTrue(awaited17)
 
         try await store.synchronizeVerifiedPackage(
             sourceId: "org.tsuyomi.wenku8", publisherFingerprint: "pub", capabilityFingerprint: "cap-1",
@@ -402,7 +419,8 @@ final class DatabaseTests: XCTestCase {
         try await progress.markChapterCompleted(identity, chapterId: "c2", at: Date(timeIntervalSince1970: 20))
         try await progress.markChapterCompleted(identity, chapterId: "c1", at: Date(timeIntervalSince1970: 30))
         try await progress.markChapterCompleted(identity, chapterId: "c2", at: Date(timeIntervalSince1970: 40))
-        XCTAssertEqual(try await progress.completedChapterIds(identity), ["c2", "c1"])
+        let awaited18 = try await progress.completedChapterIds(identity)
+        XCTAssertEqual(awaited18, ["c2", "c1"])
         do {
             try await progress.markChapterCompleted(identity, chapterId: "  ", at: Date())
             XCTFail("a blank chapter id is not a completion")
