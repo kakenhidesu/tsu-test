@@ -63,7 +63,8 @@ public final class PackageGrantStore: Sendable {
             )
             loaded[PackageGrantStore.key(grant)] = grant
         }
-        state.withLock { $0 = loaded }
+        let grants = loaded
+        state.withLock { $0 = grants }
     }
 
     public func record(_ grant: PackageGrant) async throws {
