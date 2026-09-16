@@ -54,8 +54,8 @@ public struct LibraryScreen: View {
                     }
                 }
                 .padding(.vertical, TsuyomiTheme.Metrics.gutter)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: model.isSearching)
-                .animation(reduceMotion ? nil : .snappy(duration: 0.3), value: model.searchQuery)
+                .animation(reduceMotion ? nil : LibraryScreen.searchMotion, value: model.isSearching)
+                .animation(reduceMotion ? nil : LibraryScreen.searchMotion, value: model.searchQuery)
             }
             .refreshable { await model.checkUpdatesNow() }
         }
@@ -197,7 +197,7 @@ public struct LibraryScreen: View {
                 if model.isSearching {
                     closeSearch()
                 } else {
-                    withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { model.beginSearch() }
+                    withAnimation(reduceMotion ? nil : LibraryScreen.searchMotion) { model.beginSearch() }
                     searchFocused = true
                 }
             } label: {
@@ -284,8 +284,12 @@ public struct LibraryScreen: View {
 
     private func closeSearch() {
         searchFocused = false
-        withAnimation(reduceMotion ? nil : .snappy(duration: 0.3)) { model.endSearch() }
+        withAnimation(reduceMotion ? nil : LibraryScreen.searchMotion) { model.endSearch() }
     }
+
+    /// A short, slightly damped spring: the field arrives with a little give and settles at once.
+    /// Spelled out because the named presets that read the same only exist from iOS 17.
+    private static let searchMotion = Animation.spring(response: 0.3, dampingFraction: 0.85)
 
     @ViewBuilder
     private var searchCollections: some View {
