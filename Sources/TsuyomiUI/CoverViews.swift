@@ -24,8 +24,8 @@ public struct CoverImage: View {
                 placeholder(fallback, symbol: nil)
             case .absent(let fallback), .fallback(let fallback):
                 placeholder(fallback, symbol: "book.closed")
-            case .failed(let reason, let fallback):
-                placeholder(fallback, symbol: "exclamationmark.triangle", note: reason.rawValue)
+            case .failed(let reason, let detail, let fallback):
+                placeholder(fallback, symbol: "exclamationmark.triangle", note: reason.rawValue + (detail.map { "/\($0)" } ?? ""))
             }
         }
         .aspectRatio(TsuyomiTheme.Metrics.coverAspectRatio, contentMode: .fit)
@@ -71,7 +71,7 @@ public struct CoverImage: View {
             return "封面载入中，\(fallback.title)"
         case .absent(let fallback), .fallback(let fallback):
             return "无封面，\(fallback.title)"
-        case .failed(let reason, let fallback):
+        case .failed(let reason, _, let fallback):
             return "封面不可用（\(reason.rawValue)），\(fallback.title)"
         }
     }

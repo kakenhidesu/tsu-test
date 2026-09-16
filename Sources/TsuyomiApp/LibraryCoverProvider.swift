@@ -26,7 +26,7 @@ struct LazySourceCoverFetcher: CoverMediaFetcher {
         do {
             client = try await registry.client(for: sourceId)
         } catch {
-            throw MediaLoadError.httpFailure
+            throw MediaLoadError.httpFailure(detail: "source-unavailable")
         }
         return try await client.fetch(url: url, referrerUrl: referrerUrl)
     }

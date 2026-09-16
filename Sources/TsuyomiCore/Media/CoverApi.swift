@@ -77,14 +77,16 @@ public enum CoverUiState: Sendable {
     case loading(fallback: FallbackSpec)
     case ready(UIImage)
     case staleReady(UIImage, provenance: String)
-    case failed(reason: CoverFailureReason, fallback: FallbackSpec)
+    /// `detail` is a host-composed token naming the step that failed (a status code, a transport
+    /// error name); it is never text from the site.
+    case failed(reason: CoverFailureReason, detail: String?, fallback: FallbackSpec)
     case fallback(FallbackSpec)
 }
 
 public enum MediaLoadError: Error, Equatable, Sendable {
     case invalidUrl
     case originNotGranted
-    case httpFailure
+    case httpFailure(detail: String)
     case redirectLimit
     case responseTooLarge
     case unsupportedContent
@@ -95,6 +97,14 @@ public enum MediaLoadError: Error, Equatable, Sendable {
         case .invalidUrl: return .invalidReference
         case .originNotGranted: return .originNotGranted
         case .httpFailure, .redirectLimit: return .network
+        }
+    }
+
+    var detail: String? {
+        switch self {
+        case .httpFailure(let detail): return detail
+        case .redirectLimit: return "redirect-limit"
+        case .invalidUrl, .originNotGranted, .responseTooLarge, .unsupportedContent, .decodeFailed: return nil
         case .responseTooLarge, .unsupportedContent: return .responseRejected
         case .decodeFailed: return .decodeFailed
         }

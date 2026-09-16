@@ -55,8 +55,12 @@ public actor HostCoverLoader {
             payload = try await fetcher.fetch(url: url, referrerUrl: referrerUrl)
         } catch let failure as MediaLoadError {
             throw failure
+        } catch let failure as HostNetworkException {
+            // The transport's own name for what went wrong, plus the HTTP status when there was one.
+            let status = failure.diagnosticId.hasPrefix("status-") ? "/" + failure.diagnosticId : ""
+            throw MediaLoadError.httpFailure(detail: failure.error.rawValue.lowercased() + status)
         } catch {
-            throw MediaLoadError.httpFailure
+            throw MediaLoadError.httpFailure(detail: "fetch")
         }
         guard payload.bytes.count <= maximumResponseBytes else { throw MediaLoadError.responseTooLarge }
         guard HostCoverLoader.supportedContentTypes.contains(payload.contentType) else {

@@ -129,7 +129,9 @@ public actor HostNetworkGateway {
                 current = try GrantedUrl.reachable(resolved.absoluteString, grant: grant)
                 continue
             }
-            guard (200...299).contains(response.status) else { throw HostNetworkException(.transport) }
+            guard (200...299).contains(response.status) else {
+                throw HostNetworkException(.transport, diagnosticId: "status-\(response.status)")
+            }
             guard response.bytes.count <= grant.maximumResponseBytes else {
                 throw HostNetworkException(.responseLimit)
             }

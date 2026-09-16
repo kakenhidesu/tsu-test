@@ -46,7 +46,7 @@ public struct CoverRepository: Sendable {
                 guard request.sourceId == sourceId,
                       request.packageRevision == packageRevision,
                       request.credentialRevision == credentialRevision else {
-                    continuation.yield(.failed(reason: .invalidReference, fallback: request.fallback))
+                    continuation.yield(.failed(reason: .invalidReference, detail: "partition", fallback: request.fallback))
                     continuation.finish()
                     return
                 }
@@ -60,9 +60,9 @@ public struct CoverRepository: Sendable {
                     )
                     continuation.yield(.ready(image))
                 } catch let failure as MediaLoadError {
-                    continuation.yield(.failed(reason: failure.publicReason, fallback: request.fallback))
+                    continuation.yield(.failed(reason: failure.publicReason, detail: failure.detail, fallback: request.fallback))
                 } catch {
-                    continuation.yield(.failed(reason: .network, fallback: request.fallback))
+                    continuation.yield(.failed(reason: .network, detail: "cancelled", fallback: request.fallback))
                 }
                 continuation.finish()
             }
