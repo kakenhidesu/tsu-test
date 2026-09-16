@@ -140,7 +140,6 @@ public struct ExtensionsScreen: View {
     private var subscribe: some View {
         Section {
             TextField("订阅链接", text: $link, axis: .vertical)
-                .font(.system(.footnote, design: .monospaced))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .lineLimit(2...5)

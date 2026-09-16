@@ -102,6 +102,7 @@ public struct InstallReviewScreen: View {
                             )) {
                                 Text("我理解：非官方来源与本应用在同一进程中运行，信任它等同于信任它的代码。")
                                     .font(TsuyomiTheme.Typography.caption)
+                                    .foregroundStyle(TsuyomiTheme.Palette.danger)
                             }
                         }
                         if prepared.requiresMigrationConsent {
@@ -115,6 +116,7 @@ public struct InstallReviewScreen: View {
                             )) {
                                 Text("官方仓库声明这个包接替了另一位发布者签名的旧版本，我确认这次发布者变更。")
                                     .font(TsuyomiTheme.Typography.caption)
+                                    .foregroundStyle(TsuyomiTheme.Palette.danger)
                             }
                         }
                         if prepared.isDowngrade {
@@ -128,14 +130,10 @@ public struct InstallReviewScreen: View {
                             )) {
                                 Text("这是一个更低的版本，我确认回退。")
                                     .font(TsuyomiTheme.Typography.caption)
+                                    .foregroundStyle(TsuyomiTheme.Palette.danger)
                             }
                         }
                     }
-                }
-                Section {
-                    Text("扩展在应用进程内运行，QuickJS 不是进程级沙箱；同意安装等同于信任这份代码。")
-                        .font(TsuyomiTheme.Typography.caption)
-                        .foregroundStyle(TsuyomiTheme.Palette.danger)
                 }
             }
             .navigationTitle("安装审批")
