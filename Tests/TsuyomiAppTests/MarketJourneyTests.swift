@@ -10,9 +10,9 @@ import TsuyomiProtocol
 import TsuyomiSource
 import XCTest
 
-/// The M5 journey against a fake HTTPS host: add a repository, confirm its root key and publisher,
-/// install, see a higher version appear, update, then have the catalog revoke the package and watch
-/// the installed source go dormant. No test reaches a real site.
+/// The M5 journey against a fake HTTPS host: subscribe to a repository, confirm its root key and
+/// publisher, install, see a higher version appear, update, then have the catalog revoke the package
+/// and watch the installed source go dormant. No test reaches a real site.
 final class MarketJourneyTests: XCTestCase {
     private var directory: URL!
 
@@ -95,9 +95,9 @@ final class MarketJourneyTests: XCTestCase {
     }
 
     /// The sequence is root-signed, so a mirror serving yesterday's catalog cannot roll back a
-    /// revocation or an update.
+    /// revocation or an update, and two catalogs under one sequence cannot both be accepted.
     @MainActor
-    func testAnOlderCatalogIsRefused() async throws {
+    func testAnOlderOrEquivocatingCatalogIsRefused() async throws {
         let world = try await MarketWorld(directory: directory)
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
         world.host.publish(index: try world.index([.init(original)], sequence: 2), package: original)
@@ -107,10 +107,17 @@ final class MarketJourneyTests: XCTestCase {
         world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
         await detail.refresh()
         XCTAssertEqual(detail.failureCode, RepositoryError.indexRollback.rawValue)
+
+        let bumped = try HxpTestArchive.repackaged(original, version: "99.0.0")
+        world.host.publish(index: try world.index([.init(bumped)], sequence: 2), package: bumped)
+        await detail.refresh()
+        XCTAssertEqual(detail.failureCode, RepositoryError.indexEquivocation.rawValue)
     }
 
+    /// Removal keeps the installed extension, the publisher and the repository's identity: the same
+    /// id can only ever come back under the same address and root.
     @MainActor
-    func testRemovingARepositoryKeepsTheInstalledExtension() async throws {
+    func testRemovingARepositoryKeepsTheInstalledExtensionAndItsIdentity() async throws {
         let world = try await MarketWorld(directory: directory)
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
         world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
@@ -128,13 +135,30 @@ final class MarketJourneyTests: XCTestCase {
         let installed = try await world.registry.installedSources()
         XCTAssertEqual(installed.map(\.sourceId.value), ["org.tsuyomi.wenku8"])
         XCTAssertEqual(world.trust.trusted.map(\.keyId), [Phase2TestPublisher.keyId])
+
+        let otherRoot = Data((97...128).map(UInt8.init))
+        world.host.publish(
+            index: try world.index([.init(original)], sequence: 1, rootSeed: otherRoot),
+            package: original
+        )
+        await world.probe(rootSeed: otherRoot)
+        XCTAssertNotNil(world.model.pendingApproval)
+        await world.model.approvePendingRepository()
+        XCTAssertEqual(world.model.failureCode, RepositoryError.repositoryIdentityMismatch.rawValue)
+
+        world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
+        world.model.discardApproval()
+        await world.probe()
+        await world.model.approvePendingRepository()
+        XCTAssertNil(world.model.failureCode)
+        let restored = await world.repositories.all()
+        XCTAssertEqual(restored.map(\.repositoryId), ["org.example.repo"])
     }
 
-    /// A publisher change is refused until the catalog carries a root-signed migration naming the
-    /// exact installed package and publisher, and a newly listed publisher is trusted one key at a
-    /// time on the repository's own screen.
+    /// A publisher change is refused for a user-added root, and a catalog from such a root that
+    /// carries a migration is refused whole; only the built-in official root may authorize one.
     @MainActor
-    func testARootSignedMigrationApprovesAPublisherChange() async throws {
+    func testAUserAddedRootCannotAuthorizeAPublisherChange() async throws {
         let world = try await MarketWorld(directory: directory)
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
         world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
@@ -173,14 +197,50 @@ final class MarketJourneyTests: XCTestCase {
             package: bumped
         )
         await detail.refresh()
-        guard case .content(let migrated) = detail.state else { return XCTFail("no catalog") }
-        await detail.prepare(migrated.rows[0].package)
-        XCTAssertNil(detail.failureCode)
-        XCTAssertNotEqual(try XCTUnwrap(detail.pendingInstall).policyOutcome, .rejectedKeyRotation)
-        await detail.approvePendingInstall()
+        XCTAssertEqual(detail.failureCode, RepositoryError.unauthorizedMigration.rawValue)
         let installed = try await world.registry.installedSources()
-        XCTAssertEqual(installed.map(\.version.original), ["99.0.0"])
-        XCTAssertEqual(installed.map(\.publisherFingerprint), [try successor.fingerprint()])
+        XCTAssertEqual(installed.map(\.version.original), [listing.rows[0].package.version.original])
+    }
+
+    /// The publisher a source was activated under is pinned past its uninstall, so a different
+    /// publisher cannot take the source over through an empty slot; only an exact migration can.
+    @MainActor
+    func testThePublisherPinSurvivesUninstall() async throws {
+        let world = try await MarketWorld(directory: directory)
+        for publisher in [HxpTestArchive.fixture, HxpTestArchive.successor] {
+            try await world.trust.approve(
+                TrustedPublisher(
+                    keyId: publisher.keyId,
+                    publicKey: try publisher.publicKey(),
+                    trust: .userAdded,
+                    repositoryId: nil,
+                    approvedAt: Date()
+                )
+            )
+        }
+        let original = try JourneyFixtures.data("wenku8-fixture.hxp")
+        let prepared = try await world.installer.prepare(archiveBytes: original)
+        try await world.lifecycle.activate(prepared)
+        try await world.lifecycle.uninstall(prepared.candidate.manifest.sourceId)
+        let installed = try await world.registry.installedSources()
+        XCTAssertTrue(installed.isEmpty)
+
+        let successor = try HxpTestArchive.repackaged(original, version: "99.0.0", publisher: HxpTestArchive.successor)
+        do {
+            _ = try await world.installer.prepare(archiveBytes: successor)
+            XCTFail("a pinned source must not accept another publisher without a migration")
+        } catch {
+            XCTAssertEqual(error as? ExtensionInstallError, .keyRotationNotAuthorized)
+        }
+        let migrated = try await world.installer.prepare(
+            archiveBytes: successor,
+            migration: LegacyMigration(
+                fromPublisherFingerprint: try HxpTestArchive.fixture.fingerprint(),
+                fromPackageSha256: Sha256.hex(original)
+            )
+        )
+        XCTAssertEqual(migrated.candidate.publisherFingerprint, try HxpTestArchive.successor.fingerprint())
+        XCTAssertNotEqual(migrated.policyOutcome, .rejectedKeyRotation)
     }
 
     /// A picked archive is consumed once, and a verified import stays reported until the review is
@@ -268,7 +328,10 @@ private struct MarketWorld {
     let repositories: RepositoryStore
     let trust: PublisherTrustStore
     let remoteLibrary: RemoteLibraryStore
-    private let container: (client: ExtensionRepositoryClient, lifecycle: ExtensionLifecycle, hostApi: SemanticVersion)
+    let installer: ExtensionInstaller
+    let lifecycle: ExtensionLifecycle
+    private let client: ExtensionRepositoryClient
+    private let hostApi: SemanticVersion
 
     init(directory: URL) async throws {
         let roots = try StorageRoots(base: directory)
@@ -283,26 +346,26 @@ private struct MarketWorld {
         let installed = InstalledExtensionStore(files: files)
         trust = PublisherTrustStore(files: files)
         repositories = RepositoryStore(files: files)
-        let hostApi = try SemanticVersion(AppContainer.hostApiVersion)
+        hostApi = try SemanticVersion(AppContainer.hostApiVersion)
         let gateway = HostNetworkGateway(transport: host)
+        installer = ExtensionInstaller(
+            verifier: HxpArchiveVerifier(publisherKeys: trust, hostApiVersion: hostApi),
+            store: installed
+        )
         registry = SourceRegistry(
-            installer: ExtensionInstaller(
-                verifier: HxpArchiveVerifier(publisherKeys: trust, hostApiVersion: hostApi),
-                store: installed
-            ),
+            installer: installer,
             store: installed,
             gateway: gateway,
             sessions: VerifiedBrowserSessionStore(credentials: try SourceCredentialStore(roots: roots))
         )
-        let client = ExtensionRepositoryClient(gateway: gateway)
-        let lifecycle = ExtensionLifecycle(
+        client = ExtensionRepositoryClient(gateway: gateway)
+        lifecycle = ExtensionLifecycle(
             installed: installed,
             registry: registry,
             remoteLibrary: remoteLibrary,
             trust: trust,
             hostApiVersion: hostApi
         )
-        container = (client, lifecycle, hostApi)
         model = ExtensionsModel(
             registry: registry,
             repositories: repositories,
@@ -312,10 +375,10 @@ private struct MarketWorld {
         )
     }
 
-    func probe() async {
+    func probe(rootSeed: Data = MarketIndexBuilder.rootSeed) async {
+        let key = (try? MarketIndexBuilder.rootPublicKeyBase64(seed: rootSeed)) ?? ""
         await model.probeRepository(
-            indexUrl: MarketWorld.indexUrl,
-            rootPublicKey: (try? MarketIndexBuilder.rootPublicKeyBase64()) ?? ""
+            link: "\(MarketWorld.indexUrl)#repositoryId=org.example.repo&keyId=\(MarketIndexBuilder.rootKeyId)&publicKey=\(key)"
         )
     }
 
@@ -327,17 +390,23 @@ private struct MarketWorld {
             registry: registry,
             repositories: repositories,
             trust: trust,
-            client: container.client,
-            lifecycle: container.lifecycle,
-            hostApi: container.hostApi
+            client: client,
+            lifecycle: lifecycle,
+            hostApi: hostApi
         )
     }
 
     func index(
         _ listings: [MarketIndexBuilder.Listing],
         sequence: Int,
-        revokedPackageDigests: [String] = []
+        revokedPackageDigests: [String] = [],
+        rootSeed: Data = MarketIndexBuilder.rootSeed
     ) throws -> Data {
-        try MarketIndexBuilder.build(listings, sequence: sequence, revokedPackageDigests: revokedPackageDigests)
+        try MarketIndexBuilder.build(
+            listings,
+            sequence: sequence,
+            revokedPackageDigests: revokedPackageDigests,
+            rootSeed: rootSeed
+        )
     }
 }

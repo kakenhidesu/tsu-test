@@ -5,14 +5,25 @@ public struct SourceBookDetail: Hashable, Sendable {
     public let description: String?
     public let tags: [String]
     public let status: String?
+    /// The source's last content update as a calendar date (`hxp-host-api-v1` §Optional Detail
+    /// metadata): never a fetch time or a local reading event, and absent when the source has none.
+    public let lastUpdatedDate: String?
 
-    public init(summary: SourceBookSummary, description: String?, tags: [String], status: String?) throws {
+    public init(
+        summary: SourceBookSummary,
+        description: String?,
+        tags: [String],
+        status: String?,
+        lastUpdatedDate: String?
+    ) throws {
         guard tags.count <= 128, tags.hasDistinctElements else { throw ProtocolError.invalidTags }
         if let description, Grammar.codePointCount(description) > 20_000 { throw ProtocolError.descriptionTooLong }
+        if let lastUpdatedDate, !Grammar.isCalendarDate(lastUpdatedDate) { throw ProtocolError.invalidLastUpdatedDate }
         self.summary = summary
         self.description = description
         self.tags = tags
         self.status = status
+        self.lastUpdatedDate = lastUpdatedDate
     }
 }
 

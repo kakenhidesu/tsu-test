@@ -69,7 +69,8 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 | 目录格式 | `tsuyomi-repository` v1（与 `tsuyomi-extensions` 线上一致）：根密钥 Ed25519 签名（`"tsuyomi-repository-v1"` 加 NUL 再接 RFC 8785(`signed`)），目录列出发布者公钥，撤销按发布者指纹与归档 SHA-256，刷新拒绝更低的 `sequence` |
 | 内置官方仓库 | `OfficialRepository`：`OfficialRepositoryTests` 用内置根公钥验签已发布的目录快照（`Fixtures/official-index-v1-sequence-1.json`），换一把密钥即失败；`OfficialRepositorySeedTests` 断言首次启动预添加仓库与 `builtInOfficial` 发布者，且移除后下次启动不再回填 |
 | 官方包准入 | `CapabilityAdmissionTests`：官方 Wenku8 0.2.31 的能力声明（`updateCheck`、`targets`/`remove`/`move` policy、GET 的 `add`）被接受；非 GET 或越界 origin 的 `updateCheck`、无 `targetId` 的 `move`、GET 的 `remove`、未授予操作的 policy 全部拒绝 |
-| 五个屏幕 | `extensions`、`extensionRepository`、`extensionPackage`、`extensionInstallReview`、`publisherKeys` 全部可达（来源列表顶栏进入）；添加仓库需同时输入目录地址与根公钥，仓库详情页可逐个信任目录新增的发布者 |
+| 五个屏幕 | `extensions`、`extensionRepository`、`extensionPackage`、`extensionInstallReview`、`publisherKeys` 全部可达（来源列表顶栏进入）；添加仓库输入协议规定的订阅链接（协议 `subscription-link-cases.json` 合法/非法向量全部按规范判定），仓库详情页可逐个信任目录新增的发布者 |
+| 协议向量 | `valid-catalog.json` 在 `fixture-root-key.json` 下验签通过；`invalid-catalog-duplicate-key`/`unknown-field` 被拒；等序号不同内容 `INDEX_EQUIVOCATION`；用户根携带 `legacyMigration` 的目录 `UNAUTHORIZED_MIGRATION`；移除后以不同根重添同一标识 `REPOSITORY_IDENTITY_MISMATCH`；卸载后发布者钉住仍拒绝换发布者、命中迁移才放行 |
 | 端到端 | `MarketJourneyTests`：假 HTTPS 主机（只服务 index-v1.json/*.hxp，其余 404）→ 添加仓库并确认根密钥与发布者 → 从缓存读到目录 → 安装 → 目录升到 99.0.0 → 状态变可更新 → 更新 → 目录带撤销 → 已装包停止验签、来源置为不可用；更低 `sequence` 的目录被拒（`INDEX_ROLLBACK`）；换发布者的包先因未信任被拒、信任后因未授权轮换被拒、目录带 `legacyMigration` 后才可更新；另一条断言移除仓库后已装扩展与发布者信任都还在 |
 
 ## M6 设置与打磨 — 进行中
@@ -88,6 +89,8 @@ xcodebuild test  -scheme Tsuyomi -destination "id=<iPhone simulator>" -skipMacro
 
 | 项 | 原因 |
 |---|---|
+| 上游 2026-09-04 → 09-12 的协议增量：`tsuyomi-transfer` v2/v3（完读章节、本地钉住状态、更多阅读器偏好）、作者搜索入口、`update-check-v2` 解析器模型 | 需要先决定 iOS 数据模型是否引入章节完读与"保留未钉住记录"；4C 更新协调中心按规范不在范围 |
+| 上游 Phase 4B/4C 产品改动（远端 REMOVE/MOVE 与目标发现、网站书库镜像、更新收件箱与调度、本地书架搜索、Room v10 钉住/保留分离、Detail 六行布局与作者链接、书架筛选面板） | 规范第 84 行明确 4B/4C 不在范围；其余为产品决策，待用户圈定 |
 | `KeychainAesGcm` 单元测试 | 模拟器 SPM 测试无 keychain 授权；分区语义由内存 `AeadPort` 覆盖，生产实现走集成路径 |
 | Dynamic Type `.accessibility3` 与深浅色目视核对 | 需要在模拟器上人工看，CI 不覆盖 |
 

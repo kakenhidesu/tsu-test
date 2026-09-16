@@ -72,6 +72,18 @@ public enum Grammar {
     }
 
     /// An absolute `https://` URL with a host, as required by every protocol URL field.
+    /// `YYYY-MM-DD` on the proleptic Gregorian calendar, with the day actually existing in that month.
+    public static func isCalendarDate(_ value: String) -> Bool {
+        let parts = value.split(separator: "-", omittingEmptySubsequences: false)
+        guard parts.count == 3, parts[0].count == 4, parts[1].count == 2, parts[2].count == 2,
+              parts.allSatisfy({ $0.unicodeScalars.allSatisfy(isDigit) }),
+              let year = Int(parts[0]), let month = Int(parts[1]), let day = Int(parts[2]),
+              (1...12).contains(month) else { return false }
+        let leap = year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)
+        let lengths = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+        return (1...lengths[month - 1]).contains(day)
+    }
+
     public static func isHttpsUrl(_ value: String) -> Bool {
         guard (1...4096).contains(value.unicodeScalars.count) else { return false }
         guard let components = URLComponents(string: value) else { return false }

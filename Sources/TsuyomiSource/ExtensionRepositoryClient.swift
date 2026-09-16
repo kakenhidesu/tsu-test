@@ -41,21 +41,21 @@ public struct ExtensionRepositoryClient: Sendable {
         self.clock = clock
     }
 
-    /// Reads a catalog from a URL and root key the user typed. A v1 catalog does not carry its root
-    /// key, so the key is the trust decision: nothing is stored until the next screen is confirmed.
-    public func probe(
-        indexUrl: String,
-        rootPublicKey: String
-    ) async throws -> (descriptor: RepositoryDescriptor, fetched: FetchedRepositoryIndex) {
-        let url = try ExtensionRepositoryClient.normalize(indexUrl: indexUrl)
-        let key = try ExtensionRepositoryClient.rootKey(rootPublicKey)
-        let fetched = try await read(url, rootPublicKey: key)
+    /// Reads the catalog a subscription link points at, verified against the root the link names.
+    /// The catalog has to claim the very identity the link declared: a root that signs for another
+    /// repository id or key id is a different repository, not this one.
+    public func probe(link text: String) async throws -> (descriptor: RepositoryDescriptor, fetched: FetchedRepositoryIndex) {
+        let link = try RepositorySubscriptionLink.parse(text)
+        let fetched = try await read(link.indexUrl, rootPublicKey: link.rootPublicKey)
+        guard fetched.index.repositoryId == link.repositoryId, fetched.index.rootKeyId == link.keyId else {
+            throw RepositoryError.repositoryIdentityMismatch
+        }
         return (
             RepositoryDescriptor(
-                repositoryId: fetched.index.repositoryId,
-                indexUrl: url,
-                rootKeyId: fetched.index.rootKeyId,
-                rootPublicKey: key,
+                repositoryId: link.repositoryId,
+                indexUrl: link.indexUrl,
+                rootKeyId: link.keyId,
+                rootPublicKey: link.rootPublicKey,
                 addedAt: clock()
             ),
             fetched
@@ -80,22 +80,24 @@ public struct ExtensionRepositoryClient: Sendable {
         return bytes
     }
 
+    /// Only the built-in official root may authorize a publisher change: a user-added root that
+    /// carries `legacyMigration` is refused whole, so the exception can never be reached through it.
     private func read(_ url: URL, rootPublicKey: Data) async throws -> FetchedRepositoryIndex {
         let bytes = try await gateway.fetchStaticResource(
             url: url,
             maximumBytes: RepositoryIndexCodec.maximumIndexBytes
         )
-        return FetchedRepositoryIndex(
-            index: try RepositoryIndexCodec.decode(bytes, rootPublicKey: rootPublicKey, now: clock()),
-            bytes: bytes
-        )
+        let index = try RepositoryIndexCodec.decode(bytes, rootPublicKey: rootPublicKey, now: clock())
+        if !OfficialRepository.isRoot(rootPublicKey), index.packages.contains(where: { $0.legacyMigration != nil }) {
+            throw RepositoryError.unauthorizedMigration
+        }
+        return FetchedRepositoryIndex(index: index, bytes: bytes)
     }
 
-    /// A catalog address is a location and nothing else: a query string could carry a token, so it is
-    /// refused along with everything the package URL rule already refuses.
+    /// A catalog address is fetched exactly as written, minus nothing: HTTPS, a host, no credentials
+    /// and no fragment, which the subscription link has already taken for itself.
     public static func normalize(indexUrl: String) throws -> URL {
-        guard let url = try? RepositoryIndexCodec.requireHttpsUrl(indexUrl),
-              url.query == nil, url.path.count > 1 else {
+        guard let url = try? RepositoryIndexCodec.requireHttpsUrl(indexUrl) else {
             throw RepositoryError.insecureTransport
         }
         return url

@@ -24,8 +24,8 @@ enum MarketIndexBuilder {
     static let rootSeed = Data((33...64).map(UInt8.init))
     static let rootKeyId = "tsuyomi-test-root"
 
-    static func rootPublicKeyBase64() throws -> String {
-        try Curve25519.Signing.PrivateKey(rawRepresentation: rootSeed).publicKey.rawRepresentation.base64EncodedString()
+    static func rootPublicKeyBase64(seed: Data = rootSeed) throws -> String {
+        try Curve25519.Signing.PrivateKey(rawRepresentation: seed).publicKey.rawRepresentation.base64EncodedString()
     }
 
     static func downloadUrl(for archive: Data) -> String {
@@ -36,6 +36,7 @@ enum MarketIndexBuilder {
         _ listings: [Listing],
         sequence: Int,
         revokedPackageDigests: [String] = [],
+        rootSeed: Data = rootSeed,
         now: Date = Date()
     ) throws -> Data {
         var publishers: [JSONValue] = []

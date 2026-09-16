@@ -14,7 +14,21 @@ public enum ExtensionInstallError: String, Error, Equatable, Sendable, CaseItera
     case installedPackageInvalid = "INSTALLED_PACKAGE_INVALID"
 }
 
-/// Stores only the active verified archive for each source. Replacements are atomic in `QuotaFileStore`.
+/// The publisher a source was last activated under, kept after the archive is gone so that a
+/// missing archive cannot be used to slip a different publisher in for the same source
+/// (`hxp-package-v1` §Trust).
+public struct PublisherPin: Hashable, Sendable {
+    public let publisherFingerprint: String
+    public let packageSha256: String
+
+    public init(publisherFingerprint: String, packageSha256: String) {
+        self.publisherFingerprint = publisherFingerprint
+        self.packageSha256 = packageSha256
+    }
+}
+
+/// Stores the active verified archive for each source and the pin it was activated under.
+/// Replacements are atomic in `QuotaFileStore`; removing an archive leaves its pin in place.
 public struct InstalledExtensionStore: Sendable {
     private let files: QuotaFileStore
 
@@ -23,7 +37,12 @@ public struct InstalledExtensionStore: Sendable {
     }
 
     public func writeActive(_ verified: VerifiedHxpPackage) async throws {
+        let pin = JSONValue.object([
+            "publisherFingerprint": .string(verified.publisherFingerprint),
+            "packageSha256": .string(verified.packageSha256)
+        ])
         do {
+            _ = try await files.write(InstalledExtensionStore.pinPath(verified.manifest.sourceId), bytes: try Rfc8785.canonicalize(pin))
             _ = try await files.write(InstalledExtensionStore.path(verified.manifest.sourceId), bytes: verified.archiveBytes)
         } catch {
             throw ExtensionInstallError.storageUnavailable
@@ -36,6 +55,14 @@ public struct InstalledExtensionStore: Sendable {
         } catch {
             throw ExtensionInstallError.storageUnavailable
         }
+    }
+
+    public func publisherPin(_ sourceId: SourceId) async -> PublisherPin? {
+        guard let bytes = try? await files.read(InstalledExtensionStore.pinPath(sourceId)),
+              let object = try? JSONValue.decode(bytes).objectValue,
+              let fingerprint = object.string("publisherFingerprint"), Grammar.isSha256(fingerprint),
+              let digest = object.string("packageSha256"), Grammar.isSha256(digest) else { return nil }
+        return PublisherPin(publisherFingerprint: fingerprint, packageSha256: digest)
     }
 
     @discardableResult
@@ -60,4 +87,6 @@ public struct InstalledExtensionStore: Sendable {
     }
 
     private static func path(_ sourceId: SourceId) -> String { "active/\(sourceId.value).hxp" }
+
+    private static func pinPath(_ sourceId: SourceId) -> String { "pins/\(sourceId.value).json" }
 }

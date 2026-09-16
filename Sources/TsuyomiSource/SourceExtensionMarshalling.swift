@@ -185,11 +185,18 @@ enum SourceExtensionMarshalling {
         guard let summaryObject = value.object("summary"), let tags = value.array("tags") else {
             throw ProtocolError.invalidTags
         }
+        let lastUpdatedDate: String?
+        switch value["lastUpdatedDate"] {
+        case nil, .null?: lastUpdatedDate = nil
+        case .string(let date)?: lastUpdatedDate = date
+        default: throw ProtocolError.invalidLastUpdatedDate
+        }
         return try SourceBookDetail(
             summary: try summary(summaryObject),
             description: value.string("description"),
             tags: tags.compactMap(\.stringValue),
-            status: value.string("status")
+            status: value.string("status"),
+            lastUpdatedDate: lastUpdatedDate
         )
     }
 

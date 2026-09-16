@@ -78,6 +78,11 @@ public struct BookScreen: View {
                         if let status = content.detail.status {
                             TsuyomiTagBadge(status)
                         }
+                        if let date = content.detail.lastUpdatedDate {
+                            Text("更新于 \(date)")
+                                .font(TsuyomiTheme.Typography.caption)
+                                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                        }
                         if content.isStaleOffline {
                             TsuyomiStatusBadge("离线缓存", tone: .warning)
                         }

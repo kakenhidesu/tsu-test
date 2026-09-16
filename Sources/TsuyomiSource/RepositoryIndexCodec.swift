@@ -12,6 +12,10 @@ public enum RepositoryError: String, Error, Equatable, Sendable, CaseIterable {
     case invalidRootKey = "INVALID_ROOT_KEY"
     case indexExpired = "INDEX_EXPIRED"
     case indexRollback = "INDEX_ROLLBACK"
+    case indexEquivocation = "INDEX_EQUIVOCATION"
+    case unauthorizedMigration = "UNAUTHORIZED_MIGRATION"
+    case repositoryIdentityMismatch = "REPOSITORY_IDENTITY_MISMATCH"
+    case invalidSubscriptionLink = "INVALID_SUBSCRIPTION_LINK"
     case insecureTransport = "INSECURE_TRANSPORT"
     case unsafePackageUrl = "UNSAFE_PACKAGE_URL"
     case packageTooLarge = "PACKAGE_TOO_LARGE"
@@ -102,11 +106,12 @@ public enum RepositoryIndexCodec {
     public static let maximumPackages = 512
     public static let maximumPublishers = 32
     static let maximumLifetime: TimeInterval = 30 * 24 * 60 * 60
+    static let maximumClockSkew: TimeInterval = 5 * 60
     static let signaturePrefix = Data("tsuyomi-repository-v1\u{0}".utf8)
 
     public static func decode(_ bytes: Data, rootPublicKey: Data, now: Date) throws -> RepositoryIndex {
         guard bytes.count <= maximumIndexBytes else { throw RepositoryError.indexTooLarge }
-        guard let root = try? JSONValue.decode(bytes).objectValue,
+        guard !JsonDuplicateKeys.found(in: bytes), let root = try? JSONValue.decode(bytes).objectValue,
               hasKeys(root, ["format", "version", "keyId", "signed", "signature"]) else {
             throw RepositoryError.invalidIndex
         }
@@ -128,7 +133,8 @@ public enum RepositoryIndexCodec {
               let repositoryId = signed.string("repositoryId"), Grammar.isStrictSourceId(repositoryId),
               let sequence = signed.int("sequence"), sequence > 0,
               let issuedAt = signed.instant("issuedAt"), let expiresAt = signed.instant("expiresAt"),
-              issuedAt < expiresAt, expiresAt.timeIntervalSince(issuedAt) <= maximumLifetime else {
+              issuedAt < expiresAt, expiresAt.timeIntervalSince(issuedAt) <= maximumLifetime,
+              issuedAt.timeIntervalSince(now) <= maximumClockSkew else {
             throw RepositoryError.invalidIndex
         }
         guard now < expiresAt else { throw RepositoryError.indexExpired }
@@ -145,11 +151,18 @@ public enum RepositoryIndexCodec {
         )
     }
 
-    /// The sequence of a catalog this host already verified and cached. It is read without a second
-    /// verification because only verified bytes are ever written to the cache; it exists so a refresh
-    /// can refuse a catalog older than the one it replaces even after the cached one has expired.
-    public static func sequence(ofCached bytes: Data) -> Int? {
+    /// The sequence and signed-body digest of a catalog this host already verified. They are read
+    /// without a second verification because only verified bytes are ever cached; they exist so a
+    /// refresh can refuse a catalog older than, or equal in sequence but different from, the one it
+    /// replaces — even after the cached one has expired.
+    public static func sequence(of bytes: Data) -> Int? {
         (try? JSONValue.decode(bytes).objectValue)?.object("signed")?.int("sequence")
+    }
+
+    public static func signedDigest(of bytes: Data) -> String? {
+        guard let signed = (try? JSONValue.decode(bytes).objectValue)?.object("signed"),
+              let canonical = try? Rfc8785.canonicalize(.object(signed)) else { return nil }
+        return Sha256.hex(canonical)
     }
 
     private static func publishers(_ signed: [String: JSONValue]) throws -> [RepositoryPublisher] {

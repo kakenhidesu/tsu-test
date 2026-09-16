@@ -175,3 +175,11 @@
 - 目录不再携带能力预览，`INDEX_MANIFEST_MISMATCH` 只比对 id、版本、发布者 keyId、hostApi 区间与归档摘要；包详情页改为展示目录元数据（语言、许可证、源码地址与修订、发布者），能力清单只在下载校验后的安装审批页出现。
 - `fetchStaticResource` 跟随最多 5 跳仅限 HTTPS 的重定向：GitHub Release 附件从 `github.com` 302 到 `objects.githubusercontent.com`，字节仍由目录里的 `sha256` 与包签名约束。
 - 删除 `tools/repository/build-index.mjs`：v0 生成器已无消费者，v1 目录由 `tsuyomi-extensions` 的 `generate-catalog.mjs` 生成并由其发布流程签名。
+- 参考快照 `Tsuyomi-main` 于 2026-09-16 刷新为上游 `Xfire233/Tsuyomi@c704480`（Android + 协议）加独立仓库 `Chachaanteng/tsuyomi-extensions@1d7062e`（扩展）：上游已把扩展拆出单独仓库，原先记在 `docs/FIXTURE_EXTENSION_PATCH.md` 的分类器补丁已进上游，本地不再打补丁。
+- 第三方仓库改为按协议 `tsuyomi-repository-v1` §User-added subscription bootstrap 用**一条订阅链接**添加（`https://…/index-v1.json#repositoryId=…&keyId=…&publicKey=…`，`RepositorySubscriptionLink`）：片段按精确顺序解析、禁止百分号编码与非规范 base64、解析不触网、取回目录前先去掉片段；目录声明的 `repositoryId`/`keyId` 必须与链接一致（`REPOSITORY_IDENTITY_MISMATCH`）。之前"地址 + 根公钥两个输入框"的方案由此替换，协议 fixture 的合法/非法链接向量作为回归测试。
+- 等序号不同内容视为篡改（`INDEX_EQUIVOCATION`）：刷新时比较缓存目录与新目录的 `signed` RFC 8785 摘要；签发时间最多超前 5 分钟；信封与 manifest 都先扫描重复 JSON 键（`JsonDuplicateKeys`，Codable 会静默取后者），协议的 `invalid-catalog-duplicate-key` 向量必须被拒。
+- `legacyMigration` 只认内置官方根：用户添加的根签出的目录只要含 `legacyMigration` 就整份拒绝（`UNAUTHORIZED_MIGRATION`），而不是忽略该字段——用户根永远到不了轮换例外。
+- 仓库身份不可改绑：`RepositoryStore` 在移除后保留标识（`retired`），同一 `repositoryId` 只能以相同地址与根密钥重新添加，同一地址或同一根公钥也不能挂到另一个 `repositoryId`；移除不再删除缓存目录，重新添加同一根时沿用序号高水位。
+- 发布者钉住跨卸载保留：`InstalledExtensionStore` 在激活时写 `pins/<sourceId>.json`（发布者指纹 + 归档摘要），卸载只删归档不删钉；没有已装归档时，不同发布者的同一来源包仍被拒（`KEY_ROTATION_NOT_AUTHORIZED`），除非官方根签名的 `legacyMigration` 恰好命中钉住的指纹与摘要。
+- 非官方发布者的"精确执行授权"由既有安装审批承担：`ExtensionInstallApproval` 已绑定包摘要、发布者指纹与能力授权指纹，且只有被激活的那份归档会被运行时读取，不另建授权表。
+- 移植协议新增的 Detail `lastUpdatedDate`（`hxp-host-api-v1` §Optional Detail metadata）：`SourceBookDetail.lastUpdatedDate` 只接受合法的 `YYYY-MM-DD`（`Grammar.isCalendarDate`），`null`/缺省为无，其他类型视为契约违规；书籍页在状态旁显示"更新于"。作者搜索入口（`buildAuthorSearchRequest`）、`update-check-v2` 解析器模型与 `tsuyomi-transfer` v2/v3 本轮未移植，见 ACCEPTANCE 的待办。

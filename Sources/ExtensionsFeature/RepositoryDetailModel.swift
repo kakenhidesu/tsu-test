@@ -82,7 +82,8 @@ public final class RepositoryDetailModel: ObservableObject {
     }
 
     /// A refreshed catalog replaces the cached one only if it is at least as new: the sequence is
-    /// root-signed, so a mirror cannot serve an older catalog to hide a revocation or an update.
+    /// root-signed, so a mirror cannot serve an older catalog to hide a revocation or an update, and
+    /// two different catalogs under one sequence are equivocation rather than a refresh.
     public func refresh() async {
         guard !isBusy else { return }
         isBusy = true
@@ -91,9 +92,12 @@ public final class RepositoryDetailModel: ObservableObject {
         do {
             let fetched = try await client.refresh(descriptor)
             if let cached = await repositories.cached(descriptor.repositoryId),
-               let previous = RepositoryIndexCodec.sequence(ofCached: cached),
-               fetched.index.sequence < previous {
-                throw RepositoryError.indexRollback
+               let previous = RepositoryIndexCodec.sequence(of: cached) {
+                if fetched.index.sequence < previous { throw RepositoryError.indexRollback }
+                if fetched.index.sequence == previous,
+                   RepositoryIndexCodec.signedDigest(of: cached) != RepositoryIndexCodec.signedDigest(of: fetched.bytes) {
+                    throw RepositoryError.indexEquivocation
+                }
             }
             try await repositories.cache(descriptor.repositoryId, indexBytes: fetched.bytes)
             try await lifecycle.applyRevocations(fetched.index.revocations)

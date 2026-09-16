@@ -17,6 +17,8 @@ struct RepositoryApprovalSheet: View {
             Form {
                 Section("仓库") {
                     LabeledContent("标识", value: pending.index.repositoryId)
+                    Text(pending.descriptor.indexUrl.absoluteString)
+                        .font(.system(.footnote, design: .monospaced))
                     LabeledContent("目录序号", value: "\(pending.index.sequence)")
                     LabeledContent("包数量", value: "\(pending.index.packages.count)")
                     LabeledContent("有效期至", value: ProtocolTimestampText.short(pending.index.expiresAt))

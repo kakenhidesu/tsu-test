@@ -27,8 +27,7 @@ public struct ExtensionsScreen: View {
     @State private var segment: ExtensionsSegment = .installed
     @State private var isAdding = false
     @State private var isImporting = false
-    @State private var indexUrl = ""
-    @State private var rootPublicKey = ""
+    @State private var link = ""
 
     public init(
         model: ExtensionsModel,
@@ -97,25 +96,17 @@ public struct ExtensionsScreen: View {
             }
         }
         .alert("添加仓库", isPresented: $isAdding) {
-            TextField("目录地址（https://…/index-v1.json）", text: $indexUrl)
+            TextField("订阅链接", text: $link)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-            TextField("根公钥（Base64）", text: $rootPublicKey)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-            Button("取消", role: .cancel) {
-                indexUrl = ""
-                rootPublicKey = ""
-            }
+            Button("取消", role: .cancel) { link = "" }
             Button("读取目录") {
-                let typedUrl = indexUrl
-                let typedKey = rootPublicKey
-                indexUrl = ""
-                rootPublicKey = ""
-                Task { await model.probeRepository(indexUrl: typedUrl, rootPublicKey: typedKey) }
+                let typed = link
+                link = ""
+                Task { await model.probeRepository(link: typed) }
             }
         } message: {
-            Text("目录是仓库维护者签名发布的 JSON 文件；根公钥由维护者另行公布，目录里不带它。")
+            Text("订阅链接由仓库维护者公布：目录地址后接 #repositoryId=…&keyId=…&publicKey=…。目录本身不带根公钥，链接里的才是。")
         }
         .sheet(
             isPresented: Binding(

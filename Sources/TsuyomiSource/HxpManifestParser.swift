@@ -15,7 +15,9 @@ enum HxpManifestParser {
 
     static func parse(_ bytes: Data, hostApiVersion: SemanticVersion) throws -> ParsedHxpManifest {
         guard bytes.count <= maximumManifestBytes else { throw HxpVerificationError.invalidManifest }
-        guard String(data: bytes, encoding: .utf8) != nil else { throw HxpVerificationError.invalidManifest }
+        guard String(data: bytes, encoding: .utf8) != nil, !JsonDuplicateKeys.found(in: bytes) else {
+            throw HxpVerificationError.invalidManifest
+        }
         guard let parsed = try? JSONValue.decode(bytes), let root = parsed.objectValue else {
             throw HxpVerificationError.invalidManifest
         }

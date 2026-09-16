@@ -43,6 +43,7 @@ public enum ProtocolError: Error, Equatable, Sendable {
     case invalidRedirectCount
 
     case invalidBookTitle
+    case invalidLastUpdatedDate
     case invalidAuthor
     case invalidCanonicalUrl
     case invalidCoverUrl

@@ -14,6 +14,10 @@ public enum OfficialRepository {
     public static let publisherKeyId = "tsuyomi-official-publisher-v1"
     public static let publisherPublicKey = "3bdE5VGvcQFSZ/XOTkphTTxVNQ2IC1QOSAouWS0oawA="
 
+    public static func isRoot(_ publicKey: Data) -> Bool {
+        (try? ExtensionRepositoryClient.rootKey(rootPublicKey)) == publicKey
+    }
+
     public static func descriptor(addedAt: Date) throws -> RepositoryDescriptor {
         RepositoryDescriptor(
             repositoryId: repositoryId,

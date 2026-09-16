@@ -2,6 +2,11 @@
 
 # 验收 fixture 扩展的本地改动
 
+> **2026-09-16 更新**：下述改动已进入上游。独立仓库
+> [`Chachaanteng/tsuyomi-extensions`](https://github.com/Chachaanteng/tsuyomi-extensions) 的
+> `1d7062e` 已含同样的 `isRequestedPage()` 顺序修正，`Tsuyomi-main/tsuyomi-extensions` 现在就是该提交的
+> 原样快照（fixture 版本 `0.2.30`，由 CI 从源码重建），本地不再有任何手工补丁。以下保留为历史记录。
+
 本仓库交付的是 iOS 宿主，不是扩展。这里记录的是对**参考实现里的验收 fixture 扩展**
 （`Tsuyomi-main/tsuyomi-extensions`，`org.tsuyomi.wenku8`）所做的本地改动——因为
 `Tsuyomi-main/` 在 `.gitignore` 里，那份源码不进本仓库的历史，改动只能记在这里。

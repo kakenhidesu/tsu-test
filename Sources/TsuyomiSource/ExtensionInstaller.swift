@@ -72,17 +72,23 @@ public struct ExtensionInstaller: Sendable {
     }
 
     /// A publisher change is approved only by a root-signed migration that names the exact package
-    /// and publisher currently active; nothing the candidate says about itself can approve it.
+    /// and publisher this source was last activated under; nothing the candidate says about itself
+    /// can approve it, and uninstalling does not reset the pin.
     public func prepare(
         archiveBytes: Data,
         migration: LegacyMigration? = nil
     ) async throws -> PreparedExtensionInstall {
         let candidate = try verifier.verify(archiveBytes: archiveBytes)
         let active = try await readVerifiedActive(candidate.manifest.sourceId)
+        let pinned = active.map { PublisherPin(publisherFingerprint: $0.publisherFingerprint, packageSha256: $0.packageSha256) }
+            ?? (await store.publisherPin(candidate.manifest.sourceId))
         let rotationApproved = migration.map { migration in
-            active?.packageSha256 == migration.fromPackageSha256
-                && active?.publisherFingerprint == migration.fromPublisherFingerprint
+            pinned?.packageSha256 == migration.fromPackageSha256
+                && pinned?.publisherFingerprint == migration.fromPublisherFingerprint
         } ?? false
+        if active == nil, let pinned, pinned.publisherFingerprint != candidate.publisherFingerprint, !rotationApproved {
+            throw ExtensionInstallError.keyRotationNotAuthorized
+        }
         let outcome = ExtensionInstaller.evaluatePolicy(
             candidate: candidate.manifest,
             active: active?.manifest,

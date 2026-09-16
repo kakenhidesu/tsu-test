@@ -63,7 +63,7 @@ public final class ExtensionsModel: ObservableObject {
             guard !installed.isEmpty || !added.isEmpty else {
                 state = .empty(
                     title: "还没有扩展来源",
-                    detail: "仓库是一个 HTTPS 地址上的签名目录，由仓库维护者公布的根公钥签名。添加一个仓库开始。"
+                    detail: "仓库通过维护者公布的订阅链接添加：目录地址加上仓库标识与根公钥。添加一个仓库开始。"
                 )
                 return
             }
@@ -73,15 +73,15 @@ public final class ExtensionsModel: ObservableObject {
         }
     }
 
-    /// Reads a catalog the user typed an address and root key for. Nothing is trusted until they
+    /// Reads the catalog a subscription link the user pasted points at. Nothing is trusted until they
     /// confirm the root and publisher fingerprints the next screen shows.
-    public func probeRepository(indexUrl: String, rootPublicKey: String) async {
+    public func probeRepository(link: String) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
         failureCode = nil
         do {
-            let probed = try await client.probe(indexUrl: indexUrl, rootPublicKey: rootPublicKey)
+            let probed = try await client.probe(link: link)
             pendingApproval = PendingRepositoryApproval(
                 descriptor: probed.descriptor,
                 fetched: probed.fetched,
@@ -124,8 +124,9 @@ public final class ExtensionsModel: ObservableObject {
         }
     }
 
-    /// Removing a repository drops its cache only. Installed extensions keep working and the
-    /// publisher stays trusted until it is removed on its own screen.
+    /// Removing a repository only stops it being offered. Installed extensions keep working, the
+    /// publisher stays trusted until it is removed on its own screen, and the repository's identity
+    /// and cached catalog are retained so the same id can only return under the same root.
     public func removeRepository(_ repositoryId: String) async {
         guard !isBusy else { return }
         isBusy = true
