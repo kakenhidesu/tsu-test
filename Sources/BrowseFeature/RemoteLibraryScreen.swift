@@ -124,6 +124,14 @@ public struct RemoteLibraryScreen: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarTrailing) {
+            if model.isSelecting {
+                Button("完成") { model.endSelection() }
+            } else {
+                Button("选择") { model.beginSelection() }
+                    .disabled(model.content == nil)
+            }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
             Button {
                 Task { await model.refresh() }
             } label: {
@@ -202,26 +210,27 @@ public struct RemoteLibraryScreen: View {
         }
     }
 
+    /// A row opens the book; in selection mode it toggles instead, and the checkmark sits where a
+    /// list's own edit checkmark would. A long press starts selection on that row.
     private func row(_ item: RemoteMirrorItem) -> some View {
-        HStack(spacing: TsuyomiTheme.Metrics.gutter) {
-            Button {
-                model.toggle(item.identity)
-            } label: {
+        HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
+            if model.isSelecting {
                 Image(systemName: model.selected.contains(item.identity) ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
-                    .foregroundStyle(TsuyomiTheme.Palette.accent)
-                    .frame(
-                        minWidth: TsuyomiTheme.Metrics.minimumTouchTarget,
-                        minHeight: TsuyomiTheme.Metrics.minimumTouchTarget
-                    )
+                    .foregroundStyle(model.selected.contains(item.identity) ? TsuyomiTheme.Palette.accent : TsuyomiTheme.Palette.tertiaryText)
+                    .frame(width: 28)
+                    .accessibilityHidden(true)
             }
-            .buttonStyle(.plain)
             if let summary = model.summary(item) {
                 CoverImage(coverState(summary))
                     .frame(width: 44)
             }
             Button {
-                openBook(item.identity)
+                if model.isSelecting {
+                    model.toggle(item.identity)
+                } else {
+                    openBook(item.identity)
+                }
             } label: {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(model.content?.book(item)?.title ?? item.identity.remoteBookId)
@@ -234,8 +243,14 @@ public struct RemoteLibraryScreen: View {
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityAddTraits(model.selected.contains(item.identity) ? [.isSelected, .isButton] : .isButton)
+        }
+        .onLongPressGesture {
+            guard !model.isSelecting else { return }
+            model.beginSelection(item.identity)
         }
     }
 
@@ -243,7 +258,7 @@ public struct RemoteLibraryScreen: View {
     /// offered for a single book, in a menu so the bar never has to grow past one row.
     @ViewBuilder
     private var selectionBar: some View {
-        if let content = model.content, !model.selected.isEmpty {
+        if let content = model.content, model.isSelecting {
             VStack(alignment: .leading, spacing: 4) {
                 Text("已选择 \(model.selected.count) 项")
                     .font(TsuyomiTheme.Typography.caption)

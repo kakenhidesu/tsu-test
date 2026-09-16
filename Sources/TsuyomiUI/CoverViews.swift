@@ -24,8 +24,8 @@ public struct CoverImage: View {
                 placeholder(fallback, symbol: nil)
             case .absent(let fallback), .fallback(let fallback):
                 placeholder(fallback, symbol: "book.closed")
-            case .failed(_, let fallback):
-                placeholder(fallback, symbol: "exclamationmark.triangle")
+            case .failed(let reason, let fallback):
+                placeholder(fallback, symbol: "exclamationmark.triangle", note: reason.rawValue)
             }
         }
         .aspectRatio(TsuyomiTheme.Metrics.coverAspectRatio, contentMode: .fit)
@@ -33,7 +33,9 @@ public struct CoverImage: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
-    private func placeholder(_ fallback: FallbackSpec, symbol: String?) -> some View {
+    /// A failure names its reason in the tile: the code is a host constant, never site text, and it
+    /// is what a reader can quote when a cover will not load.
+    private func placeholder(_ fallback: FallbackSpec, symbol: String?, note: String? = nil) -> some View {
         ZStack {
             TsuyomiTheme.Palette.raisedSurface
             VStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
@@ -50,6 +52,13 @@ public struct CoverImage: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(3)
                     .padding(.horizontal, TsuyomiTheme.Metrics.tightGutter)
+                if let note {
+                    Text(note)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(TsuyomiTheme.Palette.tertiaryText)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.6)
+                }
             }
         }
     }

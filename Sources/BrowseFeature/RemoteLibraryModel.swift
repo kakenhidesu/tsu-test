@@ -67,6 +67,7 @@ public final class RemoteLibraryModel: ObservableObject {
     @Published public private(set) var notice: RemoteMirrorNotice?
     @Published public private(set) var isBusy = false
     @Published public private(set) var selected: Set<BookIdentity> = []
+    @Published public private(set) var isSelecting = false
     @Published public private(set) var pendingCopy: [BookIdentity]?
     @Published public private(set) var pendingAuthorization: PendingRemoteAction?
     @Published public private(set) var pendingRemoveConfirmation: PendingRemoteAction?
@@ -190,6 +191,17 @@ public final class RemoteLibraryModel: ObservableObject {
 
     // MARK: Selection
 
+    /// Selection is a mode the reader enters, as on the shelf: rows carry no checkmarks until then.
+    public func beginSelection(_ identity: BookIdentity? = nil) {
+        isSelecting = true
+        if let identity { selected.insert(identity) }
+    }
+
+    public func endSelection() {
+        isSelecting = false
+        selected = []
+    }
+
     public func toggle(_ identity: BookIdentity) {
         if selected.contains(identity) {
             selected.remove(identity)
@@ -263,7 +275,7 @@ public final class RemoteLibraryModel: ObservableObject {
                 )
                 if try await library.addToLibrary(book) { added += 1 }
             }
-            selected = []
+            endSelection()
             notice = .copied(added)
         } catch {
             notice = .failed(SafeErrorCode.of(error))
@@ -336,7 +348,7 @@ public final class RemoteLibraryModel: ObservableObject {
             pendingAuthorization = action
             return
         }
-        selected = []
+        endSelection()
         await load()
         notice = .mutation(action.operation, result)
     }

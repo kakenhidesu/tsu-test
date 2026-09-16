@@ -13,11 +13,22 @@ public enum CoverPixels {
     public static let height = 324
 }
 
-/// Shelf covers come from what the host already downloaded. Painting the shelf must never open every
-/// source's runtime lane, so this fetcher refuses and the loader serves its on-disk cache or nothing.
-struct CachedOnlyCoverFetcher: CoverMediaFetcher {
+/// Shelf covers are served from the on-disk cache first; only a cover that was never downloaded —
+/// a book copied from a website mirror, or imported — opens its source's lane, once, to fetch it.
+/// The lane is the same one browsing uses and closes with the app, so the shelf never keeps a
+/// source alive on its own.
+struct LazySourceCoverFetcher: CoverMediaFetcher {
+    let registry: SourceRegistry
+    let sourceId: SourceId
+
     func fetch(url: String, referrerUrl: String?) async throws -> CoverMediaPayload {
-        throw MediaLoadError.httpFailure
+        let client: SourceExtensionClient
+        do {
+            client = try await registry.client(for: sourceId)
+        } catch {
+            throw MediaLoadError.httpFailure
+        }
+        return try await client.fetch(url: url, referrerUrl: referrerUrl)
     }
 }
 
@@ -90,7 +101,7 @@ public final class LibraryCoverProvider: ObservableObject {
                           credentials: credentials
                       ),
                       roots: roots,
-                      fetcher: CachedOnlyCoverFetcher()
+                      fetcher: LazySourceCoverFetcher(registry: registry, sourceId: id)
                   )
             else { return }
             self.providers[sourceId] = provider
