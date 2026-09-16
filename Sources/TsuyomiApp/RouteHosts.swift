@@ -31,7 +31,11 @@ struct SourceHomeHost: View {
         SourceHomeScreen(
             model: model,
             coverState: { flow.cover($0) },
-            openBook: { identity in Task { await flow.push(.detail(identity)) } }
+            openBook: { identity in Task { await flow.push(.detail(identity)) } },
+            openSearch: { [sourceId] typed in
+                flow.pendingSearchQuery = typed
+                Task { await flow.push(.search(sourceId)) }
+            }
         )
     }
 }
@@ -58,9 +62,14 @@ struct SearchHost: View {
             openBook: { identity in Task { await flow.push(.detail(identity)) } }
         )
         .task {
-            guard let author = flow.pendingAuthorSearch else { return }
-            flow.pendingAuthorSearch = nil
-            await model.submitAuthor(author)
+            if let author = flow.pendingAuthorSearch {
+                flow.pendingAuthorSearch = nil
+                await model.submitAuthor(author)
+            } else if let typed = flow.pendingSearchQuery {
+                flow.pendingSearchQuery = nil
+                model.query = typed
+                await model.submit()
+            }
         }
     }
 }

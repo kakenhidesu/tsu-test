@@ -10,6 +10,7 @@ struct LibraryShortcutBar: View {
     @ObservedObject var model: LibraryModel
     var openMirror: (String) -> Void = { _ in }
     @State private var isEditing = false
+    @State private var deleting: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -24,6 +25,19 @@ struct LibraryShortcutBar: View {
         }
         .animation(reduceMotion ? nil : .default, value: model.isShortcutBarCollapsed)
         .animation(reduceMotion ? nil : .default, value: isEditing)
+        .confirmationDialog("删除这个收藏夹？", isPresented: Binding(
+            get: { deleting != nil },
+            set: { if !$0 { deleting = nil } }
+        ), titleVisibility: .visible) {
+            Button("删除收藏夹", role: .destructive) {
+                guard let collectionId = deleting else { return }
+                deleting = nil
+                Task { await model.deleteCollection(collectionId) }
+            }
+            Button("取消", role: .cancel) { deleting = nil }
+        } message: {
+            Text("只删除收藏夹本身；里面的书仍留在书架上。")
+        }
     }
 
     private var handle: some View {
@@ -124,6 +138,9 @@ struct LibraryShortcutBar: View {
 
     @ViewBuilder
     private func menu(_ shortcut: LibraryShortcut) -> some View {
+        if case .collection(let collectionId) = shortcut {
+            Button("删除收藏夹", role: .destructive) { deleting = collectionId }
+        }
         if case .system(let node) = shortcut, node != .all {
             Button("隐藏此入口") { model.setSystemNode(node, hidden: true) }
         }

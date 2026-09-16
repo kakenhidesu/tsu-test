@@ -413,6 +413,14 @@ public final class LibraryModel: ObservableObject {
         await load()
     }
 
+    /// Deleting a collection removes the grouping only; every book in it stays on the shelf.
+    public func deleteCollection(_ collectionId: String) async {
+        _ = try? await collections.deleteCollection(collectionId)
+        if activeCollection?.collectionId == collectionId { activeCollection = nil }
+        endSelection()
+        await load()
+    }
+
     public func deleteSelectedCollections() async {
         for collectionId in selectedCollections {
             _ = try? await collections.deleteCollection(collectionId)

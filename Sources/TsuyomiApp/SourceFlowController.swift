@@ -15,6 +15,8 @@ public final class SourceFlowController: ObservableObject {
     @Published public private(set) var covers: SourceCoverProvider?
     /// An author the book page asked to search for. The search screen takes it exactly once.
     public var pendingAuthorSearch: String?
+    /// Words typed on a source's home page. The search screen takes them exactly once.
+    public var pendingSearchQuery: String?
     private var coverUpdates: AnyCancellable?
 
     private let container: AppContainer

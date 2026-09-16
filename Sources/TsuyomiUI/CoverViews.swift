@@ -178,16 +178,18 @@ public struct TsuyomiFilterCapsules: View {
             onSelect(filter.id, option.value)
         } label: {
             Text(option.label)
-                .font(TsuyomiTheme.Typography.caption)
-                .padding(.horizontal, 12)
-                .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                .font(TsuyomiTheme.Typography.supporting)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 7)
                 .background(
                     isSelected ? TsuyomiTheme.Palette.accent.opacity(0.18) : TsuyomiTheme.Palette.raisedSurface,
-                    in: Capsule()
+                    in: RoundedRectangle(cornerRadius: 9)
                 )
                 .foregroundStyle(
                     isSelected ? TsuyomiTheme.Palette.accent : TsuyomiTheme.Palette.primaryText
                 )
+                .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(filter.label)：\(option.label)")

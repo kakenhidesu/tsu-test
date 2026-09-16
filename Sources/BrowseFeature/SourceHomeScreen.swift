@@ -9,16 +9,20 @@ public struct SourceHomeScreen: View {
     @ObservedObject private var model: SourceHomeModel
     private let coverState: (SourceBookSummary) -> CoverUiState
     private let openBook: (BookIdentity) -> Void
+    private let openSearch: (String) -> Void
     @State private var selectedFeature: String?
+    @State private var query = ""
 
     public init(
         model: SourceHomeModel,
         coverState: @escaping (SourceBookSummary) -> CoverUiState,
-        openBook: @escaping (BookIdentity) -> Void
+        openBook: @escaping (BookIdentity) -> Void,
+        openSearch: @escaping (String) -> Void = { _ in }
     ) {
         self.model = model
         self.coverState = coverState
         self.openBook = openBook
+        self.openSearch = openSearch
     }
 
     public var body: some View {
@@ -65,6 +69,15 @@ public struct SourceHomeScreen: View {
             }
         }
         .navigationTitle(title)
+        /// The field is an entry to the search screen, not a search of the home page: submitting
+        /// hands the words over and the results, history and paging all live there.
+        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .automatic), prompt: "搜索此来源")
+        .onSubmit(of: .search) {
+            let typed = query.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !typed.isEmpty else { return }
+            query = ""
+            openSearch(typed)
+        }
         /// Opening a source's home page is the request; it does not need a second one. Filters are
         /// still applied explicitly, and 重新载入 is for when a load failed or the reader wants a
         /// fresh one.
