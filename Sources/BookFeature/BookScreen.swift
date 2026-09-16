@@ -13,6 +13,7 @@ public struct BookScreen: View {
     private let openChapter: (SourceChapter) -> Void
     private let openAuthorSearch: ((String) -> Void)?
     @State private var isSummaryExpanded = false
+    @State private var isTitleExpanded = false
     @State private var isConfirmingLocalRemoval = false
 
     public init(
@@ -221,22 +222,27 @@ public struct BookScreen: View {
         return "书籍"
     }
 
+    /// The identity module: cover on the left, and beside it the title, author, metadata, rating and
+    /// the one shelf action, top-aligned with the cover's top and ending at its bottom when they fit.
     private func masthead(_ content: BookDetailState) -> some View {
         VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
             HStack(alignment: .top, spacing: TsuyomiTheme.Metrics.gutter) {
-                /// Both dimensions, not just the width: left to find its own height the placeholder
-                /// grows to whatever the title inside it needs, and the row grows with it.
                 CoverImage(coverState(content.detail.summary))
-                    .frame(width: 110, height: 110 / TsuyomiTheme.Metrics.coverAspectRatio)
+                    .frame(width: 120, height: 120 / TsuyomiTheme.Metrics.coverAspectRatio)
                     .clipShape(RoundedRectangle(cornerRadius: TsuyomiTheme.Metrics.cornerRadius))
                 VStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.tightGutter) {
-                    /// The whole group is set against the cover's bottom edge, not its top: title,
-                    /// author, badges and actions read downwards to that line, and the slack falls
-                    /// above the title where a short title simply leaves the cover taller.
-                    Spacer(minLength: 0)
-                    Text(content.detail.summary.title)
-                        .font(TsuyomiTheme.Typography.sectionTitle)
-                        .lineLimit(3)
+                    Button {
+                        isTitleExpanded.toggle()
+                    } label: {
+                        Text(content.detail.summary.title)
+                            .font(TsuyomiTheme.Typography.sectionTitle)
+                            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                            .lineLimit(isTitleExpanded ? nil : 2)
+                            .multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint(isTitleExpanded ? "完整标题已展开" : "展开完整标题")
                     if let author = content.detail.summary.author {
                         if let openAuthorSearch {
                             Button {
@@ -258,10 +264,12 @@ public struct BookScreen: View {
                     }
                     HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                         if let status = content.detail.status {
-                            TsuyomiTagBadge(status)
+                            Text(status)
+                                .font(TsuyomiTheme.Typography.caption)
+                                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                         }
                         if let date = content.detail.lastUpdatedDate {
-                            Text("更新于 \(date)")
+                            Text("上次更新：\(date)")
                                 .font(TsuyomiTheme.Typography.caption)
                                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                         }
@@ -269,14 +277,15 @@ public struct BookScreen: View {
                             TsuyomiStatusBadge("离线缓存", tone: .warning)
                         }
                     }
+                    Spacer(minLength: 0)
+                    ratingRow(content)
                     shelfActions(content)
                 }
-                .frame(maxHeight: .infinity, alignment: .bottomLeading)
+                .frame(maxHeight: .infinity, alignment: .topLeading)
             }
-            /// The row is at least as tall as the cover, so the column has a bottom to reach; a fixed
-            /// height on the column alone positions it without stretching it, and the spacer inside
-            /// then has nothing to push against — which is why the actions kept floating mid-row.
-            .frame(minHeight: 110 / TsuyomiTheme.Metrics.coverAspectRatio)
+            /// The row is at least as tall as the cover, so the column has a bottom to reach: the
+            /// split action sits on the cover's bottom edge whenever the blocks above it leave room.
+            .frame(minHeight: 120 / TsuyomiTheme.Metrics.coverAspectRatio)
             if let description = content.detail.description {
                 summary(description)
             }
@@ -288,33 +297,61 @@ public struct BookScreen: View {
         .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
     }
 
-    /// The shelf and 稍后再读 are two square icon buttons the size of a touch target and no larger:
-    /// they are not why this screen is open. They hug the leading edge rather than stretching, which
-    /// is what a bordered button in a wide column does if left to itself.
+    /// Five borderless stars, live only for a shelf book. Tapping the current star clears it.
+    private func ratingRow(_ content: BookDetailState) -> some View {
+        HStack(spacing: 0) {
+            ForEach(1...5, id: \.self) { star in
+                Button {
+                    Task { await model.setRating(content.rating == star ? nil : star) }
+                } label: {
+                    Image(systemName: star <= (content.rating ?? 0) ? "star.fill" : "star")
+                        .font(.system(size: 18))
+                        .foregroundStyle(content.inLibrary ? TsuyomiTheme.Palette.accent : TsuyomiTheme.Palette.tertiaryText)
+                        .frame(width: 28, height: 36)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(star) 星")
+            }
+        }
+        .disabled(!content.inLibrary || model.isBusy)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(content.rating.map { "评分 \($0) 星" } ?? "未评分")
+    }
+
+    /// One split action: the primary half adds, or shows the book is on the shelf and asks before
+    /// removing it; the trailing half opens the destination menu. Never full width.
     private func shelfActions(_ content: BookDetailState) -> some View {
-        HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-            iconAction(
-                symbol: content.inLibrary ? "bookmark.fill" : "bookmark",
-                label: content.inLibrary ? "已在书架" : "加入书架",
-                isOn: content.inLibrary
-            ) {
+        HStack(spacing: 0) {
+            Button {
                 if content.inLibrary {
                     isConfirmingLocalRemoval = true
                 } else {
                     Task { await model.addToLibrary() }
                 }
+            } label: {
+                Label(content.inLibrary ? "已在书架" : "加入书架", systemImage: content.inLibrary ? "checkmark" : "plus")
+                    .font(TsuyomiTheme.Typography.body.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(height: TsuyomiTheme.Metrics.minimumTouchTarget)
+                    .foregroundStyle(content.inLibrary ? TsuyomiTheme.Palette.accent : Color.white)
+                    .background(
+                        content.inLibrary ? TsuyomiTheme.Palette.accent.opacity(0.16) : TsuyomiTheme.Palette.accent,
+                        in: UnevenRoundedRectangle(
+                            topLeadingRadius: TsuyomiTheme.Metrics.cornerRadius, bottomLeadingRadius: TsuyomiTheme.Metrics.cornerRadius,
+                            bottomTrailingRadius: 0, topTrailingRadius: 0
+                        )
+                    )
             }
-            iconAction(
-                symbol: content.readLater ? "clock.fill" : "clock",
-                label: content.readLater ? "取消稍后再读" : "稍后再读",
-                isOn: content.readLater
-            ) {
-                Task { await model.toggleReadLater() }
-            }
+            .buttonStyle(.plain)
+            .disabled(model.isBusy)
+            .accessibilityAddTraits(content.inLibrary ? [.isSelected, .isButton] : .isButton)
+            Rectangle()
+                .fill(Color.white.opacity(content.inLibrary ? 0 : 0.35))
+                .frame(width: 1, height: TsuyomiTheme.Metrics.minimumTouchTarget - 12)
             destinationMenu(content)
-            Spacer(minLength: 0)
         }
-        .disabled(model.isBusy)
+        .fixedSize()
     }
 
     /// `更多加入选项`: read-later, then the site's own shelf, then local collections, in that order.
@@ -350,14 +387,16 @@ public struct BookScreen: View {
                 }
             }
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                .frame(width: 36, height: 36)
-                .background(TsuyomiTheme.Palette.raisedSurface, in: RoundedRectangle(cornerRadius: 8))
-                .frame(
-                    width: TsuyomiTheme.Metrics.minimumTouchTarget,
-                    height: TsuyomiTheme.Metrics.minimumTouchTarget
+            Image(systemName: "chevron.down")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(content.inLibrary ? TsuyomiTheme.Palette.accent : Color.white)
+                .frame(width: 40, height: TsuyomiTheme.Metrics.minimumTouchTarget)
+                .background(
+                    content.inLibrary ? TsuyomiTheme.Palette.accent.opacity(0.16) : TsuyomiTheme.Palette.accent,
+                    in: UnevenRoundedRectangle(
+                        topLeadingRadius: 0, bottomLeadingRadius: 0,
+                        bottomTrailingRadius: TsuyomiTheme.Metrics.cornerRadius, topTrailingRadius: TsuyomiTheme.Metrics.cornerRadius
+                    )
                 )
                 .contentShape(Rectangle())
         }
@@ -398,30 +437,6 @@ public struct BookScreen: View {
                 }
             }
         }
-    }
-
-    private func iconAction(
-        symbol: String,
-        label: LocalizedStringKey,
-        isOn: Bool,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(action: action) {
-            /// The tile is 36pt and the touch target is the full 44: the reference draws a small
-            /// square, and shrinking the target with it would put the button under the minimum.
-            Image(systemName: symbol)
-                .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(isOn ? TsuyomiTheme.Palette.accent : TsuyomiTheme.Palette.secondaryText)
-                .frame(width: 36, height: 36)
-                .background(TsuyomiTheme.Palette.raisedSurface, in: RoundedRectangle(cornerRadius: 8))
-                .frame(
-                    width: TsuyomiTheme.Metrics.minimumTouchTarget,
-                    height: TsuyomiTheme.Metrics.minimumTouchTarget
-                )
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(label)
     }
 
     /// The label carries the width, not the frame around the button: a bordered button draws its

@@ -94,18 +94,10 @@ public final class RepositoryDetailModel: ObservableObject {
         defer { isBusy = false }
         failureCode = nil
         do {
-            let fetched = try await client.refresh(descriptor)
-            if let cached = await repositories.cached(descriptor.repositoryId),
-               let previous = RepositoryIndexCodec.sequence(of: cached) {
-                if fetched.index.sequence < previous { throw RepositoryError.indexRollback }
-                if fetched.index.sequence == previous,
-                   RepositoryIndexCodec.signedDigest(of: cached) != RepositoryIndexCodec.signedDigest(of: fetched.bytes) {
-                    throw RepositoryError.indexEquivocation
-                }
-            }
-            try await repositories.cache(descriptor.repositoryId, indexBytes: fetched.bytes)
-            try await lifecycle.applyRevocations(fetched.index.revocations)
-            await publish(fetched.index)
+            let index = try await RepositoryRefresh.perform(
+                descriptor, client: client, repositories: repositories, lifecycle: lifecycle
+            )
+            await publish(index)
         } catch {
             failureCode = SafeErrorCode.of(error)
         }

@@ -72,7 +72,7 @@ struct MirrorWorld {
             store: installed,
             grants: grants
         )
-        let credentials = try SourceCredentialStore(roots: roots, aead: MirrorPassthroughAead())
+        let credentials = try SourceCredentialStore(roots: roots, aead: TestPassthroughAead())
         let sessions = VerifiedBrowserSessionStore(credentials: credentials)
         if signedIn {
             try await sessions.put(
@@ -152,7 +152,9 @@ struct MirrorWorld {
     }
 }
 
-private struct MirrorPassthroughAead: AeadPort {
+/// Round-trips plaintext so a credential store can be exercised without a Keychain-backed key,
+/// which unit tests have no entitlement for. It authenticates nothing on purpose.
+struct TestPassthroughAead: AeadPort {
     func encrypt(plaintext: Data, additionalAuthenticatedData: Data) throws -> AeadCiphertext {
         AeadCiphertext(iv: Data(count: 12), ciphertext: plaintext)
     }

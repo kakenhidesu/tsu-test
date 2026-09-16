@@ -74,7 +74,9 @@ let package = Package(
 
         .target(
             name: "BrowseFeature",
-            dependencies: ["TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI"]
+            dependencies: [
+                "ExtensionsFeature", "TsuyomiCore", "TsuyomiProtocol", "TsuyomiRemoteLibrary", "TsuyomiSource", "TsuyomiUI"
+            ]
         ),
 
         .target(

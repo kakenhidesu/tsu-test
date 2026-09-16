@@ -20,6 +20,18 @@ public struct InstallFailure: Sendable, Equatable {
     public let kind: InstallFailureKind
     public let code: String
 
+    /// What the reader is told, by kind: the code is appended so a report can name it.
+    public var message: String {
+        switch kind {
+        case .download: return "无法下载内容源包。（\(code)）"
+        case .verification: return "包未通过完整性、签名或兼容性验证。（\(code)）"
+        case .repository: return "仓库目录或安装授权已失效。（\(code)）"
+        case .storage: return "无法访问内容源安装所需的存储空间。（\(code)）"
+        case .install: return "安装没有完成。（\(code)）"
+        case .fileAccess: return "无法读取所选文件。（\(code)）"
+        }
+    }
+
     public static func classify(_ error: any Error) -> InstallFailure {
         let code = SafeErrorCode.of(error)
         switch error {

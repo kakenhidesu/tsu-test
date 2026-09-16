@@ -15,6 +15,7 @@ public struct LibraryScreen: View {
     @State private var pendingPair: [BookIdentity] = []
     @State private var insertionIndex: Int?
     @State private var isCreatingCollection = false
+    @State private var isShowingReport = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(
@@ -72,6 +73,11 @@ public struct LibraryScreen: View {
         .sheet(isPresented: $isCreatingCollection) {
             CollectionEditorScreen(model: model)
         }
+        .sheet(isPresented: $isShowingReport) {
+            if let updates = model.updateStore {
+                UpdateReportScreen(model: UpdateReportModel(updates: updates))
+            }
+        }
         .task { await model.load() }
     }
 
@@ -118,14 +124,25 @@ public struct LibraryScreen: View {
                     Button("取消") { Task { await model.cancelUpdateCheck() } }
                 }
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-            } else if session.state != .completed || model.isCheckingUpdates {
-                HStack {
+            } else if model.isReportStripVisible {
+                HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                     Text(updateSummary(session))
                         .font(TsuyomiTheme.Typography.supporting)
+                        .lineLimit(1)
                     Spacer()
-                    Button("重试") { Task { await model.checkUpdatesNow() } }
-                        .disabled(model.isCheckingUpdates)
+                    Button("查看报告") { isShowingReport = true }
+                    if session.state != .completed {
+                        Button("重试") { Task { await model.checkUpdatesNow() } }
+                            .disabled(model.isCheckingUpdates)
+                    }
+                    Button {
+                        model.dismissReportStrip()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                    }
+                    .accessibilityLabel("关闭")
                 }
+                .font(TsuyomiTheme.Typography.caption)
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
             }
         }

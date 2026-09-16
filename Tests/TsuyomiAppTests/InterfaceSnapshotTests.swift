@@ -1,12 +1,18 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
 import BookFeature
+import BrowseFeature
+import ExtensionsFeature
 import Foundation
+import LibraryFeature
+import SettingsFeature
 import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
 import TsuyomiReader
+import TsuyomiSource
 import TsuyomiUI
+import TsuyomiUpdates
 import UIKit
 import XCTest
 
@@ -80,6 +86,126 @@ final class InterfaceSnapshotTests: XCTestCase {
             capture("reader-settings-\(scheme.snapshotName)", scheme: scheme, height: 460) {
                 ReaderSettingsPanelPreview()
             }
+        }
+    }
+
+    /// The source tab and the market, from a fake repository host: the subscription confirmation,
+    /// the merged catalog, the install review, the installed list, and the publisher-key card.
+    func testBrowseAndMarketSnapshots() async throws {
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let world = try await MarketWorld(directory: directory)
+        let original = try JourneyFixtures.data("wenku8-fixture.hxp")
+        world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
+        await world.probe()
+        let actions = BrowseActions(
+            openHome: { _ in }, openSearch: { _ in }, openRemoteLibrary: { _ in }, openSignIn: { _ in },
+            openRepositories: {}, openPublisherKeys: {}
+        )
+        capture("repositories-confirm", scheme: .light) {
+            NavigationStack {
+                ExtensionsScreen(model: world.model, openRepository: { _ in }, openPublisherKeys: {})
+            }
+        }
+        await world.model.approvePendingRepository()
+        await world.catalog.loadCached()
+        let browse = BrowseModel(registry: world.registry, credentials: world.credentials, remoteLibrary: world.remoteLibrary)
+        await browse.load()
+        capture("browse-available", scheme: .light) {
+            NavigationStack {
+                BrowseScreen(model: browse, catalog: world.catalog, market: world.model, actions: actions, initialSegment: .available)
+            }
+        }
+        let item = try XCTUnwrap(world.catalog.items.first)
+        await world.catalog.prepare(item)
+        if let prepared = world.catalog.pendingInstall {
+            capture("install-review", scheme: .light) {
+                InstallReviewScreen(
+                    prepared: prepared, consent: .constant(ExtensionInstallConsent()), isBusy: false,
+                    onApprove: {}, onCancel: {}
+                )
+            }
+        }
+        world.catalog.installConsent = ExtensionInstallConsent(nonOfficialExecution: true)
+        await world.catalog.approvePendingInstall()
+        await browse.load()
+        capture("browse-installed", scheme: .light) {
+            NavigationStack {
+                BrowseScreen(model: browse, catalog: world.catalog, market: world.model, actions: actions)
+            }
+        }
+        await world.model.forgetPublisher(Phase2TestPublisher.keyId)
+        let picked = directory.appendingPathComponent("picked.hxp")
+        try original.write(to: picked)
+        await world.model.importPackage(at: picked)
+        if let pending = world.model.pendingPublisherKey {
+            capture("publisher-key", scheme: .light) {
+                NavigationStack { PublisherKeyCard(pending: pending, model: world.model) }
+            }
+        }
+    }
+
+    /// The shelf with an update in its inbox, the website mirror, a book that is on both shelves,
+    /// and the two update screens.
+    func testShelfMirrorAndUpdateSnapshots() async throws {
+        let directory = try scratchDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let world = try await MirrorWorld(directory: directory)
+        _ = await world.coordinator.pull(world.sourceId)
+        let identity = try world.identity("1234")
+        _ = try await world.library.addToLibrary(
+            LibraryBook(identity: identity, title: "雾港纪事", addedAt: Date(), metadataUpdatedAt: Date(), authors: ["林川"])
+        )
+        _ = await world.updateCoordinator.run(trigger: .manual)
+        world.transport.setDirectoryPage("update-directory-appended")
+        _ = await world.updateCoordinator.run(trigger: .manual)
+        let fallback: (LibraryBook) -> CoverUiState = { .fallback(FallbackSpec(title: $0.title, sourceLabel: "Wenku8")) }
+        let library = world.libraryModel()
+        await library.load()
+        for scheme in ColorScheme.allSnapshotCases {
+            capture("library-updates-\(scheme.snapshotName)", scheme: scheme) {
+                NavigationStack { LibraryScreen(model: library, coverState: fallback, openBook: { _ in }) }
+            }
+        }
+        world.preferences.setWebsiteGrouping(world.sourceId.value, enabled: true)
+        let mirror = world.mirrorModel()
+        await mirror.load()
+        capture("mirror-root", scheme: .light) {
+            NavigationStack {
+                RemoteLibraryScreen(
+                    model: mirror,
+                    coverState: { .fallback(FallbackSpec(title: $0.title, sourceLabel: "Wenku8")) },
+                    openBook: { _ in }, openSignIn: { _ in }
+                )
+            }
+        }
+        let book = BookModel(
+            identity: identity, registry: world.registry, library: world.library,
+            progressStore: world.progress, updates: world.updates
+        )
+        await book.load()
+        let shelf = world.shelfModel(identity)
+        await shelf.load()
+        for scheme in ColorScheme.allSnapshotCases {
+            capture("book-detail-shelf-\(scheme.snapshotName)", scheme: scheme) {
+                NavigationStack {
+                    BookScreen(
+                        model: book, remote: shelf,
+                        coverState: { .fallback(FallbackSpec(title: $0.title, sourceLabel: "Wenku8")) },
+                        openChapter: { _ in }, openAuthorSearch: { _ in }
+                    )
+                }
+            }
+        }
+        let settings = UpdateSettingsModel(updates: world.updates, library: world.library, registry: world.registry, policyChanged: {})
+        await settings.load()
+        capture("update-settings", scheme: .light) {
+            NavigationStack { UpdateSettingsScreen(model: settings) }
+        }
+        let report = UpdateReportModel(updates: world.updates)
+        await report.load()
+        capture("update-report", scheme: .light) {
+            UpdateReportScreen(model: report)
         }
     }
 

@@ -13,6 +13,7 @@ public struct InstallReviewScreen: View {
     private let onApprove: () -> Void
     private let onCancel: () -> Void
     @Environment(\.dismiss) private var dismiss
+    @State private var isDeltaExpanded = false
 
     public init(
         prepared: PreparedExtensionInstall,
@@ -50,40 +51,42 @@ public struct InstallReviewScreen: View {
                         LabeledContent("版本", value: prepared.candidate.manifest.version.original)
                     }
                 }
-                Section("发布者") {
-                    LabeledContent("Key ID", value: prepared.candidate.manifest.publisherKeyId)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("指纹")
-                            .font(TsuyomiTheme.Typography.caption)
-                            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                        Text(prepared.candidate.publisherFingerprint)
-                            .font(.system(.footnote, design: .monospaced))
-                    }
+                Section {
+                    Text(prepared.candidate.manifest.summary)
+                        .font(TsuyomiTheme.Typography.supporting)
+                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                     TsuyomiStatusBadge(trustLabel, tone: trustTone)
                 }
-                if prepared.addedCapabilities.isEmpty {
-                    Section("能力") {
-                        Text(prepared.active == nil ? "按下方清单授予能力。" : "与已安装版本相比没有新增能力。")
-                            .font(TsuyomiTheme.Typography.caption)
-                            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                    }
-                } else {
-                    Section("新增能力") {
-                        ForEach(prepared.addedCapabilities, id: \.self) { capability in
-                            Text(capability)
+                Section {
+                    DisclosureGroup(isExpanded: $isDeltaExpanded) {
+                        LabeledContent("Key ID", value: prepared.candidate.manifest.publisherKeyId)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("发布者指纹")
+                                .font(TsuyomiTheme.Typography.caption)
+                                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                            Text(prepared.candidate.publisherFingerprint)
                                 .font(.system(.footnote, design: .monospaced))
-                                .foregroundStyle(TsuyomiTheme.Palette.warning)
                         }
-                    }
-                }
-                if !prepared.resourceLimitIncreases.isEmpty {
-                    Section("资源上限提高") {
+                        if prepared.addedCapabilities.isEmpty {
+                            Text(prepared.active == nil ? "按清单授予能力。" : "与已安装版本相比没有新增能力。")
+                                .font(TsuyomiTheme.Typography.caption)
+                                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                        } else {
+                            ForEach(prepared.addedCapabilities, id: \.self) { capability in
+                                Text(capability)
+                                    .font(.system(.footnote, design: .monospaced))
+                                    .foregroundStyle(TsuyomiTheme.Palette.warning)
+                            }
+                        }
                         ForEach(prepared.resourceLimitIncreases, id: \.limit) { increase in
                             LabeledContent(
                                 LocalizedStringKey(increase.limit.rawValue),
                                 value: "\(increase.activeValue) → \(increase.candidateValue)"
                             )
                         }
+                    } label: {
+                        Text("授权差异（新增 \(prepared.addedCapabilities.count) 项 · 上限提高 \(prepared.resourceLimitIncreases.count) 项）")
+                            .font(TsuyomiTheme.Typography.supporting)
                     }
                 }
                 if prepared.requiresNonOfficialConsent || prepared.requiresMigrationConsent || prepared.isDowngrade {

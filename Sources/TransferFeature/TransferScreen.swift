@@ -52,7 +52,7 @@ public struct TransferScreen: View {
 
     private var exportSection: some View {
         Section("导出") {
-            Text("导出的文件只包含书架、收藏夹、进度与阅读偏好，不含任何 Cookie 或登录信息。")
+            Text("导出的文件只包含书架（含钉住状态与保留记录）、收藏夹、评分与标签、进度与章节完读、阅读偏好，不含任何 Cookie 或登录信息。")
                 .font(TsuyomiTheme.Typography.caption)
                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
             Button("导出 tsuyomi-transfer") { Task { await model.export() } }

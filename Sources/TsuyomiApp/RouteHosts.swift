@@ -229,6 +229,7 @@ struct VerificationHost: View {
 @MainActor
 final class MarketHolder: ObservableObject {
     let model: ExtensionsModel
+    let catalog: CatalogModel
     let client: ExtensionRepositoryClient
     let lifecycle: ExtensionLifecycle
     private let container: AppContainer
@@ -252,6 +253,14 @@ final class MarketHolder: ObservableObject {
             client: client,
             lifecycle: lifecycle,
             sourceRemoved: { [weak flow] sourceId in await flow?.sourceRemoved(sourceId) }
+        )
+        catalog = CatalogModel(
+            registry: container.registry,
+            repositories: container.repositories,
+            trust: container.trust,
+            client: client,
+            lifecycle: lifecycle,
+            hostApi: container.hostApi
         )
     }
 

@@ -46,6 +46,7 @@ public final class LibraryModel: ObservableObject {
     @Published public private(set) var isCheckingUpdates = false
     @Published public private(set) var undoIgnoreToken: String?
     @Published public private(set) var showUpdatesOnly = false
+    @Published public private(set) var dismissedSessionId: String?
 
     private let library: LibraryRepository
     private let collections: CollectionStore
@@ -126,6 +127,24 @@ public final class LibraryModel: ObservableObject {
 
     public func update(for identity: BookIdentity) -> UnresolvedUpdate? {
         unresolvedUpdates[identity]
+    }
+
+    public var updateStore: UpdateStore? { updates }
+
+    /// A terminal session's strip stays until dismissed, except a clean completion, which says so
+    /// for two seconds from its durable finish time and then leaves on its own.
+    public var isReportStripVisible: Bool {
+        guard let session = updateSession, session.state.isTerminal, session.sessionId != dismissedSessionId else {
+            return false
+        }
+        if session.state == .completed, let finished = session.finishedAt {
+            return clock().timeIntervalSince(finished) < 2
+        }
+        return true
+    }
+
+    public func dismissReportStrip() {
+        dismissedSessionId = updateSession?.sessionId
     }
 
     // MARK: Updates

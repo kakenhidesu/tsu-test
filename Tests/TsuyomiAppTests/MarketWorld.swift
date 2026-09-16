@@ -57,11 +57,13 @@ struct MarketWorld {
     let host = FakeRepositoryHost()
     let removedSources = RemovedSourceRecorder()
     let model: ExtensionsModel
+    let catalog: CatalogModel
     let registry: SourceRegistry
     let repositories: RepositoryStore
     let trust: PublisherTrustStore
     let grants: PackageGrantStore
     let remoteLibrary: RemoteLibraryStore
+    let credentials: SourceCredentialStore
     let installer: ExtensionInstaller
     let lifecycle: ExtensionLifecycle
     private let client: ExtensionRepositoryClient
@@ -88,11 +90,12 @@ struct MarketWorld {
             store: installed,
             grants: grants
         )
+        credentials = try SourceCredentialStore(roots: roots, aead: TestPassthroughAead())
         registry = SourceRegistry(
             installer: installer,
             store: installed,
             gateway: gateway,
-            sessions: VerifiedBrowserSessionStore(credentials: try SourceCredentialStore(roots: roots))
+            sessions: VerifiedBrowserSessionStore(credentials: credentials)
         )
         client = ExtensionRepositoryClient(gateway: gateway)
         lifecycle = ExtensionLifecycle(
@@ -111,6 +114,14 @@ struct MarketWorld {
             client: client,
             lifecycle: lifecycle,
             sourceRemoved: { [removedSources] in removedSources.ids.append($0) }
+        )
+        catalog = CatalogModel(
+            registry: registry,
+            repositories: repositories,
+            trust: trust,
+            client: client,
+            lifecycle: lifecycle,
+            hostApi: hostApi
         )
     }
 

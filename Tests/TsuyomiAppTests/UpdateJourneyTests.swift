@@ -21,6 +21,7 @@ final class UpdateJourneyTests: XCTestCase {
         try? FileManager.default.removeItem(at: directory)
     }
 
+    @MainActor
     private func pin(_ world: MirrorWorld, _ remoteBookId: String, title: String) async throws -> BookIdentity {
         let identity = try world.identity(remoteBookId)
         _ = try await world.library.addToLibrary(
@@ -36,11 +37,13 @@ final class UpdateJourneyTests: XCTestCase {
 
         let first = await world.updateCoordinator.run(trigger: .manual)
         guard case .completed = first else { return XCTFail("the first session did not complete: \(first)") }
-        let baselineSession = try XCTUnwrap(try await world.updates.latestSession())
+        let awaited1 = try await world.updates.latestSession()
+        let baselineSession = try XCTUnwrap(awaited1)
         XCTAssertEqual(baselineSession.state, .completed)
         XCTAssertEqual(baselineSession.total, 1)
         XCTAssertEqual(baselineSession.updated, 0)
-        let baseline = try XCTUnwrap(try await world.updates.baseline(identity))
+        let awaited2 = try await world.updates.baseline(identity)
+        let baseline = try XCTUnwrap(awaited2)
         XCTAssertTrue(baseline.anchor.hasPrefix("update-check-v2.2."))
         XCTAssertEqual(baseline.chapters.map(\.chapterId), ["10001", "10002"])
         let emptyInbox = try await world.updates.unresolvedUpdates()
@@ -48,7 +51,8 @@ final class UpdateJourneyTests: XCTestCase {
 
         world.transport.setDirectoryPage("update-directory-appended")
         _ = await world.updateCoordinator.run(trigger: .manual)
-        let second = try XCTUnwrap(try await world.updates.latestSession())
+        let awaited3 = try await world.updates.latestSession()
+        let second = try XCTUnwrap(awaited3)
         XCTAssertEqual(second.updated, 1)
         let inbox = try await world.updates.unresolvedUpdates()
         XCTAssertEqual(inbox.map(\.identity), [identity])
@@ -60,7 +64,7 @@ final class UpdateJourneyTests: XCTestCase {
         let library = world.libraryModel()
         await library.load()
         XCTAssertEqual(library.update(for: identity)?.newChapterIds, ["10003"])
-        library.showUpdatesOnly = true
+        library.setShowUpdatesOnly(true)
         guard case .content(let content) = library.state else { return XCTFail("shelf did not load") }
         XCTAssertEqual(library.project(content.entries).map(\.book.identity), [identity])
     }
@@ -117,7 +121,8 @@ final class UpdateJourneyTests: XCTestCase {
         let identity = try await pin(world, "1234", title: "雾港纪事")
         try await world.updates.setBookExcluded(identity, excluded: true)
         _ = await world.updateCoordinator.run(trigger: .manual)
-        let session = try XCTUnwrap(try await world.updates.latestSession())
+        let awaited4 = try await world.updates.latestSession()
+        let session = try XCTUnwrap(awaited4)
         XCTAssertEqual(session.total, 0, "an excluded book is not enumerated")
         XCTAssertEqual(session.state, .completed)
         let shelf = try await world.library.libraryEntries()
@@ -126,7 +131,8 @@ final class UpdateJourneyTests: XCTestCase {
         try await world.updates.setBookExcluded(identity, excluded: false)
         try await world.updates.setSourceExcluded(world.sourceId.value, excluded: true)
         _ = await world.updateCoordinator.run(trigger: .manual)
-        let sourceSession = try XCTUnwrap(try await world.updates.latestSession())
+        let awaited5 = try await world.updates.latestSession()
+        let sourceSession = try XCTUnwrap(awaited5)
         XCTAssertEqual(sourceSession.total, 0)
         XCTAssertTrue(world.transport.requests.isEmpty, "nothing was asked of the source")
     }
@@ -140,17 +146,21 @@ final class UpdateJourneyTests: XCTestCase {
         let candidates = try await world.updateCoordinator.candidates()
         XCTAssertEqual(candidates.map(\.identity.remoteBookId).sorted(), ["1234", "5678"])
 
-        let started = try XCTUnwrap(try await world.updates.startSession(trigger: .manual, candidates: candidates, now: Date()))
+        let awaited6 = try await world.updates.startSession(trigger: .manual, candidates: candidates, now: Date())
+        let started = try XCTUnwrap(awaited6)
         let busy = await world.updateCoordinator.run(trigger: .manual)
         XCTAssertEqual(busy, .busy)
-        XCTAssertTrue(try await world.updates.cancelActiveSession(now: Date()))
-        let cancelled = try XCTUnwrap(try await world.updates.latestSession())
+        let awaited7 = try await world.updates.cancelActiveSession(now: Date())
+        XCTAssertTrue(awaited7)
+        let awaited8 = try await world.updates.latestSession()
+        let cancelled = try XCTUnwrap(awaited8)
         XCTAssertEqual(cancelled.sessionId, started.sessionId)
         XCTAssertEqual(cancelled.state, .cancelled)
 
         let fresh = await world.updateCoordinator.run(trigger: .manual)
         guard case .completed = fresh else { return XCTFail("a new session must start once the old one is closed") }
-        let session = try XCTUnwrap(try await world.updates.latestSession())
+        let awaited9 = try await world.updates.latestSession()
+        let session = try XCTUnwrap(awaited9)
         XCTAssertEqual(session.total, 2)
     }
 }

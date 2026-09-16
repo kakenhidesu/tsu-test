@@ -187,17 +187,20 @@ public struct AppRootView: View {
     private var browseScreen: some View {
         BrowseScreen(
             model: browse,
+            catalog: market.catalog,
+            market: market.model,
             actions: BrowseActions(
                 openHome: { push(.sourceHome($0)) },
                 openSearch: { push(.search($0)) },
                 openRemoteLibrary: { push(.remoteLibrary($0)) },
                 openSignIn: { push(.verification($0)) },
-                openExtensions: {
+                openRepositories: {
                     Task {
                         await container.loadTrust()
                         await flow.push(.extensions)
                     }
-                }
+                },
+                openPublisherKeys: { push(.publisherKeys) }
             )
         )
     }

@@ -17,6 +17,7 @@ public struct BookDetailState: Sendable {
     public let collections: [LibraryCollection]
     public let memberCollectionIds: Set<String>
     public let updateChecksExcluded: Bool
+    public let rating: Int?
 }
 
 /// The detail page and its directory are one screen backed by one identity. Everything it writes is
@@ -54,6 +55,13 @@ public final class BookModel: ObservableObject {
         self.collections = collections
         self.updates = updates
         self.clock = clock
+    }
+
+    /// Tapping the current star clears the rating; a rating needs a shelf record to live on.
+    public func setRating(_ rating: Int?) async {
+        guard (try? await library.libraryEntry(identity)) != nil else { return }
+        try? await library.setRating(identity, rating: rating)
+        await publish()
     }
 
     /// Excluding a book from update checks removes nothing: not the book, not its progress.
@@ -186,7 +194,8 @@ public final class BookModel: ObservableObject {
                 readChapterIds: readChapterIds(upTo: progress?.locator.document.contentId),
                 collections: manual,
                 memberCollectionIds: member,
-                updateChecksExcluded: (try? await updates?.isBookExcluded(identity)) ?? false
+                updateChecksExcluded: (try? await updates?.isBookExcluded(identity)) ?? false,
+                rating: entry?.rating
             )
         )
     }
