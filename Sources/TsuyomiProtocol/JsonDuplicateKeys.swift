@@ -77,7 +77,7 @@ public enum JsonDuplicateKeys {
                         index += 6
                     }
                 }
-                let scalar = Unicode.Scalar(value) ?? "{FFFD}"
+                let scalar = Unicode.Scalar(value) ?? "\u{FFFD}"
                 output.append(contentsOf: Array(String(Character(scalar)).utf8))
             default: output.append(escape)
             }
