@@ -41,8 +41,6 @@ final class RepositoryHygieneTests: XCTestCase {
         }
     }
 
-    }
-
     func testNoUnfinishedOrSuppressedCode() throws {
         let forbidden = ["TODO", "FIXME", "@unchecked", "try" + "!", "swiftlint:disable", "#if false"]
         for file in try swiftFiles() {
