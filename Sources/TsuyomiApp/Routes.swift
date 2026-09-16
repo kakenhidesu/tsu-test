@@ -17,6 +17,8 @@ public enum SourceRestorationTarget: String, Hashable, Sendable {
 public enum LibraryRoute: Hashable, Sendable {
     case detail(BookIdentity)
     case reader(BookIdentity, String)
+    case mirror(SourceId, String?)
+    case search
 }
 
 public enum Route: Hashable, Sendable {

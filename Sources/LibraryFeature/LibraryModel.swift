@@ -22,9 +22,17 @@ public enum LibrarySelectionKind: Sendable, Equatable {
 public final class LibraryModel: ObservableObject {
     @Published public private(set) var state: TsuyomiScreenState<LibraryContent> = .loading
     @Published public var filter: SystemLibraryFilter = .all
-    @Published public var layout: LibraryLayout = .grid
-    @Published public var sort: LibrarySortMode = .custom
-    @Published public var sortDescending = false
+    @Published public private(set) var tab: LibraryTab = .all
+    @Published public var layout: LibraryLayout = .grid {
+        didSet { persistPresentation() }
+    }
+    @Published public var sort: LibrarySortMode = .smart {
+        didSet { persistPresentation() }
+    }
+    @Published public var sortDescending = false {
+        didSet { persistPresentation() }
+    }
+    @Published public private(set) var mirrors: [RemoteMirrorBinding] = []
     @Published public private(set) var selectionKind: LibrarySelectionKind?
     @Published public private(set) var selectedBooks: Set<BookIdentity> = []
     @Published public private(set) var selectedCollections: Set<String> = []
@@ -37,21 +45,24 @@ public final class LibraryModel: ObservableObject {
     @Published public private(set) var updateSession: UpdateSessionSummary?
     @Published public private(set) var isCheckingUpdates = false
     @Published public private(set) var undoIgnoreToken: String?
-    @Published public var showUpdatesOnly = false
+    @Published public private(set) var showUpdatesOnly = false
 
     private let library: LibraryRepository
     private let collections: CollectionStore
     private let preferences: AppPreferences
+    private let mirrorStore: RemoteMirrorStore?
     private let updates: UpdateStore?
     private let checker: UpdateCoordinator?
     private let clock: () -> Date
     private var entries: [LibraryEntry] = []
     private var allCollections: [LibraryCollection] = []
+    private var restoringPresentation = false
 
     public init(
         library: LibraryRepository,
         collections: CollectionStore,
         preferences: AppPreferences,
+        mirrors mirrorStore: RemoteMirrorStore? = nil,
         updates: UpdateStore? = nil,
         checker: UpdateCoordinator? = nil,
         clock: @escaping () -> Date = Date.init
@@ -59,18 +70,58 @@ public final class LibraryModel: ObservableObject {
         self.library = library
         self.collections = collections
         self.preferences = preferences
+        self.mirrorStore = mirrorStore
         self.updates = updates
         self.checker = checker
         self.clock = clock
         hiddenSystemNodes = Set(
             preferences.library.hiddenSystemNodes.compactMap(SystemLibraryFilter.init(rawValue:))
         )
+        showUpdatesOnly = preferences.library.showUpdatesOnly
+        restorePresentation(for: .all)
     }
 
+    /// The updates-only filter applies at the root of the 书架 tab and nowhere else; the other tabs
+    /// keep the value without exposing it.
     public func project(_ values: [LibraryEntry]) -> [LibraryEntry] {
-        let projected = LibraryProjection.apply(values, filter: filter, sort: sort, descending: sortDescending)
+        let projected = LibraryProjection.apply(
+            values, filter: filter, sort: sort, descending: sortDescending, updates: unresolvedUpdates
+        )
         guard showUpdatesOnly, filter == .all, activeCollection == nil else { return projected }
         return projected.filter { unresolvedUpdates[$0.book.identity] != nil }
+    }
+
+    public var isUpdatesFilterAvailable: Bool { tab == .all && activeCollection == nil && filter == .all }
+
+    public func setShowUpdatesOnly(_ value: Bool) {
+        showUpdatesOnly = value
+        preferences.setShowUpdatesOnly(value)
+    }
+
+    /// Selecting a tab restores that tab's own layout and sort. There is no pager: a tab is chosen.
+    public func selectTab(_ selected: LibraryTab) async {
+        tab = selected
+        filter = selected.filter
+        endSelection()
+        restorePresentation(for: selected)
+        if activeCollection != nil { await open(collection: nil) }
+    }
+
+    private func restorePresentation(for selected: LibraryTab) {
+        let stored = preferences.library.tabPresentations[selected.rawValue] ?? selected.defaultPresentation
+        restoringPresentation = true
+        layout = LibraryLayout(rawValue: stored.layout) ?? .grid
+        sort = LibrarySortMode(rawValue: stored.sortMode) ?? .smart
+        sortDescending = stored.sortDescending
+        restoringPresentation = false
+    }
+
+    private func persistPresentation() {
+        guard !restoringPresentation else { return }
+        preferences.setTabPresentation(
+            tab.rawValue,
+            LibraryTabPresentation(layout: layout.rawValue, sortMode: sort.rawValue, sortDescending: sortDescending)
+        )
     }
 
     public func update(for identity: BookIdentity) -> UnresolvedUpdate? {
@@ -125,6 +176,26 @@ public final class LibraryModel: ObservableObject {
         undoIgnoreToken = nil
     }
 
+    /// A book that lives only in a website mirror still has updates worth showing. It appears as an
+    /// entry without local membership, so opening it creates no pin.
+    private func mirrorOnlyEntriesWithUpdates(excluding known: Set<BookIdentity>) async throws -> [LibraryEntry] {
+        var result: [LibraryEntry] = []
+        for identity in unresolvedUpdates.keys.sorted() where !known.contains(identity) {
+            guard let book = try await library.book(identity) else { continue }
+            if let entry = try await library.libraryEntry(identity) {
+                result.append(entry)
+                continue
+            }
+            result.append(
+                try LibraryEntry(
+                    book: book, libraryAddedAt: book.addedAt, rating: nil, localTags: [],
+                    readLater: false, localMembership: false, sourceAvailable: true, reconciliation: nil
+                )
+            )
+        }
+        return result
+    }
+
     private func loadUpdateState() async {
         guard let updates else { return }
         let detected = (try? await updates.unresolvedUpdates()) ?? []
@@ -144,7 +215,8 @@ public final class LibraryModel: ObservableObject {
         LibraryShortcutOrder.resolve(
             storedOrder: preferences.library.shortcutOrder,
             systemNodes: visibleSystemNodes,
-            collections: allCollections
+            collections: allCollections,
+            mirrors: mirrors
         )
     }
 
@@ -153,6 +225,8 @@ public final class LibraryModel: ObservableObject {
         case .system(let filter): return filter.title
         case .collection(let id):
             return allCollections.first { $0.collectionId == id }?.title ?? id
+        case .mirror(let sourceId):
+            return mirrors.first { $0.sourceId == sourceId }?.displayName ?? sourceId
         }
     }
 
@@ -178,6 +252,8 @@ public final class LibraryModel: ObservableObject {
         case .collection(let id):
             guard let collection = allCollections.first(where: { $0.collectionId == id }) else { return }
             await open(collection: collection)
+        case .mirror:
+            break
         }
     }
 
@@ -186,10 +262,16 @@ public final class LibraryModel: ObservableObject {
         do {
             if let collection = activeCollection {
                 entries = try await collections.collectionEntries(collection.collectionId)
+            } else if tab == .readLater {
+                entries = try await library.readLaterEntries()
             } else {
                 entries = try await library.libraryEntries()
             }
+            if activeCollection == nil, tab == .all {
+                entries += try await mirrorOnlyEntriesWithUpdates(excluding: Set(entries.map(\.book.identity)))
+            }
             allCollections = try await collections.collections()
+            mirrors = ((try? await mirrorStore?.bindings()) ?? []).filter { !$0.frozen }
             guard !entries.isEmpty || !allCollections.isEmpty else {
                 state = .empty(title: "书架还是空的", detail: "在来源里找到一本书，然后加入书架。")
                 return

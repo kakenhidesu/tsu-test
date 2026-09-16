@@ -18,7 +18,7 @@ import UIKit
 /// loop; a run that could not happen is simply asked for again next time.
 @MainActor
 public final class UpdateScheduler: ObservableObject {
-    public static let taskIdentifier = "org.tsuyomi.ios.updates.refresh"
+    public nonisolated static let taskIdentifier = "org.tsuyomi.ios.updates.refresh"
 
     private let coordinator: UpdateCoordinator
     private let updates: UpdateStore
@@ -120,7 +120,7 @@ enum NetworkPath {
         await withCheckedContinuation { continuation in
             let monitor = NWPathMonitor()
             let claimed = OSAllocatedUnfairLock(initialState: false)
-            func claim() -> Bool {
+            let claim: @Sendable () -> Bool = {
                 claimed.withLock { flag in
                     guard !flag else { return false }
                     flag = true

@@ -103,6 +103,20 @@ public struct ReaderSettings: Hashable, Sendable, Codable {
     }
 }
 
+/// How one shelf tab was last shown. Raw strings, so a value from a build that knew other modes is
+/// simply ignored rather than refused.
+public struct LibraryTabPresentation: Hashable, Sendable, Codable {
+    public var layout: String
+    public var sortMode: String
+    public var sortDescending: Bool
+
+    public init(layout: String, sortMode: String, sortDescending: Bool) {
+        self.layout = layout
+        self.sortMode = sortMode
+        self.sortDescending = sortDescending
+    }
+}
+
 public struct LibraryPresentationPreferences: Hashable, Sendable {
     public static let maximumShortcutCount = 256
     public static let maximumShortcutIdLength = 2304
@@ -112,17 +126,24 @@ public struct LibraryPresentationPreferences: Hashable, Sendable {
     public var hiddenSystemNodes: [String]
     /// Sources whose website shelf is shown by the site's own folders rather than as one list.
     public var websiteGroupingSources: Set<String>
+    /// Keyed by tab raw value.
+    public var tabPresentations: [String: LibraryTabPresentation]
+    public var showUpdatesOnly: Bool
 
     public init(
         shortcutOrder: [String] = [],
         shortcutLocked: Bool = false,
         hiddenSystemNodes: [String] = [],
-        websiteGroupingSources: Set<String> = []
+        websiteGroupingSources: Set<String> = [],
+        tabPresentations: [String: LibraryTabPresentation] = [:],
+        showUpdatesOnly: Bool = false
     ) {
         self.shortcutOrder = shortcutOrder
         self.shortcutLocked = shortcutLocked
         self.hiddenSystemNodes = hiddenSystemNodes
         self.websiteGroupingSources = websiteGroupingSources
+        self.tabPresentations = tabPresentations
+        self.showUpdatesOnly = showUpdatesOnly
     }
 
     public func websiteGrouping(_ sourceId: String) -> Bool {

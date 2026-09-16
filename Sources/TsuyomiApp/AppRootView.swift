@@ -64,6 +64,7 @@ public struct AppRootView: View {
                 library: container.library,
                 collections: container.collections,
                 preferences: container.preferences,
+                mirrors: container.mirror,
                 updates: container.updates,
                 checker: container.updateCoordinator
             )
@@ -125,10 +126,34 @@ public struct AppRootView: View {
             LibraryScreen(
                 model: library,
                 coverState: { libraryCovers.cover($0) },
-                openBook: { libraryPath.append(.detail($0)) }
+                openBook: { libraryPath.append(.detail($0)) },
+                openMirror: { sourceId in
+                    guard let id = try? SourceId(sourceId) else { return }
+                    libraryPath.append(.mirror(id, nil))
+                },
+                openSearch: { libraryPath.append(.search) }
             )
             .navigationDestination(for: LibraryRoute.self) { route in
                 switch route {
+                case .mirror(let sourceId, let targetId):
+                    LibraryMirrorHost(
+                        container: container,
+                        sourceId: sourceId,
+                        targetId: targetId,
+                        coverState: { libraryCovers.cover($0) },
+                        openBook: { libraryPath.append(.detail($0)) },
+                        openFolder: { sourceId, targetId in libraryPath.append(.mirror(sourceId, targetId)) }
+                    )
+                case .search:
+                    LibrarySearchScreen(
+                        model: LibrarySearchModel(library: container.library, collections: container.collections),
+                        coverState: { libraryCovers.cover($0) },
+                        openBook: { libraryPath.append(.detail($0)) },
+                        openCollection: { collection in
+                            libraryPath.removeAll()
+                            Task { await library.open(collection: collection) }
+                        }
+                    )
                 case .detail(let identity):
                     BookHost(
                         container: container,

@@ -30,7 +30,9 @@ public final class AppPreferences: ObservableObject {
             ),
             websiteGroupingSources: Set(
                 LibraryPresentationPreferences.sanitized(defaults.stringArray(forKey: Key.websiteGrouping) ?? [])
-            )
+            ),
+            tabPresentations: AppPreferences.readTabPresentations(defaults),
+            showUpdatesOnly: defaults.bool(forKey: Key.showUpdatesOnly)
         )
         self.reader = AppPreferences.readReaderSettings(defaults)
         self.lastAppliedImportDigest = defaults.string(forKey: Key.lastAppliedImportDigest)
@@ -72,6 +74,34 @@ public final class AppPreferences: ObservableObject {
             library.websiteGroupingSources.sorted { CanonicalOrder.precedes($0, $1) },
             forKey: Key.websiteGrouping
         )
+    }
+
+    public func setTabPresentation(_ tab: String, _ presentation: LibraryTabPresentation) {
+        library.tabPresentations[tab] = presentation
+        if let data = try? JSONEncoder().encode(library.tabPresentations) {
+            defaults.set(data, forKey: Key.tabPresentations)
+        }
+    }
+
+    public func setShowUpdatesOnly(_ value: Bool) {
+        library.showUpdatesOnly = value
+        defaults.set(value, forKey: Key.showUpdatesOnly)
+    }
+
+    /// Forgets every interface choice — appearance, shelf presentation, reader typography — and
+    /// nothing else: the source flow's restoration snapshot, the last import digest and the official
+    /// repository seed are not interface and stay.
+    public func resetInterfacePreferences() {
+        for key in Key.interfaceKeys { defaults.removeObject(forKey: key) }
+        colorScheme = .system
+        library = LibraryPresentationPreferences()
+        reader = ReaderSettings()
+    }
+
+    private static func readTabPresentations(_ defaults: UserDefaults) -> [String: LibraryTabPresentation] {
+        guard let data = defaults.data(forKey: Key.tabPresentations),
+              let decoded = try? JSONDecoder().decode([String: LibraryTabPresentation].self, from: data) else { return [:] }
+        return decoded
     }
 
     /// Hiding a system node only removes an entry point; the books it would list stay on the shelf.
@@ -172,6 +202,8 @@ public final class AppPreferences: ObservableObject {
         static let shortcutLocked = "library_shortcut_locked"
         static let hiddenSystemNodes = "library_hidden_system_nodes"
         static let websiteGrouping = "library_website_grouping"
+        static let tabPresentations = "library_tab_presentations_v1"
+        static let showUpdatesOnly = "library_show_updates_only"
         static let readerFontSize = "reader_font_size"
         static let readerLineHeight = "reader_line_height"
         static let readerHorizontalMargin = "reader_horizontal_margin"
@@ -184,5 +216,11 @@ public final class AppPreferences: ObservableObject {
         static let readerKeepAwake = "reader_keep_awake"
         static let lastAppliedImportDigest = "last_applied_import_digest"
         static let officialRepositorySeeded = "official_repository_seeded"
+
+        static let interfaceKeys = [
+            colorScheme, shortcutOrder, shortcutLocked, hiddenSystemNodes, websiteGrouping, tabPresentations,
+            showUpdatesOnly, readerFontSize, readerLineHeight, readerHorizontalMargin, readerParagraphSpacing,
+            readerFlow, readerTheme, readerPageTransition, readerLockPortrait, readerProgressVisible, readerKeepAwake
+        ]
     }
 }

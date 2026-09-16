@@ -80,7 +80,7 @@ struct MoreScreen: View {
         case .updateSettings:
             UpdateSettingsScreen(model: updateSettings)
         case .data:
-            DataSettingsScreen { path.append(.transfer) }
+            DataSettingsScreen(preferences: container.preferences) { path.append(.transfer) }
         case .transfer:
             TransferScreen(model: transfer)
         case .help:

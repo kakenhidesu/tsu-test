@@ -66,14 +66,22 @@ public struct ReaderSettingsScreen: View {
 
 /// What a transfer file does and does not contain, stated where the reader decides to make one.
 public struct DataSettingsScreen: View {
+    @ObservedObject private var preferences: AppPreferences
     private let openTransfer: () -> Void
+    @State private var isConfirmingReset = false
 
-    public init(openTransfer: @escaping () -> Void) {
+    public init(preferences: AppPreferences, openTransfer: @escaping () -> Void) {
+        self.preferences = preferences
         self.openTransfer = openTransfer
     }
 
     public var body: some View {
         Form {
+            Section {
+                Button("重置界面偏好", role: .destructive) { isConfirmingReset = true }
+            } footer: {
+                Text("只恢复外观、书架展示与阅读器排版的默认值。书架、进度、登录状态、已安装的来源与导入记录都不受影响。")
+            }
             Section("包含") {
                 Text("书架条目、收藏夹与智能规则、本地标签、评分与稍后再读、阅读进度、搜索与浏览历史、阅读偏好。")
                     .font(TsuyomiTheme.Typography.supporting)
@@ -88,6 +96,12 @@ public struct DataSettingsScreen: View {
         }
         .navigationTitle("数据")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("重置界面偏好？", isPresented: $isConfirmingReset, titleVisibility: .visible) {
+            Button("重置", role: .destructive) { preferences.resetInterfacePreferences() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("外观、书架布局与排序、阅读器字号与主题会回到默认值。")
+        }
     }
 }
 

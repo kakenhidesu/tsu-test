@@ -112,6 +112,26 @@ public struct UnresolvedUpdate: Hashable, Sendable {
     public let lastUpdatedDate: String?
     public let detectedAt: Date
     public let revision: Int64
+
+    public init(
+        identity: BookIdentity,
+        title: String,
+        anchor: String,
+        chapters: [UpdateCheckChapter],
+        newChapterIds: [String],
+        lastUpdatedDate: String?,
+        detectedAt: Date,
+        revision: Int64
+    ) {
+        self.identity = identity
+        self.title = title
+        self.anchor = anchor
+        self.chapters = chapters
+        self.newChapterIds = newChapterIds
+        self.lastUpdatedDate = lastUpdatedDate
+        self.detectedAt = detectedAt
+        self.revision = revision
+    }
 }
 
 public struct UpdateCandidate: Hashable, Sendable {

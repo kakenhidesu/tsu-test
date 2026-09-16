@@ -6,11 +6,14 @@ import TsuyomiCore
 public enum LibraryShortcut: Hashable, Sendable, Identifiable {
     case system(SystemLibraryFilter)
     case collection(String)
+    /// A source's website shelf, mirrored locally. Opening it costs no network.
+    case mirror(String)
 
     public var id: String {
         switch self {
         case .system(let filter): return "system:\(filter.rawValue)"
         case .collection(let collectionId): return "collection:\(collectionId)"
+        case .mirror(let sourceId): return "mirror:\(sourceId)"
         }
     }
 
@@ -20,6 +23,8 @@ public enum LibraryShortcut: Hashable, Sendable, Identifiable {
             self = .system(filter)
         } else if let raw = id.dropPrefixIfPresent("collection:") {
             self = .collection(String(raw))
+        } else if let raw = id.dropPrefixIfPresent("mirror:") {
+            self = .mirror(String(raw))
         } else {
             return nil
         }
@@ -32,10 +37,12 @@ public enum LibraryShortcutOrder {
     public static func resolve(
         storedOrder: [String],
         systemNodes: [SystemLibraryFilter],
-        collections: [LibraryCollection]
+        collections: [LibraryCollection],
+        mirrors: [RemoteMirrorBinding] = []
     ) -> [LibraryShortcut] {
         let available = systemNodes.map(LibraryShortcut.system)
             + collections.map { LibraryShortcut.collection($0.collectionId) }
+            + mirrors.map { LibraryShortcut.mirror($0.sourceId) }
         var remaining = available
         var ordered: [LibraryShortcut] = []
         for id in storedOrder {

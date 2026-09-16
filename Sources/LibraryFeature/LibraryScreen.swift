@@ -9,6 +9,8 @@ public struct LibraryScreen: View {
     @ObservedObject private var model: LibraryModel
     private let coverState: (LibraryBook) -> CoverUiState
     private let openBook: (BookIdentity) -> Void
+    private let openMirror: (String) -> Void
+    private let openSearch: () -> Void
     @State private var newCollectionTitle = ""
     @State private var pendingPair: [BookIdentity] = []
     @State private var insertionIndex: Int?
@@ -18,26 +20,39 @@ public struct LibraryScreen: View {
     public init(
         model: LibraryModel,
         coverState: @escaping (LibraryBook) -> CoverUiState,
-        openBook: @escaping (BookIdentity) -> Void
+        openBook: @escaping (BookIdentity) -> Void,
+        openMirror: @escaping (String) -> Void = { _ in },
+        openSearch: @escaping () -> Void = {}
     ) {
         self.model = model
         self.coverState = coverState
         self.openBook = openBook
+        self.openMirror = openMirror
+        self.openSearch = openSearch
     }
 
     public var body: some View {
         StateView(model.state, retry: { Task { await model.load() } }) { content in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: TsuyomiTheme.Metrics.gutter) {
-                    LibraryShortcutBar(model: model)
+                    if model.activeCollection == nil {
+                        tabs
+                    }
+                    updateStrip
+                    LibraryShortcutBar(model: model, openMirror: openMirror)
+                    if model.showUpdatesOnly, model.isUpdatesFilterAvailable {
+                        filterSummary(model.project(content.entries).count)
+                    }
                     books(model.project(content.entries))
                 }
                 .padding(.vertical, TsuyomiTheme.Metrics.gutter)
             }
+            .refreshable { await model.checkUpdatesNow() }
         }
         .navigationTitle(model.activeCollection?.title ?? "书架")
         .toolbar { toolbar }
         .safeAreaInset(edge: .bottom) { selectionBar }
+        .safeAreaInset(edge: .bottom) { undoBar }
         .alert("新建收藏夹", isPresented: Binding(
             get: { !pendingPair.isEmpty },
             set: { if !$0 { pendingPair = [] } }
@@ -60,6 +75,90 @@ public struct LibraryScreen: View {
         .task { await model.load() }
     }
 
+    /// Three fixed tabs, chosen by tap. Selecting one restores its own layout and sort.
+    private var tabs: some View {
+        Picker("书架分区", selection: Binding(
+            get: { model.tab },
+            set: { selected in Task { await model.selectTab(selected) } }
+        )) {
+            ForEach(LibraryTab.allCases, id: \.self) { tab in
+                Text(tab.title).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+    }
+
+    private func filterSummary(_ count: Int) -> some View {
+        HStack {
+            Text("有更新 · \(count) 本")
+                .font(TsuyomiTheme.Typography.supporting)
+            Spacer()
+            Button {
+                model.setShowUpdatesOnly(false)
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+            }
+            .accessibilityLabel("清除筛选")
+        }
+        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+    }
+
+    /// The update session's status: progress with a cancel while it runs, a summary with a retry
+    /// once it stops. A clean completion says so briefly and is otherwise not worth a row.
+    @ViewBuilder
+    private var updateStrip: some View {
+        if let session = model.updateSession {
+            if session.state == .running || session.state == .queued {
+                HStack {
+                    ProgressView()
+                    Text("正在检查更新 \(session.completed) / \(session.total)")
+                        .font(TsuyomiTheme.Typography.supporting)
+                    Spacer()
+                    Button("取消") { Task { await model.cancelUpdateCheck() } }
+                }
+                .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            } else if session.state != .completed || model.isCheckingUpdates {
+                HStack {
+                    Text(updateSummary(session))
+                        .font(TsuyomiTheme.Typography.supporting)
+                    Spacer()
+                    Button("重试") { Task { await model.checkUpdatesNow() } }
+                        .disabled(model.isCheckingUpdates)
+                }
+                .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            }
+        }
+    }
+
+    private func updateSummary(_ session: UpdateSessionSummary) -> String {
+        let state: String
+        switch session.state {
+        case .completed: state = "已完成"
+        case .partial: state = "部分完成"
+        case .failed: state = "失败"
+        case .cancelled: state = "已取消"
+        case .queued, .running: state = "正在检查"
+        }
+        return "\(state) · \(session.completed)/\(session.total) · 更新 \(session.updated)"
+    }
+
+    @ViewBuilder
+    private var undoBar: some View {
+        if model.undoIgnoreToken != nil {
+            HStack {
+                Text("已忽略当前更新")
+                Spacer()
+                Button("撤销") { Task { await model.undoIgnore() } }
+                Button("关闭") { model.dismissUndo() }
+            }
+            .font(TsuyomiTheme.Typography.supporting)
+            .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+            .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            .background(.bar)
+        }
+    }
+
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         if model.activeCollection != nil {
@@ -68,25 +167,59 @@ public struct LibraryScreen: View {
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button("新建收藏夹") { isCreatingCollection = true }
-        }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button(model.isArranging ? "完成排序" : "排序整理") {
-                Task { await model.setArranging(!model.isArranging) }
+            Button {
+                openSearch()
+            } label: {
+                Label("搜索书架", systemImage: "magnifyingglass")
             }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Button(model.layout.title) { model.cycleLayout() }
+            Button {
+                model.cycleLayout()
+            } label: {
+                Label(model.layout.title, systemImage: layoutSymbol)
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
-            Menu("排序") {
-                Picker("排序方式", selection: $model.sort) {
-                    ForEach(LibrarySortMode.allCases, id: \.self) { mode in
-                        Text(mode.label).tag(mode)
+            Menu {
+                if model.isUpdatesFilterAvailable {
+                    Section("筛选") {
+                        Picker("筛选", selection: Binding(
+                            get: { model.showUpdatesOnly },
+                            set: { model.setShowUpdatesOnly($0) }
+                        )) {
+                            Text("全部").tag(false)
+                            Text("仅有更新").tag(true)
+                        }
                     }
                 }
-                Toggle("倒序", isOn: $model.sortDescending)
+                Section("排序") {
+                    Picker("排序方式", selection: $model.sort) {
+                        ForEach(LibrarySortMode.allCases, id: \.self) { mode in
+                            Text(mode.label).tag(mode)
+                        }
+                    }
+                    Toggle("倒序", isOn: $model.sortDescending)
+                }
+                Section {
+                    Button("新建收藏夹") { isCreatingCollection = true }
+                    Button(model.isArranging ? "完成排序" : "排序整理") {
+                        Task { await model.setArranging(!model.isArranging) }
+                    }
+                    Button("立即检查更新") { Task { await model.checkUpdatesNow() } }
+                        .disabled(model.isCheckingUpdates)
+                }
+            } label: {
+                Label("筛选与排序", systemImage: "line.3.horizontal.decrease.circle")
             }
+        }
+    }
+
+    private var layoutSymbol: String {
+        switch model.layout {
+        case .grid: return "square.grid.3x3"
+        case .list: return "list.bullet"
+        case .compact: return "list.dash"
         }
     }
 

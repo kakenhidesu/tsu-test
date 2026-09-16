@@ -8,6 +8,7 @@ import TsuyomiUI
 /// way back is always at least as large as a touch target.
 struct LibraryShortcutBar: View {
     @ObservedObject var model: LibraryModel
+    var openMirror: (String) -> Void = { _ in }
     @State private var isEditing = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -71,7 +72,13 @@ struct LibraryShortcutBar: View {
     }
 
     private func chip(_ shortcut: LibraryShortcut) -> some View {
-        Button(model.title(of: shortcut)) { tap(shortcut) }
+        Button(model.title(of: shortcut)) {
+            if case .mirror(let sourceId) = shortcut {
+                openMirror(sourceId)
+            } else {
+                tap(shortcut)
+            }
+        }
             .buttonStyle(.bordered)
             .tint(tint(shortcut))
             .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
@@ -163,6 +170,7 @@ struct LibraryShortcutBar: View {
         switch shortcut {
         case .system(let node): return model.activeCollection == nil && model.filter == node
         case .collection(let id): return model.activeCollection?.collectionId == id
+        case .mirror: return false
         }
     }
 }

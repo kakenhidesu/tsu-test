@@ -295,10 +295,14 @@ public struct BookScreen: View {
         HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
             iconAction(
                 symbol: content.inLibrary ? "bookmark.fill" : "bookmark",
-                label: content.inLibrary ? "移出书架" : "加入书架",
+                label: content.inLibrary ? "已在书架" : "加入书架",
                 isOn: content.inLibrary
             ) {
-                Task { content.inLibrary ? await model.removeFromLibrary() : await model.addToLibrary() }
+                if content.inLibrary {
+                    isConfirmingLocalRemoval = true
+                } else {
+                    Task { await model.addToLibrary() }
+                }
             }
             iconAction(
                 symbol: content.readLater ? "clock.fill" : "clock",

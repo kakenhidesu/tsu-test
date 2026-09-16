@@ -288,3 +288,50 @@ struct RepositoryDetailHost: View {
         }
     }
 }
+
+/// The shelf's own way into a website mirror: covers come from the shelf's provider and the page
+/// opens without a source flow, since reading a mirror costs no network.
+struct LibraryMirrorHost: View {
+    @StateObject private var model: RemoteLibraryModel
+    private let coverState: (LibraryBook) -> CoverUiState
+    private let openBook: (BookIdentity) -> Void
+    private let openFolder: (SourceId, String) -> Void
+
+    init(
+        container: AppContainer,
+        sourceId: SourceId,
+        targetId: String?,
+        coverState: @escaping (LibraryBook) -> CoverUiState,
+        openBook: @escaping (BookIdentity) -> Void,
+        openFolder: @escaping (SourceId, String) -> Void
+    ) {
+        self.coverState = coverState
+        self.openBook = openBook
+        self.openFolder = openFolder
+        _model = StateObject(
+            wrappedValue: RemoteLibraryModel(
+                sourceId: sourceId,
+                targetId: targetId,
+                coordinator: container.remoteCoordinator,
+                mirror: container.mirror,
+                library: container.library,
+                preferences: container.preferences
+            )
+        )
+    }
+
+    var body: some View {
+        RemoteLibraryScreen(
+            model: model,
+            coverState: { summary in
+                coverState(LibraryBook(
+                    identity: summary.identity, title: summary.title, addedAt: Date(), metadataUpdatedAt: Date(),
+                    authors: summary.author.map { [$0] } ?? [], coverUrl: summary.coverUrl, canonicalUrl: summary.canonicalUrl
+                ))
+            },
+            openBook: openBook,
+            openSignIn: { _ in },
+            openFolder: openFolder
+        )
+    }
+}
