@@ -268,8 +268,9 @@ final class HostNetworkGatewayPolicyTests: XCTestCase {
     /// served as JPEG is refused with the type it claimed, and a bare `application/octet-stream`
     /// JPEG is accepted.
     func testMediaTypeComesFromTheBytesNotTheHeader() async throws {
+        let source = try NetworkFixture.origin("https://www.wenku8.net")
         let cover = try NetworkFixture.origin("https://pic.wenku8.com")
-        let grant = try NetworkFixture.grant(origins: [cover], cookieOrigins: [])
+        let grant = try NetworkFixture.grant(origins: [source, cover], cookieOrigins: [source])
         let cases: [(String, Data, String?)] = [
             ("image/jpeg", NetworkFixture.webpHead, "image/webp"),
             ("application/octet-stream", NetworkFixture.jpegHead, "image/jpeg"),
