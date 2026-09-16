@@ -80,8 +80,12 @@ public struct ExtensionInstaller: Sendable {
     ) async throws -> PreparedExtensionInstall {
         let candidate = try verifier.verify(archiveBytes: archiveBytes)
         let active = try await readVerifiedActive(candidate.manifest.sourceId)
-        let pinned = active.map { PublisherPin(publisherFingerprint: $0.publisherFingerprint, packageSha256: $0.packageSha256) }
-            ?? (await store.publisherPin(candidate.manifest.sourceId))
+        let pinned: PublisherPin?
+        if let active {
+            pinned = PublisherPin(publisherFingerprint: active.publisherFingerprint, packageSha256: active.packageSha256)
+        } else {
+            pinned = await store.publisherPin(candidate.manifest.sourceId)
+        }
         let rotationApproved = migration.map { migration in
             pinned?.packageSha256 == migration.fromPackageSha256
                 && pinned?.publisherFingerprint == migration.fromPublisherFingerprint
