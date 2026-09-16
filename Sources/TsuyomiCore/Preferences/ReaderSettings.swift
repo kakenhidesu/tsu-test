@@ -110,15 +110,23 @@ public struct LibraryPresentationPreferences: Hashable, Sendable {
     public var shortcutOrder: [String]
     public var shortcutLocked: Bool
     public var hiddenSystemNodes: [String]
+    /// Sources whose website shelf is shown by the site's own folders rather than as one list.
+    public var websiteGroupingSources: Set<String>
 
     public init(
         shortcutOrder: [String] = [],
         shortcutLocked: Bool = false,
-        hiddenSystemNodes: [String] = []
+        hiddenSystemNodes: [String] = [],
+        websiteGroupingSources: Set<String> = []
     ) {
         self.shortcutOrder = shortcutOrder
         self.shortcutLocked = shortcutLocked
         self.hiddenSystemNodes = hiddenSystemNodes
+        self.websiteGroupingSources = websiteGroupingSources
+    }
+
+    public func websiteGrouping(_ sourceId: String) -> Bool {
+        websiteGroupingSources.contains(sourceId)
     }
 
     static func sanitized(_ order: [String]) -> [String] {

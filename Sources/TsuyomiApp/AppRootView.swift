@@ -184,6 +184,8 @@ public struct AppRootView: View {
             SearchHost(container: container, flow: flow, sourceId: sourceId)
         case .remoteLibrary(let sourceId):
             RemoteLibraryHost(container: container, flow: flow, sourceId: sourceId)
+        case .remoteLibraryFolder(let sourceId, let targetId):
+            RemoteLibraryHost(container: container, flow: flow, sourceId: sourceId, targetId: targetId)
         case .detail(let identity):
             BookHost(
                 container: container,
@@ -192,6 +194,11 @@ public struct AppRootView: View {
                 openChapter: { identity, chapter in
                     flow.remember(chapter: chapter)
                     Task { await flow.push(.reader(identity, chapter.chapterId)) }
+                },
+                openAuthorSearch: { identity, author in
+                    guard let sourceId = try? SourceId(identity.sourceId) else { return }
+                    flow.pendingAuthorSearch = author
+                    Task { await flow.push(.search(sourceId)) }
                 }
             )
         case .reader(let identity, let chapterId):

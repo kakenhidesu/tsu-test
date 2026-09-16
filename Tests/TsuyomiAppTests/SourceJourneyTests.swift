@@ -8,6 +8,7 @@ import SearchFeature
 import TsuyomiApp
 import TsuyomiCore
 import TsuyomiProtocol
+import TsuyomiRemoteLibrary
 import TsuyomiSource
 import TsuyomiUI
 import XCTest
@@ -178,7 +179,23 @@ struct FixtureWorld {
     let registry: SourceRegistry
     let library: LibraryRepository
     let progress: ReadingProgressStore
+    let remoteLibrary: RemoteLibraryStore
+    let mirror: RemoteMirrorStore
+    let coordinator: RemoteLibraryCoordinator
+    let preferences: AppPreferences
     let transport: FixtureTransport
+
+    /// The website model a book screen needs, wired to this world's stores.
+    @MainActor
+    func remoteShelf(_ identity: BookIdentity) -> BookRemoteShelfModel {
+        BookRemoteShelfModel(
+            identity: identity,
+            coordinator: coordinator,
+            mirror: mirror,
+            remoteLibrary: remoteLibrary,
+            preferences: preferences
+        )
+    }
 
     init(directory: URL, page: String? = nil, storedSession: String? = nil) async throws {
         sourceId = try SourceId("org.tsuyomi.wenku8")
@@ -187,6 +204,9 @@ struct FixtureWorld {
         let database = try TsuyomiDatabase(path: directory.appendingPathComponent("t.sqlite").path)
         library = LibraryRepository(database: database)
         progress = ReadingProgressStore(database: database)
+        remoteLibrary = RemoteLibraryStore(database: database)
+        mirror = RemoteMirrorStore(database: database)
+        preferences = AppPreferences(defaults: UserDefaults(suiteName: "fixture-\(UUID().uuidString)") ?? .standard)
         #if DEBUG
         let keys = InMemoryPublisherKeyStore(keys: [try Phase2TestPublisher.key()])
         #else
@@ -226,11 +246,20 @@ struct FixtureWorld {
                 )
             )
         }
+        let tokens = DirectActionTokenRegistry()
         registry = SourceRegistry(
             installer: installer,
             store: store,
-            gateway: HostNetworkGateway(transport: transport),
+            gateway: HostNetworkGateway(transport: transport, directActionTokens: tokens),
             sessions: sessions
+        )
+        coordinator = RemoteLibraryCoordinator(
+            registry: registry,
+            remoteLibrary: remoteLibrary,
+            mirror: mirror,
+            library: library,
+            sessions: sessions,
+            tokens: tokens
         )
     }
 }

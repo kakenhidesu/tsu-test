@@ -83,6 +83,51 @@ public struct RemoteMirrorStore: Sendable {
         }
     }
 
+    /// A binding that exists before any full read: a confirmed add has to be recorded somewhere even
+    /// when the shelf was never pulled. An existing binding is left exactly as it is.
+    public func ensureBinding(sourceId: String, displayName: String, at moment: Date) async throws {
+        guard isNonBlank(sourceId), isNonBlank(displayName) else {
+            throw DatabaseError.invariantViolated("Remote mirror source is required")
+        }
+        try await database.withTransaction { connection in
+            try connection.execute(
+                """
+                INSERT OR IGNORE INTO remote_mirror_bindings (source_id, display_name, frozen, updated_at_epoch_second)
+                VALUES (?, ?, 0, ?)
+                """,
+                [.text(sourceId), .text(displayName), .integer(moment.epochSecond)]
+            )
+        }
+    }
+
+    /// Replaces the folder list alone: folders the site no longer lists stay frozen, and items are
+    /// not touched, so a menu refresh can never lose a book.
+    public func replaceTargets(sourceId: String, _ targets: [RemoteMirrorTarget], at moment: Date) async throws {
+        guard targets.allSatisfy({ $0.sourceId == sourceId }) else {
+            throw DatabaseError.invariantViolated("Remote mirror source mismatch")
+        }
+        try await database.withTransaction { connection in
+            try connection.execute(
+                "UPDATE remote_mirror_targets SET frozen = 1 WHERE source_id = ?",
+                [.text(sourceId)]
+            )
+            for target in targets {
+                try connection.execute(
+                    """
+                    INSERT OR REPLACE INTO remote_mirror_targets
+                    (source_id, target_id, display_name, parent_id, kind, frozen, updated_at_epoch_second)
+                    VALUES (?, ?, ?, ?, ?, 0, ?)
+                    """,
+                    [
+                        .text(target.sourceId), .text(target.targetId), .text(target.displayName),
+                        target.parentId.map { SQLiteValue.text($0) } ?? .null, .text(target.kind),
+                        .integer(moment.epochSecond)
+                    ]
+                )
+            }
+        }
+    }
+
     /// Records one book's membership after a confirmed website write, without waiting for a refresh.
     public func setMembership(_ identity: BookIdentity, targetId: String?, at moment: Date) async throws {
         try await database.withTransaction { connection in

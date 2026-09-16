@@ -27,6 +27,9 @@ public final class AppPreferences: ObservableObject {
             shortcutLocked: defaults.bool(forKey: Key.shortcutLocked),
             hiddenSystemNodes: LibraryPresentationPreferences.sanitized(
                 defaults.stringArray(forKey: Key.hiddenSystemNodes) ?? []
+            ),
+            websiteGroupingSources: Set(
+                LibraryPresentationPreferences.sanitized(defaults.stringArray(forKey: Key.websiteGrouping) ?? [])
             )
         )
         self.reader = AppPreferences.readReaderSettings(defaults)
@@ -57,6 +60,18 @@ public final class AppPreferences: ObservableObject {
     public func setShortcutLocked(_ locked: Bool) {
         library.shortcutLocked = locked
         defaults.set(locked, forKey: Key.shortcutLocked)
+    }
+
+    public func setWebsiteGrouping(_ sourceId: String, enabled: Bool) {
+        if enabled {
+            library.websiteGroupingSources.insert(sourceId)
+        } else {
+            library.websiteGroupingSources.remove(sourceId)
+        }
+        defaults.set(
+            library.websiteGroupingSources.sorted { CanonicalOrder.precedes($0, $1) },
+            forKey: Key.websiteGrouping
+        )
     }
 
     /// Hiding a system node only removes an entry point; the books it would list stay on the shelf.
@@ -156,6 +171,7 @@ public final class AppPreferences: ObservableObject {
         static let shortcutOrder = "library_shortcut_order"
         static let shortcutLocked = "library_shortcut_locked"
         static let hiddenSystemNodes = "library_hidden_system_nodes"
+        static let websiteGrouping = "library_website_grouping"
         static let readerFontSize = "reader_font_size"
         static let readerLineHeight = "reader_line_height"
         static let readerHorizontalMargin = "reader_horizontal_margin"

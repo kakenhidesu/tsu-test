@@ -24,6 +24,8 @@ public final class SearchModel: ObservableObject {
     )
     @Published public private(set) var isBusy = false
     @Published public private(set) var history: [String] = []
+    /// True while the results answer an author lookup rather than a title search. Typing clears it.
+    @Published public private(set) var isAuthorSearch = false
 
     private let sourceId: SourceId
     private let registry: SourceRegistry
@@ -52,6 +54,18 @@ public final class SearchModel: ObservableObject {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         submitted = trimmed
+        isAuthorSearch = false
+        await run(page: 1)
+    }
+
+    /// Handed over from a book page: the author's name becomes the query, and the request is the
+    /// source's author lookup, not a title search with the same words.
+    public func submitAuthor(_ author: String) async {
+        let trimmed = author.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        query = trimmed
+        submitted = trimmed
+        isAuthorSearch = true
         await run(page: 1)
     }
 
@@ -78,7 +92,9 @@ public final class SearchModel: ObservableObject {
         state = .loading
         do {
             let client = try await registry.client(for: sourceId)
-            let items = try await client.search(query: term, page: page)
+            let items = isAuthorSearch
+                ? try await client.searchByAuthor(author: term, page: page)
+                : try await client.search(query: term, page: page)
             guard current == generation else { return }
             try? await library.recordSearch(sourceId: sourceId.value, query: term, at: clock())
             await loadHistory()
@@ -102,7 +118,9 @@ public final class SearchModel: ObservableObject {
         guard current == generation else { return }
         do {
             let client = try await registry.client(for: sourceId)
-            let items = try await client.search(query: term, page: page, offlineOnly: true)
+            let items = isAuthorSearch
+                ? try await client.searchByAuthor(author: term, page: page, offlineOnly: true)
+                : try await client.search(query: term, page: page, offlineOnly: true)
             guard current == generation else { return }
             publish(term: term, page: page, items: items, stale: true)
         } catch {

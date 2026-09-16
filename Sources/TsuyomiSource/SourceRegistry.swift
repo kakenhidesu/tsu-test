@@ -30,6 +30,7 @@ public actor SourceRegistry {
     private let gateway: HostNetworkGateway
     private let sessions: VerifiedBrowserSessionStore
     private var clients: [String: SourceExtensionClient] = [:]
+    private var openGenerations: [String: Int64] = [:]
 
     public init(
         installer: ExtensionInstaller,
@@ -60,7 +61,14 @@ public actor SourceRegistry {
         let client = try await SourceExtensionClient.open(packageInfo: verified, gateway: gateway)
         await adoptStoredSession(client)
         clients[sourceId.value] = client
+        openGenerations[sourceId.value, default: 0] += 1
         return client
+    }
+
+    /// How many times this source's lane has been opened. A write bound to one opening is refused
+    /// once the lane has been closed and reopened underneath it, whatever else still matches.
+    public func openGeneration(_ sourceId: SourceId) -> Int64 {
+        openGenerations[sourceId.value] ?? 0
     }
 
     /// A channel opens with the session the reader completed in the login window already in the

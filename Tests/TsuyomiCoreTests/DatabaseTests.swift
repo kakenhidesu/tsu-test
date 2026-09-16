@@ -354,6 +354,45 @@ final class DatabaseTests: XCTestCase {
         XCTAssertEqual(try await library.libraryEntries().count, 1)
     }
 
+    /// A policy row follows the package that verifies now. The reader's consents are kept only when
+    /// the publisher and capability set are the very ones they were given for.
+    func testPolicySynchronisationRetiresReceiptsWhenTheCapabilitySetChanges() async throws {
+        let database = try TsuyomiDatabase.inMemory()
+        let store = RemoteLibraryStore(database: database)
+        try await store.synchronizeVerifiedPackage(
+            sourceId: "org.tsuyomi.wenku8", publisherFingerprint: "pub", capabilityFingerprint: "cap-1",
+            approvedOrigin: "https://www.wenku8.net", preserveWriteback: true
+        )
+        XCTAssertTrue(try await store.setWritebackEnabled(.add, sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1", enabled: true))
+        XCTAssertTrue(try await store.dismissFirstRemoteImportPrompt(sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1"))
+
+        try await store.synchronizeVerifiedPackage(
+            sourceId: "org.tsuyomi.wenku8", publisherFingerprint: "pub", capabilityFingerprint: "cap-1",
+            approvedOrigin: "https://www.wenku8.net", preserveWriteback: true
+        )
+        var policy = try XCTUnwrap(try await store.sourceRemotePolicy("org.tsuyomi.wenku8"))
+        XCTAssertTrue(policy.addWritebackEnabled, "the same set keeps its receipts")
+        XCTAssertTrue(policy.firstImportPromptDismissed)
+
+        try await store.synchronizeVerifiedPackage(
+            sourceId: "org.tsuyomi.wenku8", publisherFingerprint: "pub", capabilityFingerprint: "cap-1",
+            approvedOrigin: "https://www.wenku8.net", preserveWriteback: false
+        )
+        policy = try XCTUnwrap(try await store.sourceRemotePolicy("org.tsuyomi.wenku8"))
+        XCTAssertFalse(policy.addWritebackEnabled, "a downgrade retires the receipts")
+        XCTAssertTrue(policy.firstImportPromptDismissed, "the copy prompt is about the set, not the version")
+
+        try await store.setWritebackEnabled(.add, sourceId: "org.tsuyomi.wenku8", capabilityFingerprint: "cap-1", enabled: true)
+        try await store.synchronizeVerifiedPackage(
+            sourceId: "org.tsuyomi.wenku8", publisherFingerprint: "pub", capabilityFingerprint: "cap-2",
+            approvedOrigin: "https://www.wenku8.net", preserveWriteback: true
+        )
+        policy = try XCTUnwrap(try await store.sourceRemotePolicy("org.tsuyomi.wenku8"))
+        XCTAssertFalse(policy.addWritebackEnabled, "a changed set retires the receipts")
+        XCTAssertFalse(policy.firstImportPromptDismissed)
+        XCTAssertEqual(policy.capabilitySetFingerprint, "cap-2")
+    }
+
     func testChapterCompletionIsExactAndFirstWins() async throws {
         let database = try TsuyomiDatabase.inMemory()
         let library = LibraryRepository(database: database)

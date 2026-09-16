@@ -56,6 +56,7 @@ final class InterfaceSnapshotTests: XCTestCase {
                 NavigationStack {
                     BookScreen(
                         model: model,
+                        remote: world.remoteShelf(identity),
                         coverState: { .fallback(FallbackSpec(title: $0.title, sourceLabel: "Wenku8")) },
                         openChapter: { _ in }
                     )

@@ -93,6 +93,53 @@ public struct RemoteLibraryStore: Sendable {
         try await database.read { try RemoteLibraryStore.policy(sourceId, $0) }
     }
 
+    /// Brings `source_remote_policy` in line with the package that verifies now. Receipts survive
+    /// only when the publisher and capability set are the very same ones they were given for, and
+    /// only when the caller allows it: a downgrade retires them even under an unchanged set.
+    public func synchronizeVerifiedPackage(
+        sourceId: String,
+        publisherFingerprint: String,
+        capabilityFingerprint: String,
+        approvedOrigin: String,
+        preserveWriteback: Bool
+    ) async throws {
+        try await database.withTransaction { connection in
+            let current = try RemoteLibraryStore.policy(sourceId, connection)
+            let unchanged = current?.trustedPublisherFingerprint == publisherFingerprint
+                && current?.capabilitySetFingerprint == capabilityFingerprint
+            let keep = preserveWriteback && unchanged
+            try connection.execute(
+                """
+                INSERT OR REPLACE INTO source_remote_policy (source_id, trusted_publisher_fingerprint,
+                capability_set_fingerprint, approved_origin, add_writeback_enabled, first_import_prompt_dismissed,
+                remove_writeback_enabled, move_writeback_enabled)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                [
+                    .text(sourceId), .text(publisherFingerprint), .text(capabilityFingerprint), .text(approvedOrigin),
+                    .integer(keep && current?.addWritebackEnabled == true ? 1 : 0),
+                    .integer(unchanged && current?.firstImportPromptDismissed == true ? 1 : 0),
+                    .integer(keep && current?.removeWritebackEnabled == true ? 1 : 0),
+                    .integer(keep && current?.moveWritebackEnabled == true ? 1 : 0)
+                ]
+            )
+        }
+    }
+
+    public func leaseValid(
+        sourceId: String,
+        version: String,
+        capabilityFingerprint: String,
+        generation: Int64
+    ) async throws -> Bool {
+        try await database.read {
+            try RemoteLibraryStore.leaseValid(
+                sourceId: sourceId, version: version, capabilityFingerprint: capabilityFingerprint,
+                generation: generation, $0
+            )
+        }
+    }
+
     public func saveSourceRemotePolicy(_ policy: SourceRemotePolicy) async throws {
         try await database.withTransaction { connection in
             try connection.execute(

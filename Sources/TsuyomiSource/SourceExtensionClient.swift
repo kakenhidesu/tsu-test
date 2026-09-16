@@ -84,6 +84,12 @@ public final class SourceExtensionClient: Sendable {
 
     public var manifest: HxpManifest { packageInfo.manifest }
 
+    /// The remote capability set this package was verified with. A website write is only ever
+    /// authorised against a policy row carrying exactly this value.
+    public var remoteCapabilitySetFingerprint: String {
+        ExtensionInstaller.remoteCapabilitySetFingerprint(manifest, packageInfo.publisherFingerprint)
+    }
+
     public func searchRequestUrl(query: String, page: Int = 1) async throws -> String {
         try await requestUrl("buildSearchRequest", [.string(query), .int(page)], stage: "search-network")
     }

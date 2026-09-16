@@ -103,14 +103,23 @@ public struct ExtensionLifecycle: Sendable {
             }
             try await installer.activate(prepared, approval: ExtensionInstallApproval.approve(prepared, consent: consent))
             await registry.close(prepared.candidate.manifest.sourceId)
+            let manifest = prepared.candidate.manifest
+            try await remoteLibrary.synchronizeVerifiedPackage(
+                sourceId: manifest.sourceId.value,
+                publisherFingerprint: prepared.candidate.publisherFingerprint,
+                capabilityFingerprint: installer.remoteCapabilitySetFingerprint(prepared.candidate),
+                approvedOrigin: manifest.remoteApprovedOrigin,
+                preserveWriteback: !prepared.isDowngrade
+            )
             try await remoteLibrary.setSourceAvailability(
-                sourceId: prepared.candidate.manifest.sourceId.value,
-                version: prepared.candidate.manifest.version.original,
+                sourceId: manifest.sourceId.value,
+                version: manifest.version.original,
                 available: true,
-                generation: await nextGeneration(prepared.candidate.manifest.sourceId.value)
+                generation: await nextGeneration(manifest.sourceId.value)
             )
         }
     }
+
 
     /// Removes the package, its runtime lane and its availability, in that order of consequence: the
     /// source goes dormant before the archive leaves, and if the archive cannot be removed the

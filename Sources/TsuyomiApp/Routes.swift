@@ -24,6 +24,7 @@ public enum Route: Hashable, Sendable {
     case sourceHome(SourceId)
     case search(SourceId)
     case remoteLibrary(SourceId)
+    case remoteLibraryFolder(SourceId, String)
     case detail(BookIdentity)
     case reader(BookIdentity, String)
     case verification(SourceId)
@@ -36,7 +37,7 @@ public enum Route: Hashable, Sendable {
     public var root: Route {
         switch self {
         case .browse: return .browse
-        case .sourceHome, .search, .remoteLibrary, .detail, .reader, .verification,
+        case .sourceHome, .search, .remoteLibrary, .remoteLibraryFolder, .detail, .reader, .verification,
              .extensions, .extensionRepository, .publisherKeys:
             return .browse
         }
@@ -46,7 +47,7 @@ public enum Route: Hashable, Sendable {
 
     public var restorationTarget: SourceRestorationTarget? {
         switch self {
-        case .search, .remoteLibrary: return .search
+        case .search, .remoteLibrary, .remoteLibraryFolder: return .search
         case .detail: return .detail
         case .reader: return .reader
         case .browse, .sourceHome, .verification, .extensions, .extensionRepository, .publisherKeys:
@@ -58,7 +59,8 @@ public enum Route: Hashable, Sendable {
     public var sourceId: String? {
         switch self {
         case .browse, .extensions, .extensionRepository, .publisherKeys: return nil
-        case .sourceHome(let id), .search(let id), .remoteLibrary(let id), .verification(let id):
+        case .sourceHome(let id), .search(let id), .remoteLibrary(let id), .verification(let id),
+             .remoteLibraryFolder(let id, _):
             return id.value
         case .detail(let identity): return identity.sourceId
         case .reader(let identity, _): return identity.sourceId

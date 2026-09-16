@@ -8,6 +8,7 @@ import SearchFeature
 import SwiftUI
 import TsuyomiCore
 import TsuyomiProtocol
+import TsuyomiRemoteLibrary
 import TsuyomiSource
 
 /// Each host owns the model for exactly one route. The model is created when the route is pushed and
@@ -56,6 +57,11 @@ struct SearchHost: View {
             coverState: { flow.cover($0) },
             openBook: { identity in Task { await flow.push(.detail(identity)) } }
         )
+        .task {
+            guard let author = flow.pendingAuthorSearch else { return }
+            flow.pendingAuthorSearch = nil
+            await model.submitAuthor(author)
+        }
     }
 }
 
@@ -63,13 +69,16 @@ struct RemoteLibraryHost: View {
     @ObservedObject var flow: SourceFlowController
     @StateObject private var model: RemoteLibraryModel
 
-    init(container: AppContainer, flow: SourceFlowController, sourceId: SourceId) {
+    init(container: AppContainer, flow: SourceFlowController, sourceId: SourceId, targetId: String? = nil) {
         self.flow = flow
         _model = StateObject(
             wrappedValue: RemoteLibraryModel(
                 sourceId: sourceId,
-                registry: container.registry,
-                library: container.library
+                targetId: targetId,
+                coordinator: container.remoteCoordinator,
+                mirror: container.mirror,
+                library: container.library,
+                preferences: container.preferences
             )
         )
     }
@@ -78,7 +87,9 @@ struct RemoteLibraryHost: View {
         RemoteLibraryScreen(
             model: model,
             coverState: { flow.cover($0) },
-            openBook: { identity in Task { await flow.push(.detail(identity)) } }
+            openBook: { identity in Task { await flow.push(.detail(identity)) } },
+            openSignIn: { sourceId in Task { await flow.push(.verification(sourceId)) } },
+            openFolder: { sourceId, targetId in Task { await flow.push(.remoteLibraryFolder(sourceId, targetId)) } }
         )
     }
 }
@@ -89,28 +100,48 @@ struct RemoteLibraryHost: View {
 struct BookHost: View {
     private let coverState: (SourceBookSummary) -> CoverUiState
     private let openChapter: (SourceChapter) -> Void
+    private let openAuthorSearch: (String) -> Void
     @StateObject private var model: BookModel
+    @StateObject private var remote: BookRemoteShelfModel
 
     init(
         container: AppContainer,
         identity: BookIdentity,
         coverState: @escaping (SourceBookSummary) -> CoverUiState,
-        openChapter: @escaping (BookIdentity, SourceChapter) -> Void
+        openChapter: @escaping (BookIdentity, SourceChapter) -> Void,
+        openAuthorSearch: @escaping (BookIdentity, String) -> Void = { _, _ in }
     ) {
         self.coverState = coverState
         self.openChapter = { chapter in openChapter(identity, chapter) }
+        self.openAuthorSearch = { author in openAuthorSearch(identity, author) }
         _model = StateObject(
             wrappedValue: BookModel(
                 identity: identity,
                 registry: container.registry,
                 library: container.library,
-                progressStore: container.progress
+                progressStore: container.progress,
+                collections: container.collections
+            )
+        )
+        _remote = StateObject(
+            wrappedValue: BookRemoteShelfModel(
+                identity: identity,
+                coordinator: container.remoteCoordinator,
+                mirror: container.mirror,
+                remoteLibrary: container.remoteLibrary,
+                preferences: container.preferences
             )
         )
     }
 
     var body: some View {
-        BookScreen(model: model, coverState: coverState, openChapter: openChapter)
+        BookScreen(
+            model: model,
+            remote: remote,
+            coverState: coverState,
+            openChapter: openChapter,
+            openAuthorSearch: openAuthorSearch
+        )
     }
 }
 

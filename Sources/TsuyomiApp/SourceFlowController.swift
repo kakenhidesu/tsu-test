@@ -13,6 +13,8 @@ import TsuyomiSource
 public final class SourceFlowController: ObservableObject {
     @Published public var path: [Route] = []
     @Published public private(set) var covers: SourceCoverProvider?
+    /// An author the book page asked to search for. The search screen takes it exactly once.
+    public var pendingAuthorSearch: String?
     private var coverUpdates: AnyCancellable?
 
     private let container: AppContainer

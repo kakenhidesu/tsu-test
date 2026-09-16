@@ -190,3 +190,9 @@
 - 官方仓库不可移除只可停用（`RepositoryDescriptor.enabled`，`RepositoryStore.setEnabled`）：应用出厂即指向它，停用后既不取回也不展示，重新启用不需要再批准任何东西。
 - 卸载走同一个 `ExtensionMutationGate`：先关运行时通道、再在新一代号下标记来源休眠、最后删归档；删归档失败则以再下一代号恢复原可用性，让期间起跑的远程操作仍然失效。卸载后通知导航弹掉该来源下的所有页面（`SourceFlowController.sourceRemoved`）。冷启动读完信任后做一次休眠对账（归档已不在的来源标记为不可用），已休眠的来源不再推进代号。
 - `fetchStaticResource` 一个 30 秒总时限跨连接、每一跳重定向与正文读取；正文短于 `Content-Length` 视为连接被切断而非较短的文件，丢弃后在同一时限内重读一次。安装失败按阶段归类（`InstallFailure`：下载/校验/仓库/存储/安装/文件访问），只有下载失败可作为同一次安装重试。
+- S5a 网站书架镜像（对齐上游 Phase 4B）：新增服务模块 `TsuyomiRemoteLibrary`，`RemoteLibraryCoordinator` 是屏幕到网站书架的唯一通道。读取（`pull`）整页翻完再一次事务替换镜像（`remote_mirror_*`），本侧强制 5000 条/100 页/游标去重/`complete` 不得带游标/来源身份一致；网站目录（`targets`）按能力存在与否单独签名读取。写入（ADD/REMOVE/MOVE）每次尝试先落 `remote_library_reconciliation` 行，再铸单次令牌，令牌被网关接受时**再次**核对租约（版本、能力指纹、可用代号、通道开启代号）与回执并把行推进到 IN_FLIGHT；令牌接受后失败留 UNRESOLVED 并阻塞该书的其他写入，接受前失败只 CANCELLED。重试确认后关闭整条 UNRESOLVED 链；`仅解除锁定` 只对 MOVE/REMOVE。
+- "通道开启代号"取代 Android 的 session owner generation：`SourceRegistry.openGeneration` 在每次（重新）打开来源通道时递增，是令牌绑定里 `ownerGeneration` 的来源；不再依赖导航层的计数。
+- 来源策略行（`source_remote_policy`）由 `synchronizeVerifiedPackage` 维护：激活时与每次远程操作前同步；发布者指纹或能力集指纹变化即撤销全部回写回执与复制提示回执，降级即使能力集不变也撤销回写回执（`preserveWriteback = !isDowngrade`）。此前 iOS 从未写过这张表。
+- 回写授权按操作逐个 JIT：ADD/MOVE 首次使用时弹出授权，REMOVE 有回执后**每次**仍要确认书名；无已存会话（`VerifiedBrowserSessionStore`）时不发任何写请求，直接要求登录。
+- `SourceBookSummary.remoteTargetId`（≤128 码点）随网站列表落入镜像；未标注的条目归到"默认"目录（名称含"默认"，否则第一个）。网站分组是每来源的展示偏好（`library_website_grouping`），默认关闭，切换从不移动任何数据；目录页是独立路由 `remoteLibraryFolder`。
+- 详情页拆出 `BookRemoteShelfModel`（网站书架部分）与 `BookModel`（本地写入：书架、稍后再读、本地收藏夹）：`更多加入选项`菜单顺序为 稍后再读 → 网站收藏（分组时逐目录、未分组时"全部网站收藏"）→ 本地收藏夹；MOVE/REMOVE 只在右上角溢出菜单。作者名可点击，一次性交给搜索页做作者检索（`SearchModel.submitAuthor`，输入即清除作者模式）。

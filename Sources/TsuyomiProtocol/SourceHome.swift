@@ -6,21 +6,30 @@ public struct SourceBookSummary: Hashable, Sendable {
     public let author: String?
     public let coverUrl: String?
     public let canonicalUrl: String
+    /// The website's own folder this book was listed under, when the listing says (`hxp-host-api-v1`
+    /// remote library items). Absent means the site did not say, not that the book is unfiled.
+    public let remoteTargetId: String?
 
     public init(
         identity: BookIdentity,
         title: String,
         author: String?,
         coverUrl: String?,
-        canonicalUrl: String
+        canonicalUrl: String,
+        remoteTargetId: String? = nil
     ) throws {
         guard Grammar.hasCodePoints(title, in: 1...512) else { throw ProtocolError.invalidBookTitle }
         if let author, !Grammar.hasCodePoints(author, in: 1...256) { throw ProtocolError.invalidAuthor }
+        if let remoteTargetId, !Grammar.hasCodePoints(remoteTargetId, in: 1...128)
+            || remoteTargetId.allSatisfy(\.isWhitespace) {
+            throw ProtocolError.invalidRemoteTarget
+        }
         self.identity = identity
         self.title = title
         self.author = author
         self.coverUrl = coverUrl
         self.canonicalUrl = canonicalUrl
+        self.remoteTargetId = remoteTargetId
     }
 }
 

@@ -3,6 +3,7 @@
 import Foundation
 import TsuyomiCore
 import TsuyomiProtocol
+import TsuyomiRemoteLibrary
 import TsuyomiSource
 
 /// The single object graph, built once at launch by constructor injection. There is no container
@@ -14,6 +15,9 @@ public final class AppContainer: ObservableObject {
     public let library: LibraryRepository
     public let progress: ReadingProgressStore
     public let remoteLibrary: RemoteLibraryStore
+    public let mirror: RemoteMirrorStore
+    public let directActions = DirectActionTokenRegistry()
+    public let remoteCoordinator: RemoteLibraryCoordinator
     public let credentials: SourceCredentialStore
     public let sessions: VerifiedBrowserSessionStore
     public let collections: CollectionStore
@@ -45,12 +49,14 @@ public final class AppContainer: ObservableObject {
         library = LibraryRepository(database: database)
         progress = ReadingProgressStore(database: database)
         remoteLibrary = RemoteLibraryStore(database: database)
+        mirror = RemoteMirrorStore(database: database)
         credentials = try SourceCredentialStore(roots: roots)
         sessions = VerifiedBrowserSessionStore(credentials: credentials)
         collections = CollectionStore(database: database)
         transfers = TransferRepository(database: database)
         gateway = HostNetworkGateway(
-            transport: URLSessionHostHttpTransport(userAgent: AppContainer.userAgent)
+            transport: URLSessionHostHttpTransport(userAgent: AppContainer.userAgent),
+            directActionTokens: directActions
         )
         let extensionFiles = try QuotaFileStore(
             roots: roots,
@@ -72,6 +78,14 @@ public final class AppContainer: ObservableObject {
             store: installedExtensions,
             gateway: gateway,
             sessions: sessions
+        )
+        remoteCoordinator = RemoteLibraryCoordinator(
+            registry: registry,
+            remoteLibrary: remoteLibrary,
+            mirror: mirror,
+            library: library,
+            sessions: sessions,
+            tokens: directActions
         )
         preferences = AppPreferences(defaults: defaults)
         snapshots = SourceFlowSnapshotStore(defaults: defaults)

@@ -92,3 +92,18 @@ extension ExtensionInstaller {
             .joined(separator: "\u{0}")
     }
 }
+
+extension HxpManifest {
+    /// The origin a website write is authorised against: the one the add policy names, else the read
+    /// policy's, else the first network origin the package declares.
+    public var remoteApprovedOrigin: String {
+        let remote = capabilities.remoteLibrary
+        if let origin = remote.policies[.add]?.origin ?? remote.policies[.read]?.origin {
+            return origin.canonical
+        }
+        return capabilities.network.origins
+            .map(\.canonical)
+            .sorted { CanonicalOrder.precedes($0, $1) }
+            .first ?? ""
+    }
+}

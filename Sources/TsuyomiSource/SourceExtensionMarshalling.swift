@@ -172,12 +172,19 @@ enum SourceExtensionMarshalling {
               let title = value.string("title"), let canonicalUrl = value.string("canonicalUrl") else {
             throw ProtocolError.invalidBookTitle
         }
+        let remoteTargetId: String?
+        switch value["remoteTargetId"] {
+        case nil, .null?: remoteTargetId = nil
+        case .string(let targetId)?: remoteTargetId = targetId
+        default: throw ProtocolError.invalidRemoteTarget
+        }
         return try SourceBookSummary(
             identity: try BookIdentity(sourceId: sourceId, remoteBookId: remoteBookId),
             title: title,
             author: value.string("author"),
             coverUrl: value.string("coverUrl"),
-            canonicalUrl: canonicalUrl
+            canonicalUrl: canonicalUrl,
+            remoteTargetId: remoteTargetId
         )
     }
 
