@@ -183,3 +183,4 @@
 - 发布者钉住跨卸载保留：`InstalledExtensionStore` 在激活时写 `pins/<sourceId>.json`（发布者指纹 + 归档摘要），卸载只删归档不删钉；没有已装归档时，不同发布者的同一来源包仍被拒（`KEY_ROTATION_NOT_AUTHORIZED`），除非官方根签名的 `legacyMigration` 恰好命中钉住的指纹与摘要。
 - 非官方发布者的"精确执行授权"由既有安装审批承担：`ExtensionInstallApproval` 已绑定包摘要、发布者指纹与能力授权指纹，且只有被激活的那份归档会被运行时读取，不另建授权表。
 - 移植协议新增的 Detail `lastUpdatedDate`（`hxp-host-api-v1` §Optional Detail metadata）：`SourceBookDetail.lastUpdatedDate` 只接受合法的 `YYYY-MM-DD`（`Grammar.isCalendarDate`），`null`/缺省为无，其他类型视为契约违规；书籍页在状态旁显示"更新于"。作者搜索入口（`buildAuthorSearchRequest`）、`update-check-v2` 解析器模型与 `tsuyomi-transfer` v2/v3 本轮未移植，见 ACCEPTANCE 的待办。
+- 取消单文件 400 行上限（用户 2026-09-16 决定：这是上游规范的要求，不再执行）：`RepositoryHygieneTests` 删除行数检查，此后不为凑行数拆文件；文件按职责划分。
