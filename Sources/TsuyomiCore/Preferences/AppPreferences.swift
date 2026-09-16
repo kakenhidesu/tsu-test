@@ -86,7 +86,12 @@ public final class AppPreferences: ObservableObject {
             flow: reader.flow == .scroll ? "scroll" : "paged",
             fontScale: reader.fontSize / 18.0,
             lineHeight: reader.lineHeight,
-            theme: reader.theme.transferName
+            theme: reader.theme.transferName,
+            horizontalMargin: reader.horizontalMargin.clamped(to: PortableReaderPreferences.horizontalMarginRange),
+            paragraphSpacing: reader.paragraphSpacing.clamped(to: PortableReaderPreferences.paragraphSpacingRange),
+            lockPortrait: reader.lockPortrait,
+            progressVisible: reader.progressVisible,
+            keepAwake: reader.keepAwake
         )
     }
 
@@ -106,6 +111,15 @@ public final class AppPreferences: ObservableObject {
             if let lineHeight = preferences.lineHeight, (0.8...3.0).contains(lineHeight) {
                 updated.lineHeight = lineHeight.clamped(to: ReaderSettings.lineHeightRange)
             }
+            if let margin = preferences.horizontalMargin {
+                updated.horizontalMargin = margin.clamped(to: ReaderSettings.horizontalMarginRange)
+            }
+            if let spacing = preferences.paragraphSpacing {
+                updated.paragraphSpacing = spacing.clamped(to: ReaderSettings.paragraphSpacingRange)
+            }
+            preferences.lockPortrait.map { updated.lockPortrait = $0 }
+            preferences.progressVisible.map { updated.progressVisible = $0 }
+            preferences.keepAwake.map { updated.keepAwake = $0 }
             if let theme = preferences.theme, let parsed = ReaderTheme(transferName: theme) {
                 updated.theme = parsed
             }

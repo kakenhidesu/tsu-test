@@ -2,7 +2,13 @@
 
 import Foundation
 
+/// `tsuyomi-transfer` v1, v2 and v3 (transfer-v1.md, transfer-v2.md). Each version is read with its
+/// own closed field set: a later field never widens an earlier document, and exports always emit the
+/// current version.
 public enum TransferCodec {
+    public static let currentVersion = 3
+    static let maximumCompletedChapters = 20_000
+
     public static func parse(_ bytes: Data) -> ImportParseResult {
         if bytes.count > maximumTransferBytes { return .fatal(safeCode: "transfer-too-large") }
         guard String(data: bytes, encoding: .utf8) != nil else { return .fatal(safeCode: "invalid-utf8") }
@@ -22,7 +28,7 @@ public enum TransferCodec {
         let orderedShelves = try canonicalShelves(snapshot.shelves)
         var root: [String: JSONValue] = [
             "format": .string("tsuyomi-transfer"),
-            "version": .int(1),
+            "version": .int(currentVersion),
             "createdAt": .string(ProtocolTimestamp.format(snapshot.createdAt)),
             "library": .array(orderedBooks.map(bookJson)),
             "shelves": .array(orderedShelves.map(shelfJson))
@@ -55,7 +61,9 @@ public enum TransferCodec {
     }
 
     private static func parseTransfer(_ root: [String: JSONValue]) -> ImportParseResult {
-        guard root.int("version") == 1 else { return .fatal(safeCode: "unsupported-version") }
+        guard let version = root.int("version"), (1...currentVersion).contains(version) else {
+            return .fatal(safeCode: "unsupported-version")
+        }
         guard root.hasOnly(["format", "version", "createdAt", "library", "shelves", "preferences"]) else {
             return .fatal(safeCode: "unknown-root-field")
         }
@@ -67,11 +75,14 @@ public enum TransferCodec {
         var books: [TransferBook] = []
         var seenBooks = Set<BookIdentity>()
         for item in library {
-            guard let object = item.objectValue, let book = try? parseBook(object) else {
+            guard let object = item.objectValue, let book = try? parseBook(object, version: version) else {
                 return .fatal(safeCode: "invalid-book")
             }
             guard seenBooks.insert(book.identity).inserted else {
                 return .fatal(safeCode: "duplicate-book-identity")
+            }
+            guard book.localPin || book.shelfIds.isEmpty else {
+                return .fatal(safeCode: "unpinned-shelf-membership")
             }
             books.append(book)
         }
@@ -99,7 +110,7 @@ public enum TransferCodec {
             }
             if let readerRaw = preferencesObject["reader"] {
                 guard let readerObject = readerRaw.objectValue,
-                      let parsed = try? parseReaderPreferences(readerObject) else {
+                      let parsed = try? parseReaderPreferences(readerObject, version: version) else {
                     return .fatal(safeCode: "invalid-reader-preferences")
                 }
                 preferences = parsed
@@ -125,8 +136,8 @@ public enum TransferCodec {
         )
     }
 
-    private static func parseBook(_ value: [String: JSONValue]) throws -> TransferBook {
-        guard value.hasOnly(bookFields) else { throw ProtocolError.unknownField("book") }
+    private static func parseBook(_ value: [String: JSONValue], version: Int) throws -> TransferBook {
+        guard value.hasOnly(bookFields(version)) else { throw ProtocolError.unknownField("book") }
         guard let identityObject = value.object("identity"),
               Set(identityObject.keys) == ["sourceId", "remoteBookId"],
               let sourceId = identityObject.string("sourceId"),
@@ -144,6 +155,13 @@ public enum TransferCodec {
         guard TransferBook.statuses.contains(status) else { throw ProtocolError.unknownField("status") }
         let rating = value.double("rating")
         if let rating, !(rating >= 0 && rating <= 5) { throw ProtocolError.unknownField("rating") }
+        let localPin: Bool
+        if version >= 3 {
+            guard let pin = value.bool("localPin") else { throw ProtocolError.missingField("localPin") }
+            localPin = pin
+        } else {
+            localPin = true
+        }
         return TransferBook(
             identity: identity,
             title: title,
@@ -156,10 +174,31 @@ public enum TransferCodec {
             shelfIds: try stringSet(value, "shelfIds", maximumItems: 512, maximumCodePoints: 128),
             rating: rating,
             readLater: value.bool("readLater") ?? false,
+            localPin: localPin,
             addedAt: value.instant("addedAt"),
             updatedAt: updatedAt,
-            progress: try value.object("progress").map(parseProgress)
+            progress: try value.object("progress").map(parseProgress),
+            completedChapterIds: try completedChapterIds(value)
         )
+    }
+
+    /// An explicit, bounded list of chapter ids: nothing is inferred from ordering or progress, and
+    /// a blank, numeric, duplicated or object element invalidates the record.
+    private static func completedChapterIds(_ value: [String: JSONValue]) throws -> Set<String> {
+        guard let raw = value["completedChapterIds"] else { return [] }
+        guard let items = raw.arrayValue, items.count <= maximumCompletedChapters else {
+            throw ProtocolError.unknownField("completedChapterIds")
+        }
+        var ids: [String] = []
+        for item in items {
+            guard let id = item.stringValue, Grammar.hasCodePoints(id, in: 1...512),
+                  id.contains(where: { !$0.isWhitespace }) else {
+                throw ProtocolError.unknownField("completedChapterIds")
+            }
+            ids.append(id)
+        }
+        guard ids.hasDistinctElements else { throw ProtocolError.unknownField("completedChapterIds") }
+        return Set(ids)
     }
 
     private static func parseProgress(_ value: [String: JSONValue]) throws -> TransferProgress {
@@ -209,10 +248,11 @@ public enum TransferCodec {
         return TransferShelf(id: id, name: name, parentId: parent, position: position)
     }
 
-    private static func parseReaderPreferences(_ value: [String: JSONValue]) throws -> PortableReaderPreferences {
-        guard value.hasOnly(["flow", "fontScale", "lineHeight", "theme"]) else {
-            throw ProtocolError.unknownField("reader")
-        }
+    private static func parseReaderPreferences(
+        _ value: [String: JSONValue],
+        version: Int
+    ) throws -> PortableReaderPreferences {
+        guard value.hasOnly(readerFields(version)) else { throw ProtocolError.unknownField("reader") }
         func text(_ name: String, allowed: Set<String>) throws -> String? {
             guard let element = value[name] else { return nil }
             guard let content = element.stringValue, allowed.contains(content) else {
@@ -227,11 +267,23 @@ public enum TransferCodec {
             }
             return content
         }
+        func flag(_ name: String) throws -> Bool? {
+            guard let element = value[name] else { return nil }
+            guard let content = element.boolValue else { throw ProtocolError.unknownField(name) }
+            return content
+        }
         return PortableReaderPreferences(
             flow: try text("flow", allowed: PortableReaderPreferences.flows),
             fontScale: try number("fontScale", range: 0.5...3.0),
             lineHeight: try number("lineHeight", range: 0.8...3.0),
-            theme: try text("theme", allowed: PortableReaderPreferences.themes)
+            theme: try text("theme", allowed: PortableReaderPreferences.themes),
+            horizontalMargin: try number("horizontalMargin", range: PortableReaderPreferences.horizontalMarginRange),
+            paragraphSpacing: try number("paragraphSpacing", range: PortableReaderPreferences.paragraphSpacingRange),
+            lockPortrait: try flag("lockPortrait"),
+            progressVisible: try flag("progressVisible"),
+            immersive: try flag("immersive"),
+            keepAwake: try flag("keepAwake"),
+            volumePaging: try flag("volumePaging")
         )
     }
 
@@ -253,8 +305,10 @@ public enum TransferCodec {
         putStringSet(&fields, "shelfIds", book.shelfIds)
         book.rating.map { fields["rating"] = .double($0) }
         if book.readLater { fields["readLater"] = .bool(true) }
+        fields["localPin"] = .bool(book.localPin)
         book.addedAt.map { fields["addedAt"] = .string(ProtocolTimestamp.format($0)) }
         book.progress.map { fields["progress"] = progressJson($0) }
+        fields["completedChapterIds"] = .array(CanonicalOrder.sorted(book.completedChapterIds).map { .string($0) })
         return .object(fields)
     }
 
@@ -284,6 +338,13 @@ public enum TransferCodec {
         preferences.fontScale.map { fields["fontScale"] = .double($0) }
         preferences.lineHeight.map { fields["lineHeight"] = .double($0) }
         preferences.theme.map { fields["theme"] = .string($0) }
+        preferences.horizontalMargin.map { fields["horizontalMargin"] = .double($0) }
+        preferences.paragraphSpacing.map { fields["paragraphSpacing"] = .double($0) }
+        preferences.lockPortrait.map { fields["lockPortrait"] = .bool($0) }
+        preferences.progressVisible.map { fields["progressVisible"] = .bool($0) }
+        preferences.immersive.map { fields["immersive"] = .bool($0) }
+        preferences.keepAwake.map { fields["keepAwake"] = .bool($0) }
+        preferences.volumePaging.map { fields["volumePaging"] = .bool($0) }
         return .object(fields)
     }
 
@@ -331,10 +392,26 @@ public enum TransferCodec {
         return value
     }
 
-    private static let bookFields: Set<String> = [
-        "identity", "title", "authors", "canonicalUrl", "coverUrl", "status", "remoteTags", "localTags",
-        "shelfIds", "rating", "readLater", "addedAt", "updatedAt", "progress"
-    ]
+    private static func bookFields(_ version: Int) -> Set<String> {
+        var fields: Set<String> = [
+            "identity", "title", "authors", "canonicalUrl", "coverUrl", "status", "remoteTags", "localTags",
+            "shelfIds", "rating", "readLater", "addedAt", "updatedAt", "progress"
+        ]
+        if version >= 2 { fields.insert("completedChapterIds") }
+        if version >= 3 { fields.insert("localPin") }
+        return fields
+    }
+
+    private static func readerFields(_ version: Int) -> Set<String> {
+        var fields: Set<String> = ["flow", "fontScale", "lineHeight", "theme"]
+        if version >= 2 {
+            fields.formUnion([
+                "horizontalMargin", "paragraphSpacing", "lockPortrait", "progressVisible", "immersive",
+                "keepAwake", "volumePaging"
+            ])
+        }
+        return fields
+    }
     private static let progressFields: Set<String> = [
         "chapterId", "textAnchor", "characterOffset", "chapterProgress", "bookProgress", "updatedAt"
     ]

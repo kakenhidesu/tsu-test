@@ -14,20 +14,51 @@ public enum ImportSeverity: String, Sendable, Codable, CaseIterable {
     case conflict = "CONFLICT"
 }
 
+/// The reader settings `tsuyomi-transfer` carries. v1 knew the first four; v2 added the layout and
+/// behaviour fields, which a host without the matching control (volume keys, an immersive mode)
+/// carries through unchanged rather than dropping.
 public struct PortableReaderPreferences: Hashable, Sendable {
     public let flow: String?
     public let fontScale: Double?
     public let lineHeight: Double?
     public let theme: String?
+    public let horizontalMargin: Double?
+    public let paragraphSpacing: Double?
+    public let lockPortrait: Bool?
+    public let progressVisible: Bool?
+    public let immersive: Bool?
+    public let keepAwake: Bool?
+    public let volumePaging: Bool?
 
     public static let flows: Set<String> = ["scroll", "paged"]
     public static let themes: Set<String> = ["paper", "warmGray", "nightInk", "black", "inkGreen"]
+    public static let horizontalMarginRange: ClosedRange<Double> = 12...40
+    public static let paragraphSpacingRange: ClosedRange<Double> = 0...32
 
-    public init(flow: String? = nil, fontScale: Double? = nil, lineHeight: Double? = nil, theme: String? = nil) {
+    public init(
+        flow: String? = nil,
+        fontScale: Double? = nil,
+        lineHeight: Double? = nil,
+        theme: String? = nil,
+        horizontalMargin: Double? = nil,
+        paragraphSpacing: Double? = nil,
+        lockPortrait: Bool? = nil,
+        progressVisible: Bool? = nil,
+        immersive: Bool? = nil,
+        keepAwake: Bool? = nil,
+        volumePaging: Bool? = nil
+    ) {
         self.flow = flow
         self.fontScale = fontScale
         self.lineHeight = lineHeight
         self.theme = theme
+        self.horizontalMargin = horizontalMargin
+        self.paragraphSpacing = paragraphSpacing
+        self.lockPortrait = lockPortrait
+        self.progressVisible = progressVisible
+        self.immersive = immersive
+        self.keepAwake = keepAwake
+        self.volumePaging = volumePaging
     }
 }
 
@@ -81,9 +112,15 @@ public struct TransferBook: Hashable, Sendable {
     public let shelfIds: Set<String>
     public let rating: Double?
     public let readLater: Bool
+    /// v3: whether the record is on the local shelf. A retained record (`false`) keeps its metadata,
+    /// tags, rating, read-later state, progress and completion without a shelf pin, and therefore
+    /// without any manual collection membership.
+    public let localPin: Bool
     public let addedAt: Date?
     public let updatedAt: Date
     public let progress: TransferProgress?
+    /// v2: chapters the reader finished, independent of the resume locator.
+    public let completedChapterIds: Set<String>
 
     public init(
         identity: BookIdentity,
@@ -97,9 +134,11 @@ public struct TransferBook: Hashable, Sendable {
         shelfIds: Set<String> = [],
         rating: Double? = nil,
         readLater: Bool = false,
+        localPin: Bool = true,
         addedAt: Date? = nil,
         updatedAt: Date,
-        progress: TransferProgress? = nil
+        progress: TransferProgress? = nil,
+        completedChapterIds: Set<String> = []
     ) {
         self.identity = identity
         self.title = title
@@ -112,9 +151,11 @@ public struct TransferBook: Hashable, Sendable {
         self.shelfIds = shelfIds
         self.rating = rating
         self.readLater = readLater
+        self.localPin = localPin
         self.addedAt = addedAt
         self.updatedAt = updatedAt
         self.progress = progress
+        self.completedChapterIds = completedChapterIds
     }
 }
 
