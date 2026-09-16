@@ -142,7 +142,7 @@ public struct ExtensionsScreen: View {
             TextField("订阅链接", text: $link, axis: .vertical)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
-                .lineLimit(2...5)
+                .lineLimit(1...4)
                 .focused($linkFocused)
             Button("检查链接") {
                 linkFocused = false
