@@ -97,6 +97,8 @@ public enum MediaLoadError: Error, Equatable, Sendable {
         case .invalidUrl: return .invalidReference
         case .originNotGranted: return .originNotGranted
         case .httpFailure, .redirectLimit: return .network
+        case .responseTooLarge, .unsupportedContent: return .responseRejected
+        case .decodeFailed: return .decodeFailed
         }
     }
 
@@ -105,8 +107,6 @@ public enum MediaLoadError: Error, Equatable, Sendable {
         case .httpFailure(let detail): return detail
         case .redirectLimit: return "redirect-limit"
         case .invalidUrl, .originNotGranted, .responseTooLarge, .unsupportedContent, .decodeFailed: return nil
-        case .responseTooLarge, .unsupportedContent: return .responseRejected
-        case .decodeFailed: return .decodeFailed
         }
     }
 }
