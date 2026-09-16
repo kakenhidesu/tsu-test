@@ -71,7 +71,7 @@ public struct AppRootView: View {
                 credentials: container.credentials
             )
         )
-        _market = StateObject(wrappedValue: MarketHolder(container: container))
+        _market = StateObject(wrappedValue: MarketHolder(container: container, flow: flow))
     }
 
     public var body: some View {

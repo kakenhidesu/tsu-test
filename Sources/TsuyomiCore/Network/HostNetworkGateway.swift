@@ -40,11 +40,16 @@ public actor HostNetworkGateway {
     /// bytes are still bound by the digest the caller checks afterwards.
     public func fetchStaticResource(url: URL, maximumBytes: Int) async throws -> Data {
         guard maximumBytes > 0 else { throw HostNetworkException(.invalidRequest) }
+        let deadline = Date().addingTimeInterval(HostNetworkGateway.staticFetchDeadline)
         var current = url
-        for redirectCount in 0...HostResponseDecoding.maximumRedirects {
+        var retriedTruncation = false
+        var redirectCount = 0
+        while true {
             guard current.scheme?.lowercased() == "https", current.user == nil, current.password == nil else {
                 throw HostNetworkException(.invalidRequest)
             }
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else { throw HostNetworkException(.timeout) }
             let response = try await execute(
                 HostHttpRequest(
                     url: current,
@@ -53,13 +58,14 @@ public actor HostNetworkGateway {
                     decode: .auto,
                     body: nil,
                     referrer: nil,
-                    timeoutMs: 30_000,
+                    timeoutMs: Int(remaining * 1000),
                     maximumResponseBytes: maximumBytes
                 )
             )
             guard response.finalUrl == current else { throw HostNetworkException(.redirectDisallowed) }
             if (300...399).contains(response.status) {
-                guard redirectCount < HostResponseDecoding.maximumRedirects else {
+                redirectCount += 1
+                guard redirectCount <= HostResponseDecoding.maximumRedirects else {
                     throw HostNetworkException(.redirectLimit)
                 }
                 guard let location = header(response.headers, "location"),
@@ -71,10 +77,21 @@ public actor HostNetworkGateway {
             }
             guard response.status == 200 else { throw HostNetworkException(.transport) }
             guard response.bytes.count <= maximumBytes else { throw HostNetworkException(.responseLimit) }
+            // A body shorter than the server declared is a cut connection, not a shorter file: the
+            // partial bytes are dropped and the same URL is read once more inside the same deadline.
+            if let declared = header(response.headers, "content-length").flatMap(Int.init),
+               declared > response.bytes.count {
+                guard !retriedTruncation else { throw HostNetworkException(.transport) }
+                retriedTruncation = true
+                continue
+            }
             return response.bytes
         }
-        throw HostNetworkException(.redirectLimit)
     }
+
+    /// One finite deadline spans connection, every redirect and the body read of a catalog or
+    /// package fetch, so a stalled mirror cannot hold an install open indefinitely.
+    static let staticFetchDeadline: TimeInterval = 30
 
     /// Fetches one display image through the same source/version cookie and verified-identity
     /// transport as source documents. Callers provide only a granted HTTPS URL and canonical referrer.

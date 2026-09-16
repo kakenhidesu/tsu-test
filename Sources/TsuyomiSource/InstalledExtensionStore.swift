@@ -12,6 +12,9 @@ public enum ExtensionInstallError: String, Error, Equatable, Sendable, CaseItera
     case keyRotationNotAuthorized = "KEY_ROTATION_NOT_AUTHORIZED"
     case capabilityGrantRequired = "CAPABILITY_GRANT_REQUIRED"
     case installedPackageInvalid = "INSTALLED_PACKAGE_INVALID"
+    case packageGrantRequired = "PACKAGE_GRANT_REQUIRED"
+    case migrationConsentRequired = "MIGRATION_CONSENT_REQUIRED"
+    case busy = "EXTENSION_MUTATION_BUSY"
 }
 
 /// The publisher a source was last activated under, kept after the archive is gone so that a

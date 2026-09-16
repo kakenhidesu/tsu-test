@@ -54,6 +54,20 @@ public actor RepositoryStore {
         try await persist()
     }
 
+    public func setEnabled(_ repositoryId: String, enabled: Bool) async throws {
+        await load()
+        guard let current = active[repositoryId] else { return }
+        active[repositoryId] = RepositoryDescriptor(
+            repositoryId: current.repositoryId,
+            indexUrl: current.indexUrl,
+            rootKeyId: current.rootKeyId,
+            rootPublicKey: current.rootPublicKey,
+            addedAt: current.addedAt,
+            enabled: enabled
+        )
+        try await persist()
+    }
+
     /// Only bytes that already passed `RepositoryIndexCodec.decode` may be cached; the cached
     /// sequence and digest are later trusted without a second verification.
     public func cache(_ repositoryId: String, indexBytes: Data) async throws {
@@ -91,7 +105,8 @@ public actor RepositoryStore {
                 indexUrl: indexUrl,
                 rootKeyId: rootKeyId,
                 rootPublicKey: rootPublicKey,
-                addedAt: addedAt
+                addedAt: addedAt,
+                enabled: object.bool("enabled") ?? true
             )
         }
         return result
@@ -115,7 +130,8 @@ public actor RepositoryStore {
                         "indexUrl": .string(descriptor.indexUrl.absoluteString),
                         "rootKeyId": .string(descriptor.rootKeyId),
                         "rootPublicKey": .string(RepositoryIndexCodec.hex(descriptor.rootPublicKey)),
-                        "addedAt": .string(ProtocolTimestamp.format(descriptor.addedAt))
+                        "addedAt": .string(ProtocolTimestamp.format(descriptor.addedAt)),
+                        "enabled": .bool(descriptor.enabled)
                     ])
                 }
         )

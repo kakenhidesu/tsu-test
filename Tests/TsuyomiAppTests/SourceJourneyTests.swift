@@ -192,20 +192,20 @@ struct FixtureWorld {
         #else
         throw XCTSkip("The fixture publisher is only compiled into DEBUG builds")
         #endif
-        let store = InstalledExtensionStore(
-            files: try QuotaFileStore(
-                roots: roots,
-                root: .extensions,
-                namespace: "installed-extensions",
-                quota: StorageQuota(maximumBytes: 64 * 1024 * 1024, maximumEntries: 64)
-            )
+        let files = try QuotaFileStore(
+            roots: roots,
+            root: .extensions,
+            namespace: "installed-extensions",
+            quota: StorageQuota(maximumBytes: 64 * 1024 * 1024, maximumEntries: 64)
         )
+        let store = InstalledExtensionStore(files: files)
         let installer = ExtensionInstaller(
             verifier: HxpArchiveVerifier(
                 publisherKeys: keys,
                 hostApiVersion: try SemanticVersion(AppContainer.hostApiVersion)
             ),
-            store: store
+            store: store,
+            grants: PackageGrantStore(files: files)
         )
         let prepared = try await installer.prepare(
             archiveBytes: try JourneyFixtures.data("wenku8-fixture.hxp")

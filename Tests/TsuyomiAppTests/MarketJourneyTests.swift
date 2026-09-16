@@ -55,6 +55,13 @@ final class MarketJourneyTests: XCTestCase {
         XCTAssertNil(detail.failureCode)
         let prepared = try XCTUnwrap(detail.pendingInstall)
         XCTAssertNil(prepared.active)
+        XCTAssertTrue(prepared.requiresNonOfficialConsent, "a user-added publisher's package needs explicit consent")
+        await detail.approvePendingInstall()
+        XCTAssertEqual(detail.failureCode, ExtensionInstallError.packageGrantRequired.rawValue)
+        XCTAssertTrue(try await world.registry.installedSources().isEmpty, "no consent, no archive on disk")
+
+        await detail.prepare(cached.rows[0].package)
+        detail.installConsent = ExtensionInstallConsent(nonOfficialExecution: true)
         await detail.approvePendingInstall()
         XCTAssertNil(detail.failureCode)
         XCTAssertNil(detail.pendingInstall, "an approved install must release the sheet it was presented from")
@@ -74,6 +81,7 @@ final class MarketJourneyTests: XCTestCase {
         await detail.prepare(updated.rows[0].package)
         XCTAssertNil(detail.failureCode)
         XCTAssertNotNil(try XCTUnwrap(detail.pendingInstall).active)
+        detail.installConsent = ExtensionInstallConsent(nonOfficialExecution: true)
         await detail.approvePendingInstall()
         let afterUpdate = try await world.registry.installedSources()
         XCTAssertEqual(afterUpdate.map(\.version.original), ["99.0.0"])
@@ -127,6 +135,7 @@ final class MarketJourneyTests: XCTestCase {
         await detail.refresh()
         guard case .content(let listing) = detail.state else { return XCTFail("no catalog") }
         await detail.prepare(listing.rows[0].package)
+        detail.installConsent = ExtensionInstallConsent(nonOfficialExecution: true)
         await detail.approvePendingInstall()
 
         await world.model.removeRepository(detail.descriptor.repositoryId)
@@ -168,6 +177,7 @@ final class MarketJourneyTests: XCTestCase {
         await detail.loadCached()
         guard case .content(let listing) = detail.state else { return XCTFail("no catalog") }
         await detail.prepare(listing.rows[0].package)
+        detail.installConsent = ExtensionInstallConsent(nonOfficialExecution: true)
         await detail.approvePendingInstall()
 
         let successor = HxpTestArchive.successor
@@ -220,7 +230,7 @@ final class MarketJourneyTests: XCTestCase {
         }
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
         let prepared = try await world.installer.prepare(archiveBytes: original)
-        try await world.lifecycle.activate(prepared)
+        try await world.lifecycle.activate(prepared, consent: ExtensionInstallConsent(nonOfficialExecution: true))
         try await world.lifecycle.uninstall(prepared.candidate.manifest.sourceId)
         let installed = try await world.registry.installedSources()
         XCTAssertTrue(installed.isEmpty)

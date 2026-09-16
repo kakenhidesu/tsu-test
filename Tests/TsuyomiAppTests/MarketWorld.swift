@@ -46,14 +46,21 @@ final class FakeRepositoryHost: HostHttpTransport {
 }
 
 @MainActor
+final class RemovedSourceRecorder {
+    var ids: [SourceId] = []
+}
+
+@MainActor
 struct MarketWorld {
     static let indexUrl = "https://repo.example.org/tsuyomi/index-v1.json"
 
     let host = FakeRepositoryHost()
+    let removedSources = RemovedSourceRecorder()
     let model: ExtensionsModel
     let registry: SourceRegistry
     let repositories: RepositoryStore
     let trust: PublisherTrustStore
+    let grants: PackageGrantStore
     let remoteLibrary: RemoteLibraryStore
     let installer: ExtensionInstaller
     let lifecycle: ExtensionLifecycle
@@ -72,12 +79,14 @@ struct MarketWorld {
         )
         let installed = InstalledExtensionStore(files: files)
         trust = PublisherTrustStore(files: files)
+        grants = PackageGrantStore(files: files)
         repositories = RepositoryStore(files: files)
         hostApi = try SemanticVersion(AppContainer.hostApiVersion)
         let gateway = HostNetworkGateway(transport: host)
         installer = ExtensionInstaller(
             verifier: HxpArchiveVerifier(publisherKeys: trust, hostApiVersion: hostApi),
-            store: installed
+            store: installed,
+            grants: grants
         )
         registry = SourceRegistry(
             installer: installer,
@@ -91,6 +100,8 @@ struct MarketWorld {
             registry: registry,
             remoteLibrary: remoteLibrary,
             trust: trust,
+            grants: grants,
+            gate: ExtensionMutationGate(),
             hostApiVersion: hostApi
         )
         model = ExtensionsModel(
@@ -98,7 +109,8 @@ struct MarketWorld {
             repositories: repositories,
             trust: trust,
             client: client,
-            lifecycle: lifecycle
+            lifecycle: lifecycle,
+            sourceRemoved: { [removedSources] in removedSources.ids.append($0) }
         )
     }
 

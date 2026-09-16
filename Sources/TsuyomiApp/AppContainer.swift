@@ -22,6 +22,8 @@ public final class AppContainer: ObservableObject {
     public let registry: SourceRegistry
     public let installedExtensions: InstalledExtensionStore
     public let trust: PublisherTrustStore
+    public let grants: PackageGrantStore
+    public let mutationGate = ExtensionMutationGate()
     public let repositories: RepositoryStore
     public let hostApi: SemanticVersion
     public let preferences: AppPreferences
@@ -58,12 +60,14 @@ public final class AppContainer: ObservableObject {
         )
         installedExtensions = InstalledExtensionStore(files: extensionFiles)
         trust = PublisherTrustStore(files: extensionFiles)
+        grants = PackageGrantStore(files: extensionFiles)
         repositories = RepositoryStore(files: extensionFiles)
         hostApi = try SemanticVersion(AppContainer.hostApiVersion)
         registry = SourceRegistry(
             installer: ExtensionInstaller(
                 verifier: HxpArchiveVerifier(publisherKeys: trust, hostApiVersion: hostApi),
-                store: installedExtensions
+                store: installedExtensions,
+                grants: grants
             ),
             store: installedExtensions,
             gateway: gateway,
@@ -94,11 +98,16 @@ public final class AppContainer: ObservableObject {
         }
     }
 
+    /// Trust is followed by one reconciliation: every source whose archive is gone becomes dormant,
+    /// once, so a cold start after a deletion never leaves a source that looks available.
     private func readTrust() async {
         await trust.load()
+        await grants.load()
         if !preferences.officialRepositorySeeded, await seedOfficialRepository() {
             preferences.markOfficialRepositorySeeded()
         }
+        let installed = Set(await installedExtensions.installedSourceIds().map(\.value))
+        try? await remoteLibrary.markMissingSourcesUnavailable(installed: installed)
         #if DEBUG
         if let key = try? Phase2TestPublisher.key(), trust.resolve(keyId: key.keyId) == nil {
             try? await trust.approve(

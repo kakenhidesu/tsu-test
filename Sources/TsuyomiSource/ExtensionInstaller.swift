@@ -27,6 +27,24 @@ public struct PreparedExtensionInstall: Sendable {
     public let remoteCapabilitySetFingerprint: String
     public let isDowngrade: Bool
     public let policyOutcome: ExtensionPolicyOutcome
+    /// A user-added publisher's package runs in this process only after the reader says so, once,
+    /// for exactly this archive.
+    public let requiresNonOfficialConsent: Bool
+    /// The catalog's root-signed migration allows a publisher change; the reader still confirms it.
+    public let requiresMigrationConsent: Bool
+}
+
+/// The consents an approval may carry beyond the package itself.
+public struct ExtensionInstallConsent: Hashable, Sendable {
+    public let allowLocalDowngrade: Bool
+    public let nonOfficialExecution: Bool
+    public let publisherMigration: Bool
+
+    public init(allowLocalDowngrade: Bool = false, nonOfficialExecution: Bool = false, publisherMigration: Bool = false) {
+        self.allowLocalDowngrade = allowLocalDowngrade
+        self.nonOfficialExecution = nonOfficialExecution
+        self.publisherMigration = publisherMigration
+    }
 }
 
 /// The user approves an exact package, publisher, and capability delta. Anything else that arrives
@@ -35,29 +53,29 @@ public struct ExtensionInstallApproval: Hashable, Sendable {
     public let packageSha256: String
     public let publisherFingerprint: String
     public let capabilityGrantFingerprint: String
-    public let allowLocalDowngrade: Bool
+    public let consent: ExtensionInstallConsent
 
     public init(
         packageSha256: String,
         publisherFingerprint: String,
         capabilityGrantFingerprint: String,
-        allowLocalDowngrade: Bool
+        consent: ExtensionInstallConsent
     ) {
         self.packageSha256 = packageSha256
         self.publisherFingerprint = publisherFingerprint
         self.capabilityGrantFingerprint = capabilityGrantFingerprint
-        self.allowLocalDowngrade = allowLocalDowngrade
+        self.consent = consent
     }
 
     public static func approve(
         _ prepared: PreparedExtensionInstall,
-        allowLocalDowngrade: Bool = false
+        consent: ExtensionInstallConsent = ExtensionInstallConsent()
     ) -> ExtensionInstallApproval {
         ExtensionInstallApproval(
             packageSha256: prepared.candidate.packageSha256,
             publisherFingerprint: prepared.candidate.publisherFingerprint,
             capabilityGrantFingerprint: prepared.capabilityGrantFingerprint,
-            allowLocalDowngrade: allowLocalDowngrade
+            consent: consent
         )
     }
 }
@@ -65,10 +83,12 @@ public struct ExtensionInstallApproval: Hashable, Sendable {
 public struct ExtensionInstaller: Sendable {
     private let verifier: HxpArchiveVerifier
     private let store: InstalledExtensionStore
+    private let grants: PackageGrantStore
 
-    public init(verifier: HxpArchiveVerifier, store: InstalledExtensionStore) {
+    public init(verifier: HxpArchiveVerifier, store: InstalledExtensionStore, grants: PackageGrantStore) {
         self.verifier = verifier
         self.store = store
+        self.grants = grants
     }
 
     /// A publisher change is approved only by a root-signed migration that names the exact package
@@ -118,29 +138,45 @@ public struct ExtensionInstaller: Sendable {
                 candidate.manifest, candidate.publisherFingerprint
             ),
             isDowngrade: active.map { candidate.manifest.version < $0.manifest.version } ?? false,
-            policyOutcome: outcome
+            policyOutcome: outcome,
+            requiresNonOfficialConsent: candidate.publisherTrust == .userAdded,
+            requiresMigrationConsent: rotationApproved && pinned?.publisherFingerprint != candidate.publisherFingerprint
         )
     }
 
+    /// Activation records the exact grant a non-official package needs before the archive lands, so
+    /// there is never an installed archive that the next read would refuse to run.
     public func activate(_ prepared: PreparedExtensionInstall, approval: ExtensionInstallApproval) async throws {
         guard approval.packageSha256 == prepared.candidate.packageSha256,
               approval.publisherFingerprint == prepared.candidate.publisherFingerprint,
               approval.capabilityGrantFingerprint == prepared.capabilityGrantFingerprint else {
             throw ExtensionInstallError.approvalMismatch
         }
-        guard !prepared.isDowngrade || approval.allowLocalDowngrade else {
+        guard !prepared.isDowngrade || approval.consent.allowLocalDowngrade else {
             throw ExtensionInstallError.downgradeRequiresConfirmation
+        }
+        guard !prepared.requiresNonOfficialConsent || approval.consent.nonOfficialExecution else {
+            throw ExtensionInstallError.packageGrantRequired
+        }
+        guard !prepared.requiresMigrationConsent || approval.consent.publisherMigration else {
+            throw ExtensionInstallError.migrationConsentRequired
+        }
+        if prepared.requiresNonOfficialConsent {
+            try await grants.record(PackageGrant.covering(prepared.candidate, at: Date()))
         }
         try await store.writeActive(prepared.candidate)
     }
 
     public func readVerifiedActive(_ sourceId: SourceId) async throws -> VerifiedHxpPackage? {
         guard let bytes = try await store.readActive(sourceId) else { return nil }
+        let verified: VerifiedHxpPackage
         do {
-            return try verifier.verify(archiveBytes: bytes)
+            verified = try verifier.verify(archiveBytes: bytes)
         } catch {
             throw ExtensionInstallError.installedPackageInvalid
         }
+        try grants.requireExecutable(verified)
+        return verified
     }
 
     public func remoteCapabilitySetFingerprint(_ packageInfo: VerifiedHxpPackage) -> String {

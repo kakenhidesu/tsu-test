@@ -15,6 +15,20 @@ public struct PendingRepositoryApproval: Sendable {
     public var index: RepositoryIndex { fetched.index }
 }
 
+/// A local archive whose publisher nobody here trusts yet. The key id is a label read off the
+/// manifest, not a verdict; the bytes are kept only until the reader answers or gives up.
+public struct PendingPublisherKey: Sendable {
+    public let keyId: String
+    public let archiveBytes: Data
+}
+
+/// An install waiting for the reader's decision, together with the key that verified it when that
+/// key came from the reader rather than from durable trust.
+public struct PendingInstall: Sendable {
+    public let prepared: PreparedExtensionInstall
+    public let provisionalKey: PublisherKey?
+}
+
 public struct ExtensionsContent: Sendable {
     public let installed: [InstalledSource]
     public let repositories: [RepositoryDescriptor]
@@ -26,7 +40,9 @@ public struct ExtensionsContent: Sendable {
 public final class ExtensionsModel: ObservableObject {
     @Published public private(set) var state: TsuyomiScreenState<ExtensionsContent> = .loading
     @Published public private(set) var pendingApproval: PendingRepositoryApproval?
-    @Published public private(set) var pendingInstall: PreparedExtensionInstall?
+    @Published public private(set) var pendingInstall: PendingInstall?
+    @Published public private(set) var pendingPublisherKey: PendingPublisherKey?
+    @Published public var installConsent = ExtensionInstallConsent()
     @Published public private(set) var failureCode: String?
     @Published public private(set) var importStatus: String?
     @Published public private(set) var isBusy = false
@@ -36,6 +52,7 @@ public final class ExtensionsModel: ObservableObject {
     private let trust: PublisherTrustStore
     private let client: ExtensionRepositoryClient
     private let lifecycle: ExtensionLifecycle
+    private let sourceRemoved: @MainActor (SourceId) async -> Void
     private let clock: () -> Date
 
     public init(
@@ -44,6 +61,7 @@ public final class ExtensionsModel: ObservableObject {
         trust: PublisherTrustStore,
         client: ExtensionRepositoryClient,
         lifecycle: ExtensionLifecycle,
+        sourceRemoved: @escaping @MainActor (SourceId) async -> Void,
         clock: @escaping () -> Date = Date.init
     ) {
         self.registry = registry
@@ -51,6 +69,7 @@ public final class ExtensionsModel: ObservableObject {
         self.trust = trust
         self.client = client
         self.lifecycle = lifecycle
+        self.sourceRemoved = sourceRemoved
         self.clock = clock
     }
 
@@ -126,19 +145,32 @@ public final class ExtensionsModel: ObservableObject {
 
     /// Removing a repository only stops it being offered. Installed extensions keep working, the
     /// publisher stays trusted until it is removed on its own screen, and the repository's identity
-    /// and cached catalog are retained so the same id can only return under the same root.
+    /// and cached catalog are retained so the same id can only return under the same root. The
+    /// official repository is disabled rather than removed: the app ships pointed at it.
     public func removeRepository(_ repositoryId: String) async {
         guard !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
-        try? await repositories.remove(repositoryId)
+        if let descriptor = await repositories.descriptor(repositoryId), descriptor.isOfficial {
+            try? await repositories.setEnabled(repositoryId, enabled: false)
+        } else {
+            try? await repositories.remove(repositoryId)
+        }
+        await load()
+    }
+
+    public func setRepositoryEnabled(_ repositoryId: String, enabled: Bool) async {
+        guard !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        try? await repositories.setEnabled(repositoryId, enabled: enabled)
         await load()
     }
 
     /// The one way an archive arrives from a file, whether the in-app picker or Files handed it over.
     /// Both deliver a copy this app owns, so it is read once and deleted whatever the outcome, and
-    /// each stage reports itself: an import that stops has to say where. Verification and approval
-    /// are the same as for a repository download; only the way the bytes arrived differs.
+    /// each stage reports itself: an import that stops has to say where. A publisher nobody trusts
+    /// yet stops at asking for that publisher's key; nothing is stored until the review is approved.
     public func importPackage(at url: URL) async {
         guard !isBusy else {
             failureCode = "BUSY"
@@ -147,6 +179,7 @@ public final class ExtensionsModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         failureCode = nil
+        pendingPublisherKey = nil
         importStatus = "已选择 \(url.lastPathComponent)"
         let bytes = try? Data(contentsOf: url)
         try? FileManager.default.removeItem(at: url)
@@ -159,17 +192,55 @@ public final class ExtensionsModel: ObservableObject {
         do {
             let prepared = try await lifecycle.prepare(archiveBytes: bytes, declaring: nil)
             importStatus = "校验通过，等待安装审批"
-            pendingInstall = prepared
+            installConsent = ExtensionInstallConsent()
+            pendingInstall = PendingInstall(prepared: prepared, provisionalKey: nil)
+        } catch HxpVerificationError.unknownPublisher {
+            guard let keyId = HxpArchiveVerifier.publisherKeyId(archiveBytes: bytes) else {
+                importStatus = nil
+                failureCode = HxpVerificationError.unknownPublisher.rawValue
+                return
+            }
+            importStatus = "发布者 \(keyId) 尚未信任，需要它的公钥"
+            pendingPublisherKey = PendingPublisherKey(keyId: keyId, archiveBytes: bytes)
         } catch {
             importStatus = nil
             failureCode = SafeErrorCode.of(error)
         }
     }
 
+    /// A key the reader typed verifies the waiting archive or it does not; either way it is not
+    /// stored here. Verification proves who signed the package, not that it may run — that is the
+    /// separate consent on the review that follows.
+    public func providePublisherKey(_ base64: String) async {
+        guard let pending = pendingPublisherKey, !isBusy else { return }
+        isBusy = true
+        defer { isBusy = false }
+        failureCode = nil
+        do {
+            let key = try PublisherKey(
+                keyId: pending.keyId,
+                publicKey: try ExtensionRepositoryClient.rootKey(base64),
+                trust: .userAdded
+            )
+            let prepared = try await lifecycle.prepare(archiveBytes: pending.archiveBytes, provisionalKey: key)
+            pendingPublisherKey = nil
+            importStatus = "发布者公钥校验通过，等待安装审批"
+            installConsent = ExtensionInstallConsent()
+            pendingInstall = PendingInstall(prepared: prepared, provisionalKey: key)
+        } catch {
+            failureCode = SafeErrorCode.of(error)
+        }
+    }
+
+    public func discardPublisherKeyRequest() {
+        pendingPublisherKey = nil
+        importStatus = nil
+    }
+
     /// The approval is consumed either way: a failed activation returns to the extension list with a
     /// stable code rather than leaving a sheet open over a result nobody can read.
     public func approvePendingInstall() async {
-        guard let prepared = pendingInstall, !isBusy else { return }
+        guard let pending = pendingInstall, !isBusy else { return }
         isBusy = true
         defer {
             pendingInstall = nil
@@ -177,7 +248,7 @@ public final class ExtensionsModel: ObservableObject {
             isBusy = false
         }
         do {
-            try await lifecycle.activate(prepared)
+            try await lifecycle.activate(pending.prepared, consent: installConsent, retaining: pending.provisionalKey)
         } catch {
             failureCode = SafeErrorCode.of(error)
         }
@@ -195,6 +266,7 @@ public final class ExtensionsModel: ObservableObject {
         defer { isBusy = false }
         do {
             try await lifecycle.uninstall(sourceId)
+            await sourceRemoved(sourceId)
             await load()
         } catch {
             failureCode = SafeErrorCode.of(error)

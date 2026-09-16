@@ -184,3 +184,9 @@
 - 非官方发布者的"精确执行授权"由既有安装审批承担：`ExtensionInstallApproval` 已绑定包摘要、发布者指纹与能力授权指纹，且只有被激活的那份归档会被运行时读取，不另建授权表。
 - 移植协议新增的 Detail `lastUpdatedDate`（`hxp-host-api-v1` §Optional Detail metadata）：`SourceBookDetail.lastUpdatedDate` 只接受合法的 `YYYY-MM-DD`（`Grammar.isCalendarDate`），`null`/缺省为无，其他类型视为契约违规；书籍页在状态旁显示"更新于"。作者搜索入口（`buildAuthorSearchRequest`）、`update-check-v2` 解析器模型与 `tsuyomi-transfer` v2/v3 本轮未移植，见 ACCEPTANCE 的待办。
 - 取消单文件 400 行上限（用户 2026-09-16 决定：这是上游规范的要求，不再执行）：`RepositoryHygieneTests` 删除行数检查，此后不为凑行数拆文件；文件按职责划分。
+- S4 扩展生命周期与信任（对齐上游 Phase 3/4 的 `hxp-package-v1` §Trust）：**非官方发布者的包必须有一条精确执行授权**（`PackageGrantStore`，绑定来源、发布者 keyId 与指纹、归档摘要），在安装审批页由读者勾选"我理解非官方来源在同一进程运行"后于激活时写入；`readVerifiedActive` 对 `userAdded` 包无授权即拒绝执行（`PACKAGE_GRANT_REQUIRED`），内置官方/测试发布者的包凭验签即可运行。这替换了此前"审批已足够、不建授权表"的决定：一把读者手输的公钥只证明"谁签了"，不证明"可以跑"。
+- 本地导入未知发布者的归档时先向读者索要该发布者公钥（`PendingPublisherKey` → `providePublisherKey`）：手输的密钥只作为临时解析器（`CompositePublisherKeyResolver` 里的 `userAdded` 层）校验这一份归档，审批通过并激活时才连同授权一起持久化；校验失败或放弃则什么都不留。
+- 复合解析器的层级固定为 官方内置 > 测试内置 > 用户添加；同层同 keyId 字节不一致解析为空（互相抵消），撤销取并集。
+- 官方仓库不可移除只可停用（`RepositoryDescriptor.enabled`，`RepositoryStore.setEnabled`）：应用出厂即指向它，停用后既不取回也不展示，重新启用不需要再批准任何东西。
+- 卸载走同一个 `ExtensionMutationGate`：先关运行时通道、再在新一代号下标记来源休眠、最后删归档；删归档失败则以再下一代号恢复原可用性，让期间起跑的远程操作仍然失效。卸载后通知导航弹掉该来源下的所有页面（`SourceFlowController.sourceRemoved`）。冷启动读完信任后做一次休眠对账（归档已不在的来源标记为不可用），已休眠的来源不再推进代号。
+- `fetchStaticResource` 一个 30 秒总时限跨连接、每一跳重定向与正文读取；正文短于 `Content-Length` 视为连接被切断而非较短的文件，丢弃后在同一时限内重读一次。安装失败按阶段归类（`InstallFailure`：下载/校验/仓库/存储/安装/文件访问），只有下载失败可作为同一次安装重试。

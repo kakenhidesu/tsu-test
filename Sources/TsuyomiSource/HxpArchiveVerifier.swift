@@ -106,9 +106,28 @@ public struct HxpArchiveVerifier: Sendable {
             manifest: manifest,
             packageSha256: packageSha256,
             publisherFingerprint: publisher.fingerprint,
+            publisherTrust: publisher.trust,
             archiveBytes: archiveBytes,
             entryModuleBytes: entries[manifest.entry] ?? Data()
         )
+    }
+
+    /// The key id an unverified archive names, and nothing else: a label for asking the reader for
+    /// that publisher's key. It proves nothing and is never shown as a verdict.
+    public static func publisherKeyId(archiveBytes: Data, limits: HxpArchiveLimits = HxpArchiveLimits()) -> String? {
+        guard (1...limits.maximumArchiveBytes).contains(archiveBytes.count),
+              let reader = try? ZipReader(
+                  archiveBytes,
+                  maximumFileBytes: limits.maximumFileBytes,
+                  maximumFileCount: limits.maximumFileCount
+              ),
+              let entry = reader.entries.first(where: { $0.name == HxpManifestParser.manifestFile }),
+              let bytes = try? reader.read(entry, maximumCompressionRatio: limits.maximumCompressionRatio),
+              bytes.count <= HxpManifestParser.maximumManifestBytes,
+              let root = try? JSONValue.decode(bytes).objectValue,
+              let keyId = root.object("signing")?.string("keyId"),
+              Grammar.isToken(keyId, limit: 128), (8...128).contains(keyId.unicodeScalars.count) else { return nil }
+        return keyId
     }
 
     private func canonicalFileDigests(_ files: [String: String]) throws -> Data {

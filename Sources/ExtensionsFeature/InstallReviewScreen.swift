@@ -8,6 +8,7 @@ import TsuyomiUI
 /// file the reader picked. Refusing here leaves the currently active version running.
 public struct InstallReviewScreen: View {
     private let prepared: PreparedExtensionInstall
+    @Binding private var consent: ExtensionInstallConsent
     private let isBusy: Bool
     private let onApprove: () -> Void
     private let onCancel: () -> Void
@@ -15,14 +16,23 @@ public struct InstallReviewScreen: View {
 
     public init(
         prepared: PreparedExtensionInstall,
+        consent: Binding<ExtensionInstallConsent>,
         isBusy: Bool,
         onApprove: @escaping () -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.prepared = prepared
+        _consent = consent
         self.isBusy = isBusy
         self.onApprove = onApprove
         self.onCancel = onCancel
+    }
+
+    /// Every consent the package needs must be given before the install button does anything.
+    private var consentsGiven: Bool {
+        (!prepared.requiresNonOfficialConsent || consent.nonOfficialExecution)
+            && (!prepared.requiresMigrationConsent || consent.publisherMigration)
+            && (!prepared.isDowngrade || consent.allowLocalDowngrade)
     }
 
     public var body: some View {
@@ -76,6 +86,49 @@ public struct InstallReviewScreen: View {
                         }
                     }
                 }
+                if prepared.requiresNonOfficialConsent || prepared.requiresMigrationConsent || prepared.isDowngrade {
+                    Section("需要确认") {
+                        if prepared.requiresNonOfficialConsent {
+                            Toggle(isOn: Binding(
+                                get: { consent.nonOfficialExecution },
+                                set: { consent = ExtensionInstallConsent(
+                                    allowLocalDowngrade: consent.allowLocalDowngrade,
+                                    nonOfficialExecution: $0,
+                                    publisherMigration: consent.publisherMigration
+                                ) }
+                            )) {
+                                Text("我理解：非官方来源与本应用在同一进程中运行，信任它等同于信任它的代码。")
+                                    .font(TsuyomiTheme.Typography.caption)
+                            }
+                        }
+                        if prepared.requiresMigrationConsent {
+                            Toggle(isOn: Binding(
+                                get: { consent.publisherMigration },
+                                set: { consent = ExtensionInstallConsent(
+                                    allowLocalDowngrade: consent.allowLocalDowngrade,
+                                    nonOfficialExecution: consent.nonOfficialExecution,
+                                    publisherMigration: $0
+                                ) }
+                            )) {
+                                Text("官方仓库声明这个包接替了另一位发布者签名的旧版本，我确认这次发布者变更。")
+                                    .font(TsuyomiTheme.Typography.caption)
+                            }
+                        }
+                        if prepared.isDowngrade {
+                            Toggle(isOn: Binding(
+                                get: { consent.allowLocalDowngrade },
+                                set: { consent = ExtensionInstallConsent(
+                                    allowLocalDowngrade: $0,
+                                    nonOfficialExecution: consent.nonOfficialExecution,
+                                    publisherMigration: consent.publisherMigration
+                                ) }
+                            )) {
+                                Text("这是一个更低的版本，我确认回退。")
+                                    .font(TsuyomiTheme.Typography.caption)
+                            }
+                        }
+                    }
+                }
                 Section {
                     Text("扩展在应用进程内运行，QuickJS 不是进程级沙箱；同意安装等同于信任这份代码。")
                         .font(TsuyomiTheme.Typography.caption)
@@ -93,7 +146,7 @@ public struct InstallReviewScreen: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button(prepared.active == nil ? "安装" : "更新") { onApprove() }
-                        .disabled(isBusy || prepared.policyOutcome == .rejectedRevoked)
+                        .disabled(isBusy || prepared.policyOutcome == .rejectedRevoked || !consentsGiven)
                 }
             }
         }

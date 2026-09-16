@@ -63,7 +63,10 @@ public final class VerificationModel: ObservableObject {
         guard let session else { return }
         do {
             try await session.finish()
-            if let sourceId = try? SourceId(sourceId) { await registry.close(sourceId) }
+            if let sourceId = try? SourceId(sourceId) {
+                await registry.close(sourceId)
+                _ = try? await registry.client(for: sourceId)
+            }
             isFinished = true
         } catch {
             failure = SafeWebCode.of(error)

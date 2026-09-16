@@ -200,7 +200,7 @@ final class MarketHolder: ObservableObject {
     let lifecycle: ExtensionLifecycle
     private let container: AppContainer
 
-    init(container: AppContainer) {
+    init(container: AppContainer, flow: SourceFlowController) {
         self.container = container
         client = ExtensionRepositoryClient(gateway: container.gateway)
         lifecycle = ExtensionLifecycle(
@@ -208,6 +208,8 @@ final class MarketHolder: ObservableObject {
             registry: container.registry,
             remoteLibrary: container.remoteLibrary,
             trust: container.trust,
+            grants: container.grants,
+            gate: container.mutationGate,
             hostApiVersion: container.hostApi
         )
         model = ExtensionsModel(
@@ -215,7 +217,8 @@ final class MarketHolder: ObservableObject {
             repositories: container.repositories,
             trust: container.trust,
             client: client,
-            lifecycle: lifecycle
+            lifecycle: lifecycle,
+            sourceRemoved: { [weak flow] sourceId in await flow?.sourceRemoved(sourceId) }
         )
     }
 

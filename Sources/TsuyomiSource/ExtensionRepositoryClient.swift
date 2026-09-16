@@ -10,14 +10,20 @@ public struct RepositoryDescriptor: Hashable, Sendable {
     public let rootKeyId: String
     public let rootPublicKey: Data
     public let addedAt: Date
+    /// A disabled repository is neither fetched nor offered, but keeps its identity, cache and
+    /// revocations exactly as a removed one does.
+    public let enabled: Bool
 
-    public init(repositoryId: String, indexUrl: URL, rootKeyId: String, rootPublicKey: Data, addedAt: Date) {
+    public init(repositoryId: String, indexUrl: URL, rootKeyId: String, rootPublicKey: Data, addedAt: Date, enabled: Bool = true) {
         self.repositoryId = repositoryId
         self.indexUrl = indexUrl
         self.rootKeyId = rootKeyId
         self.rootPublicKey = rootPublicKey
         self.addedAt = addedAt
+        self.enabled = enabled
     }
+
+    public var isOfficial: Bool { OfficialRepository.isRoot(rootPublicKey) }
 
     public var rootKey: RepositoryPublisher {
         RepositoryPublisher(keyId: rootKeyId, publicKey: rootPublicKey)

@@ -35,8 +35,12 @@ public struct RepositoryDetailContent: Sendable {
 public final class RepositoryDetailModel: ObservableObject {
     @Published public private(set) var state: TsuyomiScreenState<RepositoryDetailContent> = .loading
     @Published public private(set) var failureCode: String?
+    /// Why the last install attempt stopped, and the package it stopped on, so a download failure
+    /// can be retried as the same install and a repository failure sends the reader back to the list.
+    @Published public private(set) var installFailure: (failure: InstallFailure, package: RepositoryPackage)?
     @Published public private(set) var isBusy = false
     @Published public private(set) var pendingInstall: PreparedExtensionInstall?
+    @Published public var installConsent = ExtensionInstallConsent()
 
     public let descriptor: RepositoryDescriptor
 
@@ -137,12 +141,25 @@ public final class RepositoryDetailModel: ObservableObject {
         isBusy = true
         defer { isBusy = false }
         failureCode = nil
+        installFailure = nil
         do {
             let archive = try await client.download(package)
+            installConsent = ExtensionInstallConsent()
             pendingInstall = try await lifecycle.prepare(archiveBytes: archive, declaring: package)
         } catch {
-            failureCode = SafeErrorCode.of(error)
+            let failure = InstallFailure.classify(error)
+            failureCode = failure.code
+            installFailure = (failure, package)
         }
+    }
+
+    public func retryFailedInstall() async {
+        guard let failed = installFailure, failed.failure.kind == .download else { return }
+        await prepare(failed.package)
+    }
+
+    public func dismissInstallFailure() {
+        installFailure = nil
     }
 
     /// The approval is consumed either way: a failed activation returns to the package list with a
@@ -155,7 +172,7 @@ public final class RepositoryDetailModel: ObservableObject {
             isBusy = false
         }
         do {
-            try await lifecycle.activate(prepared)
+            try await lifecycle.activate(prepared, consent: installConsent)
         } catch {
             failureCode = SafeErrorCode.of(error)
         }

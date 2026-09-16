@@ -85,6 +85,18 @@ public final class SourceFlowController: ObservableObject {
         await closeSource()
     }
 
+    /// An uninstalled source has no screens left to stand on: everything under it is popped, and a
+    /// source that was never open changes nothing.
+    public func sourceRemoved(_ sourceId: SourceId) async {
+        guard path.contains(where: { $0.sourceId == sourceId.value }) || openSource?.sourceId == sourceId else { return }
+        if path.last == .extensions {
+            path.removeAll { $0 != .extensions }
+            await closeSource()
+        } else {
+            await popToRoot()
+        }
+    }
+
     /// Remembers the book, and the chapter when there is one, so a relaunch can rebuild the route.
     public func remember(book: SourceBookSummary) {
         container.snapshots.save(book: book)

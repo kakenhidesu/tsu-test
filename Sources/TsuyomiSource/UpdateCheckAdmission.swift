@@ -23,7 +23,7 @@ public enum UpdateCheckAdmission {
         guard (1...UpdateCheckResult.maximumChapters).contains(ids.count) else {
             return try refused(identity, .failed, previousAnchor: previousAnchor, reason: "invalid-chapter-evidence")
         }
-        guard ids.hasDistinctElements else {
+        guard Set(ids).count == ids.count else {
             return try refused(identity, .failed, previousAnchor: previousAnchor, reason: "duplicate-chapter-id")
         }
         let anchor = anchor(identity, ids)

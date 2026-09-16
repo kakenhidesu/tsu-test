@@ -120,9 +120,10 @@ public struct ExtensionsScreen: View {
         ) {
             if let pending = model.pendingApproval {
                 RepositoryApprovalSheet(pending: pending, model: model)
-            } else if let prepared = model.pendingInstall {
+            } else if let pending = model.pendingInstall {
                 InstallReviewScreen(
-                    prepared: prepared,
+                    prepared: pending.prepared,
+                    consent: $model.installConsent,
                     isBusy: model.isBusy,
                     onApprove: { Task { await model.approvePendingInstall() } },
                     onCancel: { model.discardPendingInstall() }

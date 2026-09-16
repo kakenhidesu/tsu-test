@@ -255,6 +255,7 @@ public struct VerifiedHxpPackage: Sendable {
     public let manifest: HxpManifest
     public let packageSha256: String
     public let publisherFingerprint: String
+    public let publisherTrust: PublisherTrust
     public let archiveBytes: Data
     public let entryModuleBytes: Data
 }
