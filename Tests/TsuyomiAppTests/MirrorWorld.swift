@@ -121,6 +121,7 @@ struct MirrorWorld {
             library: library,
             collections: CollectionStore(database: databaseHandle),
             preferences: preferences,
+            mirrors: mirror,
             updates: updates,
             checker: updateCoordinator
         )

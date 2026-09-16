@@ -98,6 +98,7 @@ final class InterfaceSnapshotTests: XCTestCase {
         let original = try JourneyFixtures.data("wenku8-fixture.hxp")
         world.host.publish(index: try world.index([.init(original)], sequence: 1), package: original)
         await world.probe()
+        await world.model.load()
         let actions = BrowseActions(
             openHome: { _ in }, openSearch: { _ in }, openRemoteLibrary: { _ in }, openSignIn: { _ in },
             openRepositories: {}, openPublisherKeys: {}

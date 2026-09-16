@@ -54,6 +54,7 @@ public struct RemoteLibraryScreen: View {
                     }
                 } header: {
                     Text(subtitle(content))
+                        .textCase(nil)
                 }
             }
             .listStyle(.insetGrouped)
@@ -238,34 +239,39 @@ public struct RemoteLibraryScreen: View {
         }
     }
 
+    /// The bar appears with a selection. Copying is the one bulk act; the website writes are only
+    /// offered for a single book, in a menu so the bar never has to grow past one row.
     @ViewBuilder
     private var selectionBar: some View {
-        if let content = model.content, !content.items.isEmpty {
+        if let content = model.content, !model.selected.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                if !model.selected.isEmpty {
-                    Text("已选择 \(model.selected.count) 项 · 批量复制；网站移动/移除仅限单本")
-                        .font(TsuyomiTheme.Typography.caption)
-                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                }
+                Text("已选择 \(model.selected.count) 项")
+                    .font(TsuyomiTheme.Typography.caption)
+                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
                 HStack(spacing: TsuyomiTheme.Metrics.gutter) {
                     Button(model.selected.count == content.items.count ? "取消全选" : "全选") {
                         model.selected.count == content.items.count ? model.clearSelection() : model.selectAll()
                     }
                     Spacer()
-                    Button("复制所选到本地书架") { Task { await model.copySelectedToLibrary() } }
-                        .disabled(model.selected.isEmpty || model.isBusy)
-                    if model.singleSelection != nil, content.grouped, !content.liveTargets.isEmpty {
-                        Menu("移至网站分类") {
-                            ForEach(content.liveTargets, id: \.targetId) { target in
-                                Button(target.displayName) { Task { await model.requestMoveSelected(to: target) } }
+                    Button("复制到本地书架") { Task { await model.copySelectedToLibrary() } }
+                        .disabled(model.isBusy)
+                    Menu {
+                        if model.singleSelection != nil, content.grouped, !content.liveTargets.isEmpty {
+                            Menu("移至网站分类") {
+                                ForEach(content.liveTargets, id: \.targetId) { target in
+                                    Button(target.displayName) { Task { await model.requestMoveSelected(to: target) } }
+                                }
                             }
                         }
-                        .disabled(model.isBusy)
+                        if model.singleSelection != nil {
+                            Button("从网站收藏移除", role: .destructive) { Task { await model.requestRemoveSelected() } }
+                        } else {
+                            Text("网站移动/移除仅限单本")
+                        }
+                    } label: {
+                        Label("网站操作", systemImage: "ellipsis.circle")
                     }
-                    if model.singleSelection != nil {
-                        Button("从网站收藏移除", role: .destructive) { Task { await model.requestRemoveSelected() } }
-                            .disabled(model.isBusy)
-                    }
+                    .disabled(model.isBusy)
                 }
             }
             .font(TsuyomiTheme.Typography.supporting)

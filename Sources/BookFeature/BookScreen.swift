@@ -330,8 +330,12 @@ public struct BookScreen: View {
                     Task { await model.addToLibrary() }
                 }
             } label: {
-                Label(content.inLibrary ? "已在书架" : "加入书架", systemImage: content.inLibrary ? "checkmark" : "plus")
-                    .font(TsuyomiTheme.Typography.body.weight(.semibold))
+                HStack(spacing: 6) {
+                    Image(systemName: content.inLibrary ? "checkmark" : "plus")
+                        .font(.system(size: 14, weight: .bold))
+                    Text(content.inLibrary ? "已在书架" : "加入书架")
+                        .font(TsuyomiTheme.Typography.body.weight(.semibold))
+                }
                     .padding(.horizontal, 14)
                     .frame(height: TsuyomiTheme.Metrics.minimumTouchTarget)
                     .foregroundStyle(content.inLibrary ? TsuyomiTheme.Palette.accent : Color.white)

@@ -222,8 +222,11 @@ public final class LibraryModel: ObservableObject {
         updateSession = try? await updates.latestSession()
     }
 
+    /// The tabs already stand for 全部/继续阅读/稍后再读, so the shortcut bar carries only the nodes
+    /// the tabs do not: today that is 来源休眠, beside collections and website mirrors.
     public var visibleSystemNodes: [SystemLibraryFilter] {
-        SystemLibraryFilter.allCases.filter { !hiddenSystemNodes.contains($0) }
+        let tabbed = Set(LibraryTab.allCases.map(\.filter))
+        return SystemLibraryFilter.allCases.filter { !hiddenSystemNodes.contains($0) && !tabbed.contains($0) }
     }
 
     public var isSelecting: Bool { selectionKind != nil }
