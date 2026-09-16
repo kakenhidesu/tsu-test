@@ -9,13 +9,17 @@ import TsuyomiUI
 struct LibraryShortcutBar: View {
     @ObservedObject var model: LibraryModel
     var openMirror: (String) -> Void = { _ in }
+    var createCollection: () -> Void = {}
     @State private var isEditing = false
     @State private var deleting: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// An empty bar has nothing to collapse or arrange: it offers the one act that fills it.
     var body: some View {
         Group {
-            if model.isShortcutBarCollapsed {
+            if model.shortcuts.isEmpty {
+                strip
+            } else if model.isShortcutBarCollapsed {
                 handle
             } else if isEditing {
                 editor
@@ -61,22 +65,42 @@ struct LibraryShortcutBar: View {
         }
     }
 
+    /// Every control in the strip is the same chip: entries, then the two acts on the strip itself,
+    /// which exist only once there are entries to arrange or hide.
     private var strip: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
-                ForEach(model.shortcuts) { shortcut in
-                    chip(shortcut)
-                }
-                Button(model.isShortcutBarLocked ? "已锁定" : "整理") {
-                    if model.isShortcutBarLocked {
-                        model.setShortcutBarLocked(false)
-                    } else {
-                        isEditing = true
+                if model.shortcuts.isEmpty {
+                    Button {
+                        createCollection()
+                    } label: {
+                        Label("新建收藏夹", systemImage: "plus")
                     }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                } else {
+                    ForEach(model.shortcuts) { shortcut in
+                        chip(shortcut)
+                    }
+                    Button {
+                        if model.isShortcutBarLocked {
+                            model.setShortcutBarLocked(false)
+                        } else {
+                            isEditing = true
+                        }
+                    } label: {
+                        Label(model.isShortcutBarLocked ? "已锁定" : "整理", systemImage: model.isShortcutBarLocked ? "lock" : "arrow.up.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                    Button {
+                        model.isShortcutBarCollapsed = true
+                    } label: {
+                        Label("收折", systemImage: "chevron.up")
+                    }
+                    .buttonStyle(.bordered)
+                    .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
                 }
-                .buttonStyle(.borderless)
-                Button("收折") { model.isShortcutBarCollapsed = true }
-                    .buttonStyle(.borderless)
             }
             .font(TsuyomiTheme.Typography.supporting)
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)

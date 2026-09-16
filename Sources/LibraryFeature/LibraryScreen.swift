@@ -40,7 +40,7 @@ public struct LibraryScreen: View {
                         tabs
                     }
                     updateStrip
-                    LibraryShortcutBar(model: model, openMirror: openMirror)
+                    LibraryShortcutBar(model: model, openMirror: openMirror, createCollection: { isCreatingCollection = true })
                     if model.showUpdatesOnly, model.isUpdatesFilterAvailable {
                         filterSummary(model.project(content.entries).count)
                     }
