@@ -15,20 +15,21 @@ struct LibraryShortcutBar: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// An empty bar has nothing to collapse or arrange: it offers the one act that fills it.
+    /// The three forms cross-fade inside one clipped container, driven by the buttons that switch
+    /// them, so the shelf below slides to the new height instead of jumping.
     var body: some View {
         Group {
             if model.shortcuts.isEmpty {
-                strip
+                strip.transition(.opacity)
             } else if model.isShortcutBarCollapsed {
-                handle
+                handle.transition(.opacity)
             } else if isEditing {
-                editor
+                editor.transition(.opacity)
             } else {
-                strip
+                strip.transition(.opacity)
             }
         }
-        .animation(reduceMotion ? nil : .default, value: model.isShortcutBarCollapsed)
-        .animation(reduceMotion ? nil : .default, value: isEditing)
+        .clipped()
         .confirmationDialog("删除这个收藏夹？", isPresented: Binding(
             get: { deleting != nil },
             set: { if !$0 { deleting = nil } }
@@ -44,9 +45,13 @@ struct LibraryShortcutBar: View {
         }
     }
 
+    private var motion: Animation? {
+        reduceMotion ? nil : .easeInOut(duration: 0.22)
+    }
+
     private var handle: some View {
         Button {
-            model.isShortcutBarCollapsed = false
+            withAnimation(motion) { model.isShortcutBarCollapsed = false }
         } label: {
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                 Image(systemName: "chevron.down")
@@ -61,7 +66,7 @@ struct LibraryShortcutBar: View {
         .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
         .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
         .dropDestination(for: BookIdentityTransfer.self) { _, _ in false } isTargeted: { targeted in
-            if targeted { model.isShortcutBarCollapsed = false }
+            if targeted { withAnimation(motion) { model.isShortcutBarCollapsed = false } }
         }
     }
 
@@ -86,7 +91,7 @@ struct LibraryShortcutBar: View {
                         if model.isShortcutBarLocked {
                             model.setShortcutBarLocked(false)
                         } else {
-                            isEditing = true
+                            withAnimation(motion) { isEditing = true }
                         }
                     } label: {
                         Label(model.isShortcutBarLocked ? "已锁定" : "整理", systemImage: model.isShortcutBarLocked ? "lock" : "arrow.up.arrow.down")
@@ -94,7 +99,7 @@ struct LibraryShortcutBar: View {
                     .buttonStyle(.bordered)
                     .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
                     Button {
-                        model.isShortcutBarCollapsed = true
+                        withAnimation(motion) { model.isShortcutBarCollapsed = true }
                     } label: {
                         Label("收折", systemImage: "chevron.up")
                     }
@@ -185,26 +190,37 @@ struct LibraryShortcutBar: View {
                 Spacer()
                 Button("锁定并完成") {
                     model.setShortcutBarLocked(true)
-                    isEditing = false
+                    withAnimation(motion) { isEditing = false }
                 }
-                Button("完成") { isEditing = false }
+                Button("完成") { withAnimation(motion) { isEditing = false } }
             }
             .font(TsuyomiTheme.Typography.supporting)
             .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            /// The list is exactly as tall as its rows, up to a cap that keeps a long bar scrollable:
+            /// a fixed height left most of it as empty space over a bar of two or three entries.
             List {
                 ForEach(model.shortcuts) { shortcut in
                     Text(model.title(of: shortcut))
                         .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
+                        .listRowInsets(EdgeInsets(top: 0, leading: TsuyomiTheme.Metrics.gutter, bottom: 0, trailing: TsuyomiTheme.Metrics.gutter))
                 }
                 .onMove { source, destination in
                     model.moveShortcut(from: source, to: destination)
                 }
             }
             .environment(\.editMode, .constant(.active))
+            .environment(\.defaultMinListRowHeight, TsuyomiTheme.Metrics.minimumTouchTarget)
             .listStyle(.plain)
-            .frame(height: 240)
+            .scrollDisabled(model.shortcuts.count <= LibraryShortcutBar.editorRowCap)
+            .frame(height: LibraryShortcutBar.editorHeight(rows: model.shortcuts.count))
         }
+    }
+
+    private static let editorRowCap = 5
+
+    private static func editorHeight(rows: Int) -> CGFloat {
+        CGFloat(min(max(rows, 1), editorRowCap)) * TsuyomiTheme.Metrics.minimumTouchTarget
     }
 
     private func isActive(_ shortcut: LibraryShortcut) -> Bool {

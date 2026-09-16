@@ -139,7 +139,6 @@ public struct AppRootView: View {
                         container: container,
                         sourceId: sourceId,
                         targetId: targetId,
-                        coverState: { libraryCovers.cover($0) },
                         openBook: { libraryPath.append(.detail($0)) },
                         openFolder: { sourceId, targetId in libraryPath.append(.mirror(sourceId, targetId)) }
                     )

@@ -313,7 +313,7 @@ struct RepositoryDetailHost: View {
 /// opens without a source flow, since reading a mirror costs no network.
 struct LibraryMirrorHost: View {
     @StateObject private var model: RemoteLibraryModel
-    private let coverState: (LibraryBook) -> CoverUiState
+    @StateObject private var covers: MirrorCoverProvider
     private let openBook: (BookIdentity) -> Void
     private let openFolder: (SourceId, String) -> Void
 
@@ -321,11 +321,9 @@ struct LibraryMirrorHost: View {
         container: AppContainer,
         sourceId: SourceId,
         targetId: String?,
-        coverState: @escaping (LibraryBook) -> CoverUiState,
         openBook: @escaping (BookIdentity) -> Void,
         openFolder: @escaping (SourceId, String) -> Void
     ) {
-        self.coverState = coverState
         self.openBook = openBook
         self.openFolder = openFolder
         _model = StateObject(
@@ -338,20 +336,17 @@ struct LibraryMirrorHost: View {
                 preferences: container.preferences
             )
         )
+        _covers = StateObject(wrappedValue: MirrorCoverProvider(sourceId: sourceId, container: container))
     }
 
     var body: some View {
         RemoteLibraryScreen(
             model: model,
-            coverState: { summary in
-                coverState(LibraryBook(
-                    identity: summary.identity, title: summary.title, addedAt: Date(), metadataUpdatedAt: Date(),
-                    authors: summary.author.map { [$0] } ?? [], coverUrl: summary.coverUrl, canonicalUrl: summary.canonicalUrl
-                ))
-            },
+            coverState: { covers.cover($0) },
             openBook: openBook,
             openSignIn: { _ in },
             openFolder: openFolder
         )
+        .onDisappear { covers.cancelAll() }
     }
 }
