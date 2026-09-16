@@ -10,14 +10,21 @@ import TsuyomiSource
 /// provider is replaced, and the previous partition's images are never reused.
 @MainActor
 public final class SourceCoverProvider: ObservableObject {
-    @Published public private(set) var states: [BookIdentity: CoverUiState] = [:]
+    /// One entry per book *and* address: a listing and a detail page may name different covers for
+    /// the same book, and a second address must get its own attempt rather than the first's result.
+    private struct Key: Hashable {
+        let identity: BookIdentity
+        let coverUrl: String?
+    }
+
+    @Published private var states: [Key: CoverUiState] = [:]
 
     private let repository: CoverRepository
     private let sourceId: String
     private let packageRevision: String
     private let credentialRevision: String
     private let sourceLabel: String
-    private var streams: [BookIdentity: Task<Void, Never>] = [:]
+    private var streams: [Key: Task<Void, Never>] = [:]
 
     public init(
         source: InstalledSource,
@@ -49,9 +56,10 @@ public final class SourceCoverProvider: ObservableObject {
         width: Int,
         height: Int
     ) -> CoverUiState {
-        if let existing = states[identity] { return existing }
+        let key = Key(identity: identity, coverUrl: coverUrl)
+        if let existing = states[key] { return existing }
         start(identity: identity, title: title, coverUrl: coverUrl, referrerUrl: referrerUrl, width: width, height: height)
-        return states[identity] ?? .loading(fallback: fallback(title))
+        return states[key] ?? .loading(fallback: fallback(title))
     }
 
     public func cancelAll() {
@@ -67,7 +75,8 @@ public final class SourceCoverProvider: ObservableObject {
         width: Int,
         height: Int
     ) {
-        guard streams[identity] == nil else { return }
+        let key = Key(identity: identity, coverUrl: coverUrl)
+        guard streams[key] == nil else { return }
         guard let coverUrl, let request = try? CoverRequest(
             sourceId: sourceId,
             packageRevision: packageRevision,
@@ -78,14 +87,14 @@ public final class SourceCoverProvider: ObservableObject {
             targetHeightPx: height,
             fallback: fallback(title)
         ) else {
-            states[identity] = .fallback(fallback(title))
+            states[key] = .fallback(fallback(title))
             return
         }
         let stream = repository.observe(request)
-        streams[identity] = Task { [weak self] in
+        streams[key] = Task { [weak self] in
             for await state in stream {
                 guard let self, !Task.isCancelled else { return }
-                self.states[identity] = state
+                self.states[key] = state
             }
         }
     }
