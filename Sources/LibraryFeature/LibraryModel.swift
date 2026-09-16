@@ -223,10 +223,29 @@ public final class LibraryModel: ObservableObject {
     }
 
     /// The tabs already stand for 全部/继续阅读/稍后再读, so the shortcut bar carries only the nodes
-    /// the tabs do not: today that is 来源休眠, beside collections and website mirrors.
+    /// the tabs do not: today that is 来源休眠, beside collections and website mirrors — and only
+    /// while some book's source actually is dormant, since an empty view is not an entry point.
     public var visibleSystemNodes: [SystemLibraryFilter] {
         let tabbed = Set(LibraryTab.allCases.map(\.filter))
-        return SystemLibraryFilter.allCases.filter { !hiddenSystemNodes.contains($0) && !tabbed.contains($0) }
+        let hasDormant = entries.contains { !$0.sourceAvailable }
+        return SystemLibraryFilter.allCases.filter {
+            !hiddenSystemNodes.contains($0) && !tabbed.contains($0) && ($0 != .dormant || hasDormant)
+        }
+    }
+
+    public var manualCollections: [LibraryCollection] {
+        allCollections.filter { $0.kind == .manual }
+    }
+
+    /// Local removal of one book, from its own menu. The book stays on the site; nothing is sent.
+    public func removeBook(_ identity: BookIdentity) async {
+        _ = try? await library.removeFromLibrary(identity)
+        await load()
+    }
+
+    public func setReadLater(_ identity: BookIdentity, _ readLater: Bool) async {
+        try? await library.setReadLater(identity, readLater: readLater)
+        await load()
     }
 
     public var isSelecting: Bool { selectionKind != nil }

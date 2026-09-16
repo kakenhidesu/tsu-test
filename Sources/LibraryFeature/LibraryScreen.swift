@@ -68,7 +68,7 @@ public struct LibraryScreen: View {
                 Task { await model.createCollection(named: title, from: books) }
             }
         } message: {
-            Text("把这 \(pendingPair.count) 本书放进一个新的收藏夹。")
+            Text(pendingPair.count == 1 ? "把这本书放进一个新的收藏夹。" : "把这 \(pendingPair.count) 本书放进一个新的收藏夹。")
         }
         .sheet(isPresented: $isCreatingCollection) {
             CollectionEditorScreen(model: model)
@@ -295,23 +295,59 @@ public struct LibraryScreen: View {
             isSelected: model.selectedBooks.contains(entry.book.identity),
             action: { activate(entry) }
         )
-        .onLongPressGesture { model.beginSelection(book: entry.book.identity) }
-        .draggable(BookIdentityTransfer(identity: entry.book.identity))
+        .contextMenu { bookMenu(entry) }
+        .modifier(ArrangeDrag(enabled: model.isArranging, identity: entry.book.identity))
         .dropDestination(for: BookIdentityTransfer.self) { items, _ in
             insertionIndex = nil
-            let dropped = items.compactMap { try? $0.identity }
-            guard !dropped.isEmpty else { return false }
-            if model.isArranging {
-                guard let moved = dropped.first else { return false }
-                Task { await model.move(moved, to: index) }
-                return true
-            }
-            let others = dropped.filter { $0 != entry.book.identity }
-            guard !others.isEmpty else { return false }
-            pendingPair = others + [entry.book.identity]
+            guard model.isArranging, let moved = items.compactMap({ try? $0.identity }).first else { return false }
+            Task { await model.move(moved, to: index) }
             return true
         } isTargeted: { targeted in
             insertionIndex = targeted && model.isArranging ? index : nil
+        }
+    }
+
+    /// What a long press on a book offers: the book's own shelf acts, never a source's. Moving into
+    /// a collection lists the collections here rather than asking for a drag.
+    @ViewBuilder
+    private func bookMenu(_ entry: LibraryEntry) -> some View {
+        let identity = entry.book.identity
+        Button {
+            model.beginSelection(book: identity)
+        } label: {
+            Label("选择", systemImage: "checkmark.circle")
+        }
+        Button {
+            Task { await model.setReadLater(identity, !entry.readLater) }
+        } label: {
+            Label(entry.readLater ? "取消稍后再读" : "稍后再读", systemImage: entry.readLater ? "clock.badge.xmark" : "clock")
+        }
+        if !model.manualCollections.isEmpty {
+            Menu {
+                ForEach(model.manualCollections, id: \.collectionId) { collection in
+                    Button(collection.title) { Task { await model.addBooks([identity], to: collection.collectionId) } }
+                }
+            } label: {
+                Label("移入收藏夹", systemImage: "folder")
+            }
+        }
+        Button {
+            pendingPair = [identity]
+        } label: {
+            Label("新建收藏夹…", systemImage: "folder.badge.plus")
+        }
+        if model.update(for: identity) != nil {
+            Button {
+                Task { await model.ignoreUpdate(identity) }
+            } label: {
+                Label("忽略当前更新", systemImage: "bell.slash")
+            }
+        }
+        Divider()
+        Button(role: .destructive) {
+            Task { await model.removeBook(identity) }
+        } label: {
+            Label("从书架移除", systemImage: "bookmark.slash")
         }
     }
 
@@ -351,8 +387,7 @@ public struct LibraryScreen: View {
         .accessibilityAddTraits(
             model.selectedBooks.contains(entry.book.identity) ? [.isSelected, .isButton] : .isButton
         )
-        .onLongPressGesture { model.beginSelection(book: entry.book.identity) }
-        .draggable(BookIdentityTransfer(identity: entry.book.identity))
+        .contextMenu { bookMenu(entry) }
     }
 
     private func badge(_ entry: LibraryEntry) -> (text: LocalizedStringKey, tone: TsuyomiStatusTone)? {
@@ -388,6 +423,21 @@ public struct LibraryScreen: View {
             .frame(minHeight: TsuyomiTheme.Metrics.minimumTouchTarget)
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
             .background(.bar)
+        }
+    }
+}
+
+/// A book is draggable only while the shelf is being arranged: outside that mode a long press is a
+/// menu, as it is everywhere else on the platform, and a drag would only lift a picture.
+private struct ArrangeDrag: ViewModifier {
+    let enabled: Bool
+    let identity: BookIdentity
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.draggable(BookIdentityTransfer(identity: identity))
+        } else {
+            content
         }
     }
 }
