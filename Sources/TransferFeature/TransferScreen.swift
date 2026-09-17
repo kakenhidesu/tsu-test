@@ -65,7 +65,7 @@ public struct TransferScreen: View {
 
     private var importSection: some View {
         Section("导入") {
-            Text("支持 tsuyomi-transfer 与 hikari_novel_backup。格式按文件内容判断，不看文件名。")
+            Text("支持 tsuyomi-transfer 与 hikari_novel_backup。")
                 .font(TsuyomiTheme.Typography.caption)
                 .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
             Button("选择备份文件") { isImporting = true }

@@ -221,7 +221,7 @@ public struct ReaderSettingsSheet: View {
     private var flowMenu: some View {
         controlMenu(symbol: "text.alignleft", label: "阅读方式") {
             picker(
-                options: [(.scroll, "滚动"), (.paged, "单页"), (.dualPage, "双页")],
+                options: [(.scroll, "滚动"), (.paged, "翻页")],
                 selection: \.flow
             )
         }

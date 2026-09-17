@@ -9,9 +9,7 @@ enum MoreRoute: Hashable {
     case display
     case readerSettings
     case updateSettings
-    case data
     case transfer
-    case help
     case about
 }
 
@@ -51,11 +49,9 @@ struct MoreScreen: View {
                     row("更新检查", "arrow.triangle.2.circlepath", .updateSettings)
                 }
                 Section("数据") {
-                    row("数据", "externaldrive", .data)
                     row("数据迁移", "arrow.up.arrow.down.square", .transfer)
                 }
                 Section {
-                    row("帮助", "questionmark.circle", .help)
                     row("关于", "info.circle", .about)
                 }
             }
@@ -79,12 +75,8 @@ struct MoreScreen: View {
             ReaderSettingsScreen(preferences: container.preferences)
         case .updateSettings:
             UpdateSettingsScreen(model: updateSettings)
-        case .data:
-            DataSettingsScreen(preferences: container.preferences) { path.append(.transfer) }
         case .transfer:
             TransferScreen(model: transfer)
-        case .help:
-            HelpScreen()
         case .about:
             AboutScreen(thirdPartyNotices: ThirdPartyNotices.text)
         }

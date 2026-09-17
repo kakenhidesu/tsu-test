@@ -183,7 +183,10 @@ public final class AppPreferences: ObservableObject {
                 ?? stored.horizontalMargin,
             paragraphSpacing: defaults.object(forKey: Key.readerParagraphSpacing) as? Double
                 ?? stored.paragraphSpacing,
-            flow: defaults.string(forKey: Key.readerFlow).flatMap(ReaderPresentation.init(rawValue:)) ?? stored.flow,
+            /// The two-page spread is no longer offered on a phone; a stored choice of it reads as
+            /// paged so the picker always shows the setting in force.
+            flow: defaults.string(forKey: Key.readerFlow).flatMap(ReaderPresentation.init(rawValue:))
+                .map { $0 == .dualPage ? .paged : $0 } ?? stored.flow,
             /// A value stored before the themes were paired is one of the transfer words, so the same
             /// reading serves both rather than a migration that would run once and then be dead.
             theme: defaults.string(forKey: Key.readerTheme)

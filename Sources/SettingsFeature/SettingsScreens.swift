@@ -8,24 +8,38 @@ import TsuyomiUI
 /// choice is the system light/dark preference.
 public struct DisplaySettingsScreen: View {
     @ObservedObject private var preferences: AppPreferences
+    @State private var isConfirmingReset = false
 
     public init(preferences: AppPreferences) {
         self.preferences = preferences
     }
 
+    /// The three choices are the section; the label is its header, not a row of its own.
     public var body: some View {
         Form {
-            Section {
+            Section("外观") {
                 Picker("外观", selection: colorScheme) {
                     Text("跟随系统").tag(ColorSchemePreference.system)
                     Text("浅色").tag(ColorSchemePreference.light)
                     Text("深色").tag(ColorSchemePreference.dark)
                 }
                 .pickerStyle(.inline)
+                .labelsHidden()
+            }
+            Section {
+                Button("重置界面偏好", role: .destructive) { isConfirmingReset = true }
+            } footer: {
+                Text("只恢复外观、书架展示与阅读器排版的默认值。书架、进度、登录状态、已安装的来源与导入记录都不受影响。")
             }
         }
         .navigationTitle("显示")
         .navigationBarTitleDisplayMode(.inline)
+        .confirmationDialog("重置界面偏好？", isPresented: $isConfirmingReset, titleVisibility: .visible) {
+            Button("重置", role: .destructive) { preferences.resetInterfacePreferences() }
+            Button("取消", role: .cancel) {}
+        } message: {
+            Text("外观、书架布局与排序、阅读器字号与主题会回到默认值。")
+        }
     }
 
     private var colorScheme: Binding<ColorSchemePreference> {
@@ -61,69 +75,6 @@ public struct ReaderSettingsScreen: View {
             get: { preferences.reader },
             set: { preferences.setReader($0) }
         )
-    }
-}
-
-/// What a transfer file does and does not contain, stated where the reader decides to make one.
-public struct DataSettingsScreen: View {
-    @ObservedObject private var preferences: AppPreferences
-    private let openTransfer: () -> Void
-    @State private var isConfirmingReset = false
-
-    public init(preferences: AppPreferences, openTransfer: @escaping () -> Void) {
-        self.preferences = preferences
-        self.openTransfer = openTransfer
-    }
-
-    public var body: some View {
-        Form {
-            Section {
-                Button("重置界面偏好", role: .destructive) { isConfirmingReset = true }
-            } footer: {
-                Text("只恢复外观、书架展示与阅读器排版的默认值。书架、进度、登录状态、已安装的来源与导入记录都不受影响。")
-            }
-            Section("包含") {
-                Text("书架条目、收藏夹与智能规则、本地标签、评分与稍后再读、阅读进度、搜索与浏览历史、阅读偏好。")
-                    .font(TsuyomiTheme.Typography.supporting)
-            }
-            Section("不包含") {
-                Text("登录凭据与 Cookie、下载的正文与封面缓存、已安装的扩展包及其发布者信任。")
-                    .font(TsuyomiTheme.Typography.supporting)
-            }
-            Section {
-                Button("打开数据迁移") { openTransfer() }
-            }
-        }
-        .navigationTitle("数据")
-        .navigationBarTitleDisplayMode(.inline)
-        .confirmationDialog("重置界面偏好？", isPresented: $isConfirmingReset, titleVisibility: .visible) {
-            Button("重置", role: .destructive) { preferences.resetInterfacePreferences() }
-            Button("取消", role: .cancel) {}
-        } message: {
-            Text("外观、书架布局与排序、阅读器字号与主题会回到默认值。")
-        }
-    }
-}
-
-public struct HelpScreen: View {
-    @State private var query = ""
-
-    public init() {}
-
-    public var body: some View {
-        List {
-            ForEach(HelpTopic.matching(query)) { topic in
-                DisclosureGroup(topic.question) {
-                    Text(topic.answer)
-                        .font(TsuyomiTheme.Typography.supporting)
-                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-                }
-            }
-        }
-        .listStyle(.insetGrouped)
-        .searchable(text: $query, prompt: "搜索帮助")
-        .navigationTitle("帮助")
-        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

@@ -94,7 +94,7 @@ public struct ReaderSettingsForm: View {
     }
 
     private var flowOptions: [(value: ReaderPresentation, title: LocalizedStringKey)] {
-        [(.scroll, "滚动"), (.paged, "单页"), (.dualPage, "双页")]
+        [(.scroll, "滚动"), (.paged, "翻页")]
     }
 
     private var transitionOptions: [(value: ReaderPageTransition, title: LocalizedStringKey)] {

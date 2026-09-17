@@ -42,8 +42,6 @@ public struct UpdateSettingsScreen: View {
                     }
                 } header: {
                     Text("按来源")
-                } footer: {
-                    Text("停用一个来源的检查不会卸载它，也不会删除它的书籍或阅读进度。")
                 }
             }
             if !model.excludedBooks.isEmpty {
