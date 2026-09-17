@@ -114,6 +114,51 @@ final class SourceJourneyTests: XCTestCase {
         XCTAssertTrue(resumed.inLibrary)
     }
 
+    /// A shelf row written by an earlier pull names a cover host that has since gone. Opening the
+    /// book's live page teaches the row the cover the site shows now, keeps the date it was added,
+    /// and changes nothing when the page says what the row already says.
+    @MainActor
+    func testOpeningTheLivePageTeachesTheShelfRowItsCurrentCover() async throws {
+        let world = try await FixtureWorld(directory: directory)
+        let identity = try BookIdentity(sourceId: world.sourceId.value, remoteBookId: "1234")
+        let addedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        try await world.library.saveBook(
+            LibraryBook(
+                identity: identity,
+                title: "雾港纪事",
+                addedAt: addedAt,
+                metadataUpdatedAt: addedAt,
+                coverUrl: "https://pic.wenku8.com/files/article/image/12/1234/1234.jpg",
+                canonicalUrl: "https://www.wenku8.net/book/1234.htm"
+            )
+        )
+
+        let book = BookModel(
+            identity: identity,
+            registry: world.registry,
+            library: world.library,
+            progressStore: world.progress
+        )
+        await book.load()
+        guard case .content(let detail) = book.state else {
+            return XCTFail("detail did not load: \(book.state)")
+        }
+        let liveCover = try XCTUnwrap(detail.detail.summary.coverUrl)
+        let learnedRow = try await world.library.book(identity)
+        let learned = try XCTUnwrap(learnedRow)
+        XCTAssertEqual(learned.coverUrl, liveCover)
+        XCTAssertNotEqual(learned.coverUrl, "https://pic.wenku8.com/files/article/image/12/1234/1234.jpg")
+        XCTAssertEqual(learned.addedAt, addedAt)
+        XCTAssertEqual(learned.status, detail.detail.status)
+        XCTAssertEqual(learned.remoteTags, Set(detail.detail.tags))
+        XCTAssertGreaterThan(learned.metadataUpdatedAt, addedAt)
+
+        await book.load()
+        let unchangedRow = try await world.library.book(identity)
+        let unchanged = try XCTUnwrap(unchangedRow)
+        XCTAssertEqual(unchanged.metadataUpdatedAt, learned.metadataUpdatedAt, "a page that says nothing new writes nothing")
+    }
+
     @MainActor
     func testChallengePageStopsTheJourneyWithoutLeakingHtml() async throws {
         let world = try await FixtureWorld(directory: directory, page: "challenge")

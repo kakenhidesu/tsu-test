@@ -38,7 +38,9 @@ jobs:
           fi
           node --version
           (cd "$root" && npm ci && npm test && npm run package:fixture)
-          (cd "$root/fixtures/wenku8" && shasum -a 256 -c wenku8-fixture.sha256)
+          # The digest is printed before it is checked, so a patch to the source (which changes the
+          # archive) leaves the new digest in the log for the record file to take.
+          (cd "$root/fixtures/wenku8" && shasum -a 256 wenku8-fixture.hxp && shasum -a 256 -c wenku8-fixture.sha256)
 
       - name: Resolve simulator destination
         id: sim

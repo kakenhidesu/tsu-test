@@ -2,10 +2,21 @@
 
 # 验收 fixture 扩展的本地改动
 
-> **2026-09-16 更新**：下述改动已进入上游。独立仓库
+> **2026-09-17 更正**：2026-09-16 的说明记错了。独立仓库
 > [`Chachaanteng/tsuyomi-extensions`](https://github.com/Chachaanteng/tsuyomi-extensions) 的
-> `1d7062e` 已含同样的 `isRequestedPage()` 顺序修正，`Tsuyomi-main/tsuyomi-extensions` 现在就是该提交的
-> 原样快照（fixture 版本 `0.2.30`，由 CI 从源码重建），本地不再有任何手工补丁。以下保留为历史记录。
+> `1d7062e` 与其后的 `53b7dc5`（0.2.33）都**没有**含 `isRequestedPage()` 顺序修正，`classifyPage`
+> 仍先问 `sessionRemediation`。`Tsuyomi-main/tsuyomi-extensions` 自刷新起是 `1d7062e` 的原样快照，
+> 因此顺序修正随刷新丢失。
+>
+> **现行本地补丁（2026-09-17）**：wenku8 开始向完整送达的详情页注入 Cloudflare 的被动评分脚本
+> `/cdn-cgi/challenge-platform/scripts/jsd/main.js`，路径里的 `challenge-platform` 命中验证页判据，
+> 每本书详情都成了"需要验证"。补丁比早先的顺序修正更窄：`src/wenku8/index.mts` 的
+> `sessionRemediation` 在匹配 `captcha|cf-chl-|challenge-platform|人机验证|安全验证|验证码` 之前，先用
+> `PASSIVE_CLOUDFLARE_SCRIPT`（`/\/cdn-cgi\/challenge-platform\/scripts\/jsd\/[^\s'"<>]*/gi`）把这条
+> 引用去掉；判据本身、顺序与其余分支一字未动，真验证页、登录页和自带的 `challenge`/`login` 用例判定不变。
+> `test/wenku8.test.mjs` 增一用例：带被动脚本的详情页与目录页判 `ok`，带被动脚本的验证页仍判
+> `verification-required`。同一改动在独立克隆的 `fix/wenku8-passive-cloudflare-script` 分支上备好提交，
+> 等用户决定是否向上游开 PR。以下为 2026-09 初的历史记录。
 
 本仓库交付的是 iOS 宿主，不是扩展。这里记录的是对**参考实现里的验收 fixture 扩展**
 （`Tsuyomi-main/tsuyomi-extensions`，`org.tsuyomi.wenku8`）所做的本地改动——因为

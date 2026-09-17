@@ -103,6 +103,7 @@ public final class BookModel: ObservableObject {
                 offlineOnly: offlineOnly
             ).chapters
             stale = offlineOnly
+            if let detail, !offlineOnly { await learnShelfRecord(from: detail) }
             try? await library.recordBrowsingVisit(identity, at: clock())
             await publish()
         } catch let failure as SourceException where failure.code == .networkOffline && !offlineOnly {
@@ -113,6 +114,34 @@ public final class BookModel: ObservableObject {
                 detail: SourceFailureGuidance.detail(for: error, fallback: "无法载入这本书的信息。")
             )
         }
+    }
+
+    /// A live detail page is the freshest word on a book's cover, status and tags. A shelf row written
+    /// earlier — by a pull of the website collection, or by an extension that named a picture host
+    /// since gone — keeps its date of adding and its update mark and takes the rest from here, so the
+    /// shelf shows the cover the site shows without the reader pulling the collection again. A cached
+    /// page is not consulted: it may be the very page that named the old host.
+    private func learnShelfRecord(from detail: SourceBookDetail) async {
+        guard let stored = try? await library.book(identity) else { return }
+        let summary = detail.summary
+        let learned = LibraryBook(
+            identity: stored.identity,
+            title: summary.title,
+            addedAt: stored.addedAt,
+            metadataUpdatedAt: clock(),
+            authors: stored.authors.union(summary.author.map { [$0] } ?? []),
+            coverUrl: summary.coverUrl ?? stored.coverUrl,
+            canonicalUrl: summary.canonicalUrl.isEmpty ? stored.canonicalUrl : summary.canonicalUrl,
+            status: detail.status ?? stored.status,
+            remoteTags: detail.tags.isEmpty ? stored.remoteTags : Set(detail.tags),
+            sourceUpdateKey: stored.sourceUpdateKey,
+            hasUnreadUpdate: stored.hasUnreadUpdate
+        )
+        let changed = learned.title != stored.title || learned.authors != stored.authors
+            || learned.coverUrl != stored.coverUrl || learned.canonicalUrl != stored.canonicalUrl
+            || learned.status != stored.status || learned.remoteTags != stored.remoteTags
+        guard changed else { return }
+        try? await library.saveBook(learned)
     }
 
     /// Local shelf write. There is no remote counterpart on this path by construction.
