@@ -128,7 +128,7 @@ final class SourceJourneyTests: XCTestCase {
                 title: "雾港纪事",
                 addedAt: addedAt,
                 metadataUpdatedAt: addedAt,
-                coverUrl: "https://pic.wenku8.com/files/article/image/12/1234/1234.jpg",
+                coverUrl: "https://pic.wenku8.com/image/12/1234/1234s.jpg",
                 canonicalUrl: "https://www.wenku8.net/book/1234.htm"
             )
         )
@@ -147,7 +147,7 @@ final class SourceJourneyTests: XCTestCase {
         let learnedRow = try await world.library.book(identity)
         let learned = try XCTUnwrap(learnedRow)
         XCTAssertEqual(learned.coverUrl, liveCover)
-        XCTAssertNotEqual(learned.coverUrl, "https://pic.wenku8.com/files/article/image/12/1234/1234.jpg")
+        XCTAssertNotEqual(learned.coverUrl, "https://pic.wenku8.com/image/12/1234/1234s.jpg")
         XCTAssertEqual(learned.addedAt, addedAt)
         XCTAssertEqual(learned.status, detail.detail.status)
         XCTAssertEqual(learned.remoteTags, Set(detail.detail.tags))
