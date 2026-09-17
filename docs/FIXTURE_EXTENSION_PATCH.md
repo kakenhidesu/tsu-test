@@ -16,7 +16,15 @@
 > 引用去掉；判据本身、顺序与其余分支一字未动，真验证页、登录页和自带的 `challenge`/`login` 用例判定不变。
 > `test/wenku8.test.mjs` 增一用例：带被动脚本的详情页与目录页判 `ok`，带被动脚本的验证页仍判
 > `verification-required`。同一改动在独立克隆的 `fix/wenku8-passive-cloudflare-script` 分支上备好提交，
-> 等用户决定是否向上游开 PR。以下为 2026-09 初的历史记录。
+> 等用户决定是否向上游开 PR。（已由用户合入上游 `4f7f28e`，0.2.34。）
+>
+> **第二处本地补丁（2026-09-17）**：书架刷新（`update-check-v2`）报"需要验证"。这次是站点真的拦：
+> wenku8 的 Cloudflare 规则对**不带 Referer** 的 `/modules/article/reader.php` 返回 403 拦截页
+> （`Just a moment`），带任意 Referer 即 200。目录请求带了 `referrerUrl`（书页），更新检查请求没带。
+> 宿主按签名策略要求请求的 referrer 与 `updateCheck.referrerPath` 严格相等，所以修法是两处一起：
+> 清单（`release/sources.json` 与 `tools/build-fixture.mjs`）的 `updateCheck` 声明
+> `referrerPath: "/index.php"`，`buildUpdateCheckV2Request` 发 `referrerUrl: ${ORIGIN}/index.php`，
+> 测试里请求形状的断言同步。宿主侧未改一行。以下为 2026-09 初的历史记录。
 
 本仓库交付的是 iOS 宿主，不是扩展。这里记录的是对**参考实现里的验收 fixture 扩展**
 （`Tsuyomi-main/tsuyomi-extensions`，`org.tsuyomi.wenku8`）所做的本地改动——因为
