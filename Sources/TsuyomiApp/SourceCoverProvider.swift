@@ -67,6 +67,22 @@ public final class SourceCoverProvider: ObservableObject {
         streams = [:]
     }
 
+    /// Forgets every failed attempt, so the next draw asks again. A failure is a fact about one
+    /// moment — the lane was closing, the network was away, the site was challenging — and a screen
+    /// that comes back into view is the reader asking whether it is still true.
+    public func retryFailed() {
+        let failed = states.compactMap { key, state -> Key? in
+            if case .failed = state { return key }
+            return nil
+        }
+        guard !failed.isEmpty else { return }
+        for key in failed {
+            streams[key]?.cancel()
+            streams[key] = nil
+            states[key] = nil
+        }
+    }
+
     private func start(
         identity: BookIdentity,
         title: String,

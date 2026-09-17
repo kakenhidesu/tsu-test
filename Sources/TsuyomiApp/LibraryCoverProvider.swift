@@ -39,8 +39,16 @@ public final class LibraryCoverProvider: ObservableObject {
     private let roots: StorageRoots
     private let registry: SourceRegistry
     private let credentials: SourceCredentialStore
+    /// What a provider was built against. Covers are cached per package and per credential state, so
+    /// a provider outlives neither.
+    private struct Binding: Equatable {
+        let packageRevision: String
+        let credentialRevision: String
+    }
+
     private var providers: [String: SourceCoverProvider] = [:]
     private var providerUpdates: [String: AnyCancellable] = [:]
+    private var bindings: [String: Binding] = [:]
     private var resolved = Set<String>()
 
     public init(roots: StorageRoots, registry: SourceRegistry, credentials: SourceCredentialStore) {
@@ -87,23 +95,67 @@ public final class LibraryCoverProvider: ObservableObject {
         )
     }
 
+    /// Called when the shelf comes into view. A provider built before its source was updated, or
+    /// before the reader signed in or out, is dropped so the next draw builds one for the package
+    /// and session now in force; the ones still valid are asked to try their failed covers again.
+    public func revalidate() async {
+        guard !bindings.isEmpty, let sources = try? await registry.installedSources() else { return }
+        var replaced = false
+        for (sourceId, bound) in bindings {
+            var current: Binding?
+            if let source = sources.first(where: { $0.sourceId.value == sourceId }) {
+                current = Binding(
+                    packageRevision: source.packageSha256,
+                    credentialRevision: await SourceCoverProvider.credentialRevision(
+                        for: source,
+                        credentials: credentials
+                    )
+                )
+            }
+            if current == bound {
+                providers[sourceId]?.retryFailed()
+                continue
+            }
+            providers[sourceId]?.cancelAll()
+            providers[sourceId] = nil
+            providerUpdates[sourceId] = nil
+            bindings[sourceId] = nil
+            resolved.remove(sourceId)
+            replaced = true
+        }
+        if replaced { revision += 1 }
+    }
+
     private func resolve(_ sourceId: String) {
         guard resolved.insert(sourceId).inserted else { return }
         Task { [weak self] in
-            guard let self,
-                  let id = try? SourceId(sourceId),
+            guard let self else { return }
+            guard let id = try? SourceId(sourceId),
                   let sources = try? await registry.installedSources(),
-                  let source = sources.first(where: { $0.sourceId == id }),
-                  let provider = try? SourceCoverProvider(
-                      source: source,
-                      credentialRevision: await SourceCoverProvider.credentialRevision(
-                          for: source,
-                          credentials: credentials
-                      ),
-                      roots: roots,
-                      fetcher: LazySourceCoverFetcher(registry: registry, sourceId: id)
-                  )
-            else { return }
+                  let source = sources.first(where: { $0.sourceId == id })
+            else {
+                // Nothing was built, so nothing is remembered: a source that is installed later, or a
+                // read that fails once, must not leave the shelf without covers until the next launch.
+                self.resolved.remove(sourceId)
+                return
+            }
+            let credentialRevision = await SourceCoverProvider.credentialRevision(
+                for: source,
+                credentials: credentials
+            )
+            guard let provider = try? SourceCoverProvider(
+                source: source,
+                credentialRevision: credentialRevision,
+                roots: roots,
+                fetcher: LazySourceCoverFetcher(registry: registry, sourceId: id)
+            ) else {
+                self.resolved.remove(sourceId)
+                return
+            }
+            self.bindings[sourceId] = Binding(
+                packageRevision: source.packageSha256,
+                credentialRevision: credentialRevision
+            )
             self.providers[sourceId] = provider
             // Bumping the revision here only announces that the provider exists. A cover finishing its
             // read from disk changes that provider, which publishes on itself — a nested observable

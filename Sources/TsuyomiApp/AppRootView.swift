@@ -132,6 +132,9 @@ public struct AppRootView: View {
                     libraryPath.append(.mirror(id, nil))
                 }
             )
+            // Coming back to the shelf — from a book, from another tab — is when a cover that failed
+            // earlier, or a provider bound to a package since replaced, gets its second chance.
+            .onAppear { Task { await libraryCovers.revalidate() } }
             .navigationDestination(for: LibraryRoute.self) { route in
                 switch route {
                 case .mirror(let sourceId, let targetId):
