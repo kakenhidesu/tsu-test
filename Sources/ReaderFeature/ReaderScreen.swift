@@ -57,6 +57,7 @@ public struct ReaderScreen: View {
                         pageCount: content.pageCount,
                         isVisible: model.isChromeVisible,
                         progressVisible: model.settings.progressVisible,
+                        palette: palette,
                         actions: actions(content)
                     )
                     if model.isSettingsPresented { settingsPanel }

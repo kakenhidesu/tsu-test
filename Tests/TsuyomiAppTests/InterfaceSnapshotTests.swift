@@ -323,6 +323,7 @@ private struct ReaderChromePreview: View {
                 pageCount: 125,
                 isVisible: isVisible,
                 progressVisible: progressVisible,
+                palette: ReaderTheme.paper.palette(for: .dark),
                 actions: ReaderChromeActions(
                     onBack: {},
                     onPreviousChapter: {},

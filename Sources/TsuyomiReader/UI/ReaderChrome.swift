@@ -55,6 +55,9 @@ public struct ReaderChrome: View {
     private let pageCount: Int
     private let isVisible: Bool
     private let progressVisible: Bool
+    /// The page's own paper and ink. Everything drawn over the page is drawn in them, at lesser
+    /// weights, so the controls belong to the page rather than to the app around it.
+    private let palette: ReaderPalette
     private let actions: ReaderChromeActions
     @State private var isMenuOpen = false
     @State private var isScrubbing = false
@@ -66,6 +69,7 @@ public struct ReaderChrome: View {
         pageCount: Int,
         isVisible: Bool,
         progressVisible: Bool,
+        palette: ReaderPalette,
         actions: ReaderChromeActions
     ) {
         self.chapterTitle = chapterTitle
@@ -73,7 +77,21 @@ public struct ReaderChrome: View {
         self.pageCount = pageCount
         self.isVisible = isVisible
         self.progressVisible = progressVisible
+        self.palette = palette
         self.actions = actions
+    }
+
+    /// A card lifted off the page: the paper with a breath of ink over it, edged, and shadowed.
+    private func card<Content: View>(_ content: Content) -> some View {
+        content
+            .background {
+                RoundedRectangle(cornerRadius: 14)
+                    .fill(palette.background)
+                    .overlay(RoundedRectangle(cornerRadius: 14).fill(palette.lift))
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(palette.separator, lineWidth: 1))
+            .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
     }
 
     public var body: some View {
@@ -105,13 +123,13 @@ public struct ReaderChrome: View {
         ZStack {
             Text(chapterTitle)
                 .font(TsuyomiTheme.Typography.caption)
-                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                .foregroundStyle(palette.secondaryForeground)
                 .lineLimit(1)
                 .padding(.horizontal, TsuyomiTheme.Metrics.minimumTouchTarget)
             if isVisible {
                 HStack {
                     Spacer()
-                    Button(action: actions.onBack) { CircularChromeLabel(symbol: "xmark") }
+                    Button(action: actions.onBack) { CircularChromeLabel(symbol: "xmark", palette: palette) }
                         .accessibilityLabel("关闭")
                 }
             }
@@ -125,7 +143,7 @@ public struct ReaderChrome: View {
             if isVisible {
                 HStack {
                     Spacer()
-                    Button { isMenuOpen.toggle() } label: { CircularChromeLabel(symbol: "ellipsis") }
+                    Button { isMenuOpen.toggle() } label: { CircularChromeLabel(symbol: "ellipsis", palette: palette) }
                         .accessibilityLabel("更多")
                 }
             }
@@ -136,7 +154,7 @@ public struct ReaderChrome: View {
     private var pageIndicator: some View {
         Text(isVisible ? "\(pageIndex + 1)/\(pageCount) 页" : "\(pageIndex + 1)")
             .font(TsuyomiTheme.Typography.caption)
-            .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+            .foregroundStyle(palette.secondaryForeground)
             .padding(.horizontal, TsuyomiTheme.Metrics.minimumTouchTarget)
             .accessibilityLabel("第 \(pageIndex + 1) 页，共 \(pageCount) 页")
     }
@@ -149,22 +167,20 @@ public struct ReaderChrome: View {
             /// Two cards, not one card with a rule through it: the reference separates them, and they
             /// are separate things — one is where you are in the chapter, the other is what the page
             /// looks like.
-            directoryRow
-                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-                .clipShape(RoundedRectangle(cornerRadius: 14))
-            panelRow(title: "主题与设置", symbol: "textformat.size") {
-                isMenuOpen = false
-                actions.onOpenSettings()
-            }
-            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
-            .clipShape(RoundedRectangle(cornerRadius: 14))
+            card(directoryRow)
+            card(
+                panelRow(title: "主题与设置", symbol: "textformat.size") {
+                    isMenuOpen = false
+                    actions.onOpenSettings()
+                }
+            )
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                 if let previous = actions.onPreviousChapter {
                     Button {
                         isMenuOpen = false
                         previous()
                     } label: {
-                        CircularChromeLabel(symbol: "backward.end")
+                        CircularChromeLabel(symbol: "backward.end", palette: palette)
                     }
                     .accessibilityLabel("上一章")
                 }
@@ -173,7 +189,7 @@ public struct ReaderChrome: View {
                         isMenuOpen = false
                         next()
                     } label: {
-                        CircularChromeLabel(symbol: "forward.end")
+                        CircularChromeLabel(symbol: "forward.end", palette: palette)
                     }
                     .accessibilityLabel("下一章")
                 }
@@ -199,22 +215,22 @@ public struct ReaderChrome: View {
                 /// finger maps back through the same width below.
                 let edge = proxy.size.width * fraction
                 Rectangle()
-                    .fill(TsuyomiTheme.Palette.primaryText.opacity(0.14))
+                    .fill(palette.foreground.opacity(0.14))
                     .frame(width: edge)
                 Rectangle()
-                    .fill(TsuyomiTheme.Palette.primaryText.opacity(isScrubbing ? 1 : 0.5))
+                    .fill(palette.foreground.opacity(isScrubbing ? 1 : 0.5))
                     .frame(width: 2, height: 24)
                     .offset(x: edge - 1)
                 HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                     Text("目录")
                         .font(TsuyomiTheme.Typography.body)
-                        .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                        .foregroundStyle(palette.foreground)
                     Text("\(percentRead)%")
                         .font(TsuyomiTheme.Typography.supporting)
-                        .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                        .foregroundStyle(palette.secondaryForeground)
                     Spacer()
                     Image(systemName: "list.bullet")
-                        .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                        .foregroundStyle(palette.foreground)
                 }
                 .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
             }
@@ -257,19 +273,20 @@ public struct ReaderChrome: View {
     /// A bar moving under a covered thumb says nothing about where it has got to, so while the finger
     /// is down the chapter and the page it would land on are named above the panel.
     private var bubble: some View {
-        VStack(spacing: 2) {
-            Text(chapterTitle)
-                .font(TsuyomiTheme.Typography.sectionTitle)
-                .foregroundStyle(TsuyomiTheme.Palette.primaryText)
-                .lineLimit(1)
-            Text("第 \(scrubTargetPage + 1) 页")
-                .font(TsuyomiTheme.Typography.supporting)
-                .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
-        }
-        .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
-        .padding(.vertical, TsuyomiTheme.Metrics.tightGutter)
-        .frame(maxWidth: .infinity)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        card(
+            VStack(spacing: 2) {
+                Text(chapterTitle)
+                    .font(TsuyomiTheme.Typography.sectionTitle)
+                    .foregroundStyle(palette.foreground)
+                    .lineLimit(1)
+                Text("第 \(scrubTargetPage + 1) 页")
+                    .font(TsuyomiTheme.Typography.supporting)
+                    .foregroundStyle(palette.secondaryForeground)
+            }
+            .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
+            .padding(.vertical, TsuyomiTheme.Metrics.tightGutter)
+            .frame(maxWidth: .infinity)
+        )
     }
 
     /// Where the bar is, which while a finger is down is where the finger is. Reading it back from
@@ -292,10 +309,10 @@ public struct ReaderChrome: View {
             HStack(spacing: TsuyomiTheme.Metrics.tightGutter) {
                 Text(title)
                     .font(TsuyomiTheme.Typography.body)
-                    .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                    .foregroundStyle(palette.foreground)
                 Spacer()
                 Image(systemName: symbol)
-                    .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+                    .foregroundStyle(palette.foreground)
             }
             .padding(.horizontal, TsuyomiTheme.Metrics.gutter)
             .frame(height: 52)
@@ -315,15 +332,22 @@ public struct ReaderChrome: View {
 /// whether the controls are up or not, so bringing them back never reflows a word of text.
 struct CircularChromeLabel: View {
     let symbol: String
+    let palette: ReaderPalette
 
     var body: some View {
         Image(systemName: symbol)
             .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(TsuyomiTheme.Palette.primaryText)
+            .foregroundStyle(palette.foreground)
             .frame(
                 width: TsuyomiTheme.Metrics.minimumTouchTarget,
                 height: TsuyomiTheme.Metrics.minimumTouchTarget
             )
-            .background(.regularMaterial, in: Circle())
+            .background {
+                Circle()
+                    .fill(palette.background)
+                    .overlay(Circle().fill(palette.lift))
+            }
+            .overlay(Circle().strokeBorder(palette.separator, lineWidth: 1))
+            .shadow(color: .black.opacity(0.16), radius: 8, y: 3)
     }
 }
