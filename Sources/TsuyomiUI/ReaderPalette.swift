@@ -18,6 +18,19 @@ public struct ReaderPalette {
     public var background: Color { Color(uiColor: backgroundColor) }
     public var foreground: Color { Color(uiColor: foregroundColor) }
 
+    /// The chrome drawn over a page is drawn in the page's own ink and paper, so a panel on a sepia
+    /// page is sepia and a panel on a black page is black: the same two colours, at lesser weights.
+    /// A control's face: the ink, faintly, over the paper.
+    public var raisedSurface: Color { foreground.opacity(0.10) }
+    /// A lifted surface's edge and a rule between controls.
+    public var separator: Color { foreground.opacity(0.22) }
+    /// The ink for a supporting line.
+    public var secondaryForeground: Color { foreground.opacity(0.62) }
+    /// The ink for a control that cannot be used right now.
+    public var disabledForeground: Color { foreground.opacity(0.35) }
+    /// What lifts a card off the page it shares a colour with: a breath of ink over the paper.
+    public var lift: Color { foreground.opacity(0.05) }
+
     init(_ background: UIColor, _ foreground: UIColor, inkStroke: CGFloat = 0) {
         self.backgroundColor = background
         self.foregroundColor = foreground

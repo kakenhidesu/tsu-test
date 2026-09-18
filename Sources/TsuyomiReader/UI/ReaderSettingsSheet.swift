@@ -43,7 +43,15 @@ public struct ReaderSettingsSheet: View {
         }
         .padding(TsuyomiTheme.Metrics.gutter)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 20))
+        // The card is the page's own paper, lifted: not a system material, which reads as a grey
+        // sheet whatever the page under it is.
+        .background {
+            RoundedRectangle(cornerRadius: 20)
+                .fill(palette.background)
+                .overlay(RoundedRectangle(cornerRadius: 20).fill(palette.lift))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 20).strokeBorder(palette.separator, lineWidth: 1))
+        .shadow(color: .black.opacity(colorScheme == .dark ? 0.5 : 0.16), radius: 14, y: 6)
         .padding(.horizontal, TsuyomiTheme.Metrics.tightGutter)
         .padding(.bottom, TsuyomiTheme.Metrics.tightGutter)
         .gesture(
@@ -66,11 +74,18 @@ public struct ReaderSettingsSheet: View {
         }
     }
 
+    /// The palette of the theme in force: every colour on the card comes from it, so the card belongs
+    /// to the page it sits over rather than to the app's own chrome.
+    private var palette: ReaderPalette {
+        settings.theme.palette(for: colorScheme)
+    }
+
     private var heading: some View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 0) {
                 Text("主题与设置")
                     .font(TsuyomiTheme.Typography.screenTitle)
+                    .foregroundStyle(palette.foreground)
                 Button {
                     isShowingOptions = true
                 } label: {
@@ -79,16 +94,16 @@ public struct ReaderSettingsSheet: View {
                         Image(systemName: "chevron.right").font(.caption2)
                     }
                     .font(TsuyomiTheme.Typography.supporting)
-                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                    .foregroundStyle(palette.secondaryForeground)
                 }
             }
             Spacer()
             Button(action: onClose) {
                 Image(systemName: "xmark")
                     .font(.system(size: 14, weight: .semibold))
-                    .foregroundStyle(TsuyomiTheme.Palette.secondaryText)
+                    .foregroundStyle(palette.secondaryForeground)
                     .frame(width: 32, height: 32)
-                    .background(TsuyomiTheme.Palette.raisedSurface, in: Circle())
+                    .background(palette.raisedSurface, in: Circle())
             }
             .accessibilityLabel("关闭")
         }
@@ -102,10 +117,10 @@ public struct ReaderSettingsSheet: View {
             VStack(spacing: 6) {
                 HStack(spacing: 0) {
                     sizeButton(delta: -1, pointSize: 14, label: "缩小字号")
-                    Divider().frame(height: 22)
+                    Rectangle().fill(palette.separator).frame(width: 1, height: 22)
                     sizeButton(delta: 1, pointSize: 22, label: "放大字号")
                 }
-                .background(TsuyomiTheme.Palette.raisedSurface, in: Capsule())
+                .background(palette.raisedSurface, in: Capsule())
                 sizeDots
             }
             flowMenu
@@ -121,9 +136,9 @@ public struct ReaderSettingsSheet: View {
         HStack(spacing: 4) {
             ForEach(ReaderSettings.fontSizeSteps.indices, id: \.self) { index in
                 Circle()
-                    .fill(index <= settings.fontSizeStep ? TsuyomiTheme.Palette.primaryText : Color.clear)
+                    .fill(index <= settings.fontSizeStep ? palette.foreground : Color.clear)
                     .overlay {
-                        Circle().strokeBorder(TsuyomiTheme.Palette.primaryText.opacity(0.35), lineWidth: 1)
+                        Circle().strokeBorder(palette.disabledForeground, lineWidth: 1)
                     }
                     .frame(width: 5, height: 5)
             }
@@ -162,7 +177,7 @@ public struct ReaderSettingsSheet: View {
     }
 
     private func themeTile(_ theme: ReaderTheme) -> some View {
-        let palette = theme.palette(for: colorScheme)
+        let tile = theme.palette(for: colorScheme)
         let selected = settings.theme == theme
         return Button {
             var updated = settings
@@ -175,18 +190,20 @@ public struct ReaderSettingsSheet: View {
                     Text("大").font(.system(size: 22, weight: theme == .bold ? .heavy : .semibold))
                     Text("小").font(.system(size: 14, weight: theme == .bold ? .bold : .regular))
                 }
-                .foregroundStyle(palette.foreground)
+                .foregroundStyle(tile.foreground)
                 Text(theme.label)
                     .font(TsuyomiTheme.Typography.badge)
-                    .foregroundStyle(palette.foreground.opacity(0.7))
+                    .foregroundStyle(tile.foreground.opacity(0.7))
             }
             .frame(maxWidth: .infinity)
             .frame(height: 64)
-            .background(palette.background, in: RoundedRectangle(cornerRadius: 12))
+            .background(tile.background, in: RoundedRectangle(cornerRadius: 12))
             .overlay {
+                // The ring is drawn in the card's ink, not the tile's: the tile shows what the theme
+                // looks like, the ring says which one is in force.
                 RoundedRectangle(cornerRadius: 12)
                     .strokeBorder(
-                        selected ? TsuyomiTheme.Palette.primaryText : TsuyomiTheme.Palette.separator,
+                        selected ? palette.foreground : palette.separator,
                         lineWidth: selected ? 2 : 1
                     )
             }
@@ -208,7 +225,7 @@ public struct ReaderSettingsSheet: View {
         } label: {
             Text("字")
                 .font(.system(size: pointSize))
-                .foregroundStyle(enabled ? TsuyomiTheme.Palette.primaryText : TsuyomiTheme.Palette.tertiaryText)
+                .foregroundStyle(enabled ? palette.foreground : palette.disabledForeground)
                 .frame(maxWidth: .infinity)
                 .frame(height: TsuyomiTheme.Metrics.minimumTouchTarget)
                 .contentShape(Rectangle())
@@ -257,8 +274,9 @@ public struct ReaderSettingsSheet: View {
             content()
         } label: {
             Image(systemName: symbol)
+                .foregroundStyle(palette.foreground)
                 .frame(width: 56, height: TsuyomiTheme.Metrics.minimumTouchTarget)
-                .background(TsuyomiTheme.Palette.raisedSurface, in: Capsule())
+                .background(palette.raisedSurface, in: Capsule())
         }
         .accessibilityLabel(label)
     }
