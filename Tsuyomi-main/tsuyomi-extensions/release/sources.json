@@ -1,0 +1,164 @@
+{
+  "format": "tsuyomi-release-sources",
+  "version": 1,
+  "packages": [
+    {
+      "manifest": {
+        "format": "tsuyomi-hxp",
+        "manifestVersion": 1,
+        "id": "org.tsuyomi.wenku8",
+        "version": "0.2.31",
+        "display": {
+          "name": "Wenku8",
+          "summary": "Wenku8 阅读与显式远程收藏来源",
+          "homepage": "https://www.wenku8.net"
+        },
+        "hostApi": {
+          "minInclusive": "1.2.0",
+          "maxExclusive": "2.0.0"
+        },
+        "entry": "index.mjs",
+        "signing": {
+          "algorithm": "Ed25519",
+          "keyId": "configured-publisher-v1",
+          "signatureFile": "signature.ed25519"
+        },
+        "capabilities": {
+          "network": {
+            "origins": [
+              "https://www.wenku8.net",
+              "https://img.wenku8.com",
+              "https://pic.wenku8.com",
+              "https://pic.777743.xyz"
+            ],
+            "maxConcurrentRequests": 2,
+            "requestTimeoutMs": 15000,
+            "maxResponseBytes": 2097152
+          },
+          "cookies": {
+            "mode": "sourceScoped",
+            "origins": [
+              "https://www.wenku8.net"
+            ]
+          },
+          "webLogin": {
+            "enabled": true,
+            "origins": [
+              "https://www.wenku8.net"
+            ]
+          },
+          "home": {
+            "enabled": true
+          },
+          "updateCheck": {
+            "version": 2,
+            "origin": "https://www.wenku8.net",
+            "method": "GET",
+            "path": "/modules/article/reader.php",
+            "referrerPath": "/index.php",
+            "parameters": {
+              "aid": {
+                "kind": "remoteBookId"
+              }
+            }
+          },
+          "remoteLibrary": {
+            "read": true,
+            "writeOperations": [
+              "add",
+              "remove",
+              "move"
+            ],
+            "policies": {
+              "read": {
+                "origin": "https://www.wenku8.net",
+                "method": "GET",
+                "path": "/modules/article/bookcase.php",
+                "parameters": {
+                  "action": {
+                    "kind": "fixed",
+                    "value": "list"
+                  },
+                  "cursor": {
+                    "kind": "cursor"
+                  }
+                }
+              },
+              "targets": {
+                "origin": "https://www.wenku8.net",
+                "method": "GET",
+                "path": "/modules/article/bookcase.php",
+                "parameters": {
+                  "action": {
+                    "kind": "fixed",
+                    "value": "targets"
+                  }
+                }
+              },
+              "add": {
+                "origin": "https://www.wenku8.net",
+                "method": "GET",
+                "path": "/modules/article/addbookcase.php",
+                "parameters": {
+                  "bid": {
+                    "kind": "remoteBookId"
+                  }
+                }
+              },
+              "remove": {
+                "origin": "https://www.wenku8.net",
+                "method": "POST",
+                "path": "/modules/article/bookcase.php",
+                "parameters": {
+                  "action": {
+                    "kind": "fixed",
+                    "value": "remove"
+                  },
+                  "aid": {
+                    "kind": "remoteBookId"
+                  }
+                }
+              },
+              "move": {
+                "origin": "https://www.wenku8.net",
+                "method": "POST",
+                "path": "/modules/article/bookcase.php",
+                "parameters": {
+                  "action": {
+                    "kind": "fixed",
+                    "value": "move"
+                  },
+                  "aid": {
+                    "kind": "remoteBookId"
+                  },
+                  "target": {
+                    "kind": "targetId"
+                  }
+                }
+              }
+            }
+          },
+          "storage": {
+            "quotaBytes": 1048576
+          }
+        },
+        "resourceLimits": {
+          "maxExecutionWallTimeMs": 15000,
+          "maxMemoryBytes": 16777216
+        },
+        "update": {
+          "channel": "stable"
+        }
+      },
+      "language": "zh-CN",
+      "license": "AGPL-3.0-only",
+      "files": {
+        "index.mjs": "dist/modules/wenku8/index.mjs"
+      },
+      "legacyMigration": {
+        "fromPublisherFingerprint": "65b60673d6ed884bf01c2c222d82ada0740f29ac3355d6a925c81f17f47a27b8",
+        "fromPackageSha256": "36db147337636ddc1b5bb00a979e42bb82e97f419ab374c6a5cb62ce852d6af6"
+      }
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+{
+  "name": "@tsuyomi/extensions",
+  "version": "0.2.0",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.18.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "package:fixture": "npm run build && node tools/build-fixture.mjs",
+    "package:hxp": "node tools/package-hxp.mjs",
+    "catalog:generate": "node tools/generate-catalog.mjs",
+    "release:prepare": "node tools/prepare-release.mjs",
+    "test": "npm run build && node --test test/*.test.mjs"
+  },
+  "devDependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "typescript": "7.0.2"
+  }
+}
